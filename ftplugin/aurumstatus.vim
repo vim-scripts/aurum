@@ -1,0 +1,179 @@
+"▶1 
+scriptencoding utf-8
+setlocal textwidth=0
+setlocal noswapfile
+setlocal nomodeline
+execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
+            \                '@aurum/vimdiff': '0.0',
+            \                   '@aurum/edit': '0.0',
+            \                 '@aurum/commit': '0.0',
+            \                    '@/mappings': '0.0',
+            \                          '@/os': '0.0',})
+"▶1 runmap
+let s:noacttypes={
+            \    'open': ['deleted'],
+            \ 'revopen': ['added', 'ignored'],
+            \    'diff': ['added', 'removed', 'deleted', 'unknown', 'ignored'],
+            \'annotate': ['added', 'unknown', 'ignored'],
+            \   'track': ['added', 'clean'],
+            \  'commit': ['ignored', 'clean'],
+            \  'forget': ['removed'],
+        \}
+let s:noacttypes.vimdiff    = s:noacttypes.diff
+let s:noacttypes.revdiff    = s:noacttypes.diff
+let s:noacttypes.revvimdiff = s:noacttypes.vimdiff
+let s:noacttypes.vtrack     = s:noacttypes.track
+let s:noacttypes.vcommit    = s:noacttypes.commit
+let s:noacttypes.vforget    = s:noacttypes.forget
+function s:F.runmap(action, ...)
+    let buf=bufnr('%')
+    let bvar=s:_r.bufvars[buf]
+    if empty(bvar.types)
+        return ''
+    endif
+    let visual=(a:0&&a:1)
+    let isrecord=get(bvar.opts, 'record', 0)
+    if isrecord
+        if a:action is# 'track'
+            return bvar.recrunmap(((visual)?('v'):('')).'add')
+        elseif a:action is# 'commit'
+            return bvar.recrunmap('commit')
+        elseif a:action is# 'forget'
+            return bvar.recrunmap(((visual)?('v'):('')).'remove')
+        endif
+    endif
+    let rev1=get(bvar.opts, 'rev1')
+    let rev2=get(bvar.opts, 'rev2')
+    if rev1 is 0
+        let rev1=''
+    endif
+    if rev2 is 0
+        let rev2=''
+    endif
+    if empty(rev1) && empty(rev2)
+        let rev1=bvar.repo.functions.getworkhex(bvar.repo)
+    endif
+    let curline=line('.')-1
+    let vline1=line("'<")
+    let vline2=line("'>")
+    let file=bvar.files[curline]
+    if has_key(s:noacttypes, a:action) &&
+                \index(s:noacttypes[a:action], bvar.types[curline])!=-1
+        return ''
+    endif
+    if !(a:action is# 'commit' || a:action is# 'track' || a:action is# 'forget')
+        if isrecord
+            let [lwnr, rwnr, swnr]=bvar.getwnrs()
+            execute lwnr.'wincmd w'
+        else
+            wincmd c
+        endif
+    endif
+    if a:action is# 'open'
+        execute 'silent e' fnameescape(s:_r.os.path.join(bvar.repo.path,file))
+    elseif a:action is# 'revopen'
+        call s:_r.run('silent edit', 'file', bvar.repo, rev1, file)
+    elseif a:action is# 'fulldiff'
+        call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, [], {})
+    elseif a:action is# 'revfulldiff'
+        call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  [], {})
+    elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
+        let file1=s:_r.fname('file', bvar.repo, rev1, file)
+        if empty(rev2) || a:action is# 'vimdiff'
+            let file2=s:_r.os.path.join(bvar.repo.path, file)
+        else
+            let file2=s:_r.fname('file', bvar.repo, rev2, file)
+        endif
+        if get(bvar.opts, 'record', 0)
+            execute 'silent view' fnameescape(file2)
+            diffthis
+            execute rwnr.'wincmd w'
+            execute 'silent view' fnameescape(file1)
+            diffthis
+            wincmd p
+        else
+            execute 'silent edit' fnameescape(file2)
+            call s:_r.vimdiff.split(file1, -1)
+        endif
+    elseif a:action is# 'annotate'
+        call s:_r.run('silent edit', 'file', bvar.repo, rev1, file)
+        AuAnnotate
+    endif
+    if visual
+        let range=range(vline1-1, vline2-1, (((vline1>vline2)?(-1):(1))))
+    else
+        let rborder=curline+v:count1-1
+        if rborder>(len(bvar.files)-1)
+            let rborder=len(bvar.files)-1
+        endif
+        let range=range(curline, rborder)
+    endif
+    if has_key(s:noacttypes, a:action)
+        call filter(range,
+                    \'index(s:noacttypes[a:action], bvar.types[v:val])==-1')
+    endif
+    let files=map(copy(range), 'bvar.files[v:val]')
+    if a:action is# 'commit'
+        if s:_r.commit.commit(bvar.repo, bvar.opts, files, bvar.status)
+            silent edit!
+        else
+            augroup AuStatusCommit
+                execute 'autocmd BufWipeOut <buffer> '.
+                            \'if bufexists('.buf.') | '.
+                            \   'execute "autocmd AuStatusCommit '.
+                            \                    'BufEnter <buffer='.buf.'> '.
+                            \                    'nested '.
+                            \               'execute \"autocmd! AuStatusCommit '.
+                            \                           'BufEnter '
+                            \                           '<buffer='.buf.'>\" | '.
+                            \                   'silent edit!" | '.
+                            \'endif'
+            augroup END
+        endif
+    elseif a:action is# 'track'
+        call map(copy(files), 'bvar.repo.functions.add(bvar.repo, v:val)')
+        silent edit!
+    elseif a:action is# 'forget'
+        call map(copy(files), 'bvar.repo.functions.forget(bvar.repo, v:val)')
+        silent edit!
+    elseif a:action is# 'diff'
+        call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
+    elseif a:action is# 'revdiff'
+        call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
+    endif
+endfunction
+let s:_augroups+=['AuStatusCommit']
+"▶1 AuStatus mapping group
+"▶2 getrhs
+function s:F.getrhs(...)
+    return ':<C-u>call call(<SID>Eval("s:F.runmap"), '.string(a:000).', {})<CR>'
+endfunction
+"▲2
+call s:_f.mapgroup.add('AuStatus', {
+            \    'Exit': {'lhs':  'X',   'rhs': ':<C-u>bwipeout!<CR>'    },
+            \    'Open': {'lhs': '<CR>', 'rhs': s:F.getrhs(       'open')},
+            \   'ROpen': {'lhs':  'o',   'rhs': s:F.getrhs(    'revopen')},
+            \  'RFdiff': {'lhs': 'gd',   'rhs': s:F.getrhs('revfulldiff')},
+            \   'Fdiff': {'lhs': 'gc',   'rhs': s:F.getrhs(   'fulldiff')},
+            \    'Diff': {'lhs':  'd',   'rhs': s:F.getrhs(       'diff')},
+            \   'vDiff': {'lhs':  'd',   'rhs': s:F.getrhs(       'diff', 1),
+            \             'mode': 'v'},
+            \   'Rdiff': {'lhs':  'c',   'rhs': s:F.getrhs(    'revdiff')},
+            \  'vRdiff': {'lhs':  'c',   'rhs': s:F.getrhs(    'revdiff', 1),
+            \             'mode': 'v'},
+            \   'Vdiff': {'lhs':  'D',   'rhs': s:F.getrhs(    'vimdiff')},
+            \  'RVdiff': {'lhs':  'C',   'rhs': s:F.getrhs( 'revvimdiff')},
+            \'Annotate': {'lhs':  'a',   'rhs': s:F.getrhs(   'annotate')},
+            \  'Commit': {'lhs':  'i',   'rhs': s:F.getrhs(     'commit')},
+            \ 'vCommit': {'lhs':  'i',   'rhs': s:F.getrhs(     'commit', 1),
+            \             'mode': 'v'},
+            \   'Track': {'lhs':  'A',   'rhs': s:F.getrhs(      'track')},
+            \  'vTrack': {'lhs':  'A',   'rhs': s:F.getrhs(      'track', 1),
+            \             'mode': 'v'},
+            \  'Forget': {'lhs':  'R',   'rhs': s:F.getrhs(     'forget')},
+            \ 'vForget': {'lhs':  'R',   'rhs': s:F.getrhs(     'forget', 1),
+            \             'mode': 'v'},
+            \}, {'func': s:F.runmap, 'silent': 1, 'mode': 'n'})
+"▶1
+call frawor#Lockvar(s:, '_r')
+" vim: ft=vim ts=4 sts=4 et fmr=▶,▲

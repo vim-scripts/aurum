@@ -1,0 +1,1266 @@
+*aurum.txt* Plugin for dealing with source files under mercurial control
+==============================================================================
+CONTENTS                                                      *aurum-contents*
+    1. Intro                                             |aurum-intro|
+    2. Functionality provided                            |aurum-functionality|
+        2.1. Commands                                    |aurum-commands|
+        2.2. Functions                                   |aurum-functions|
+        2.3. aurum:// pseudo-protocol                    |aurum://|
+        2.4. Global mappings                             |aurum-mappings|
+    4. Options                                           |aurum-options|
+    5. Globs                                             |aurum-globs|
+    6. Log templates                                     |aurum-logtemplates|
+        6.1. Built-in template styles                    |aurum-logstyles|
+    7. Record mode                                       |aurum-record|
+    8. Internal objects                                  |aurum-objects|
+        8.1. Repository                                  |aurum-repository|
+        8.2. Changeset                                   |aurum-changeset|
+
+==============================================================================
+1. Intro                                                         *aurum-intro*
+
+This plugin provides a vim <--> VCS (currently only mercurial) integration for 
+your projects. Features:
+  - Partially committing changes (|:AuRecord|).
+  - Viewing file state at particular revision (|aurum://file|, |:AuFile|).
+  - Viewing uncommited changes in a |vimdiff|, as well as changes between 
+    specific revisions (|:AuVimDiff|). It is also possible to open multiple 
+    tabs with all changes to all files viewed as side-by-side diffs.
+  - Viewing revisions log (|:AuLog|). Output is highly customizable.
+  - Viewing working directory status (|:AuStatus|).
+  - Commiting changes (|:AuCommit|), commit messages are remembered in case of 
+    rollback (|g:aurum_remembermsg|).
+  - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
+    version of the current file with URL fragment pointing to the current line 
+    attached: useful for sharing) (|:AuHyperlink|).
+  - Frontends for various VCS commands.
+Most commands can be reached with a set of mappings (see |aurum-mappings|), 
+all mappings are customizable.
+
+Plugin’s mercurial driver is able to use mercurial python API as well as its 
+CLI, but remember that the former is much slower and less tested. In order to 
+use mercurial python API you must have vim compiled with |+python| (mercurial 
+currently does not support python 3) and have mercurial in python’s sys.path 
+(note: on windows msi installer is not adding mercurial to sys.path, so you 
+won’t be able to use its python API).
+
+Plugin requires some additional plugins:
+  - frawor (https://bitbucket.org/ZyX_I/frawor)
+(with their dependencies).
+
+Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
+      is prefered that you use it for aurum installation.
+
+==============================================================================
+2. Functionality provided                                *aurum-functionality*
+
+------------------------------------------------------------------------------
+2.1. Commands                                                 *aurum-commands*
+
+There are some common things for all commands:
+1. All commands are constructed using |FWC| and thus you can truncate all 
+   keyword options (but only if truncated version is unambigious).
+2. If some command accepts file or glob argument it is likely to be able to 
+   get repository location from it, thus “repo” option is not needed (or is 
+   even ignored). This also applies to options like “file”/“files”.
+3. Commands accepting filenames or globs also accept “:” meaning `current 
+   file'.                      *aurum-current-revision* *aurum-current-file*
+4. “current file” and “current revision” are determined in the following 
+   fashion:
+   1. |aurum://file|:{repo}:{rev}:{file} buffers: current revision is {rev} 
+      and current file is {file}.
+   2. |aurum://status|: current file is file under cursor and current revision 
+      is first status revision.
+   3. |aurum://diff| buffers: current file is one of the files which section 
+      is located under the cursor and current revision is either second or 
+      first diffed revision.
+   4. |aurum://annotate| buffers: current file is file under cursor (annotate 
+      may follow renames/copies; target filename is not explicitely mentioned) 
+      and current revision is revision under cursor.
+   5. For other buffers: current file is file name, current revision is 
+      working directory revision.
+
+AuAnnotate [file {file}] [rev {rev}] [repo {repo}]               *:AuAnnotate*
+    Annotate rev {rev} of a file {file}. By default annotates current revision 
+    of a current file (|aurum-current-file|).
+
+AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
+    Commit files matching given globs (current file if no globs were given). 
+    If “message” option was not specified, opens |aurum://commit| buffer. You 
+    can specify string “all” instead of the globs, in this case changes to all 
+    tracked files will be commited (equivalent to running “!hg commit”).
+    Possible options:
+    Option  Description ~
+    type    Either one of modified/added/removed/deleted/unknown or string 
+            containing capitalized first letters of mentined status names 
+            (additionally “?” for unknown and “!” for deleted). May be 
+            specified more then once. Determines what files should be matched 
+            against given globs: “AuCommit **” is equivalent to `AuCommit 
+            all', but “AuCommit type MARDU **” will also add untracked and 
+            remove missing files (like “hg commit -A”). Does not affect 
+            “:AuCommit all” and “:AuCommit”, latter will always add current 
+            file if it was untracked.
+    message Commit message.
+    user    Committer.
+    date    Commit date in form yy-mm-dd_HH:MM:SS. Both date and time parts 
+            are optional (though you must specify one of them), you can omit 
+            year or use full four-digit form. Seconds are also optional.
+    [no]closebranch
+            Flag. See description of --close-branch in “hg help commit”.
+    repo    Path. Repository that should be committed to.
+
+AuDiff {options} {diffoptions} [glob1 [...]]                         *:AuDiff*
+    View differences between revisions specified in options (default: between 
+    working directory state and working directory revision).
+    Possible options:
+    Option  Description ~
+    rev1    First revision. If it is the only revision set, then AuDiff will 
+            show changes made by given revision.
+    rev2    Second revision. If it is the only revision set, then AuDiff will 
+            show changes between working directory and given revision.
+            If both revisions are given then it will compare first revision 
+            against second one.
+    changes Overrides rev1 and rev2. Acts just like if “rev1” is set and 
+            “rev2” is not.
+    cmd     Command used to open |aurum://diff| buffer.
+            Default: “silent edit”.
+    repo    Path. Repository where diff should be run.
+                                                           *aurum-diffoptions*
+    Diffoption    Description ~
+    numlines      Unsigned integer. Number of context lines that should be 
+                  shown.
+    [no]reverse   Flag. Determines whether reversed patch should be generated.
+    [no]ignorews  Flag. Determines whether whitespace characters should be 
+                  ignored when comparing lines.
+    [no]iwsamount Flag. Determines whether changes in amount of whitespace 
+                  characters should be ignored.
+    [no]iblanks   Flag. Determines whether changes consisting only of blank 
+                  lines should be ignored.
+    [no]showfunc  Flag. Determines whether it should be shown in which 
+                  function changes were made.
+    [no]alltext   Flag. Determines whether all files should be treated as text 
+                  files.
+    [no]dates     Flag. Determines whether dates should be shown in headers.
+    [no]git       Flag. Determines whether extended git format should be used.
+
+AuFile [{rev} [{file}]] [[no]replace] [cmd {cmd}] [repo {repo}]      *:AuFile*
+    View file as it was at given revision. If “replace” option is given, then 
+    current buffer contents will be replaced instead of opening new 
+    |aurum://file| buffer. “cmd” option determines which command will be used 
+    to open aurum://file buffer (default: “silent edit”) (may be overriden by 
+    “replace” option).
+
+AuGrep {pattern} {opts}                                              *:AuGrep*
+    Populates |quickfix| list with the results of searching repository for 
+    given {pattern} ({pattern} syntax is determined by used VCS). If any globs 
+    are given, then only files matching these globs are searched.
+    Possible options:
+    Option         Description ~
+    [no]ignorecase Flag. Determines whether case should be ignored.
+    revrange       Accepts two revisions as arguments. Adds revisions between 
+                   given ones to the list of revisions that should be searched 
+                   for. May be specified more then once.
+    revision       Accepts one revision. Adds it to the list of revisions that 
+                   should be searched for. May be specified more then once.
+    files          Glob. Determines which files should be searched. May be 
+                   specified more then once.
+    repo           Path. Repository that should be searched.
+    [no]wdfiles    Flag. Determines whether :AuGrep should output files in 
+                   working directory if they have not changed since found 
+                   revision. Overrides |g:aurum_workdirfiles|.
+    [no]workmatch  Flag. When processing “files” option if this flag is true 
+                   (default) it will grep only files present in working 
+                   directory changeset. If this flag is false, :AuGrep will 
+                   process all changesets in order to find out files matching 
+                   pattern(s) given in “files” option.
+
+AuHyperlink {opts}                                              *:AuHyperlink*
+    Constructs a URL and puts it into system clipboard (see |quote+|).
+    Possible options:
+    Option    Description ~
+    rev       Revision that is to be refered. Defaults:
+                  URL types                   Default ~
+                  html,raw,annotate,filehist  |aurum-current-revision|
+                  bundle,changeset            working directory revision
+                  log                         same as above, but mainly ignored
+                  clone,push                  not applicable (not used)
+              Note: Depending on specific repository this argument may be 
+                    unsupported (mostly hgsubversion repositories), supported 
+                    only partly (mostly hg-git repositories: supported only if 
+                    revision in question has first bookmark mapping to git 
+                    branch) or under specific conditions (kenai.com requires 
+                    revision numbers matching in your and remote repository).
+    file      File that is to be refered (url=html,raw,annotate,filehist).
+              Default: see |aurum-current-file|.
+    url       URL type. Accepted types (default: html):         *aurum-ho-url*
+                  Type      Description ~
+                  html      URL of the file, HTML formatted
+                  raw       URL of the file, raw bundle
+                  annotate  URL of the file, annotated
+                  filehist  URL of the file history
+                  bundle    URL of the repository snapshot
+                  changeset URL of the changeset (usually, diff)
+                  log       URL of the commit log
+                  clone     URL of the repository, read-only
+                  push      URL of the repository, read-write
+    line      Determines whether URL fragment refering to given line should be 
+              added to the URL. Only for url=file and url=annotate.
+              Default: not added. If given line is 0 then current line number 
+              will be used unless “rev” or “file” options are given or refered 
+              file is not the current one.
+    cmd       Command that is used to copy url to register.
+              Default: "let @+=%s". Do not forget to escape spaces.
+              Value of this option is used in this fashion: >
+                execute printf(cmd, string(URL))
+<   repo      Path. Repository that should be used.
+
+    Note: you can extend list of supported remote repositories by using 
+          |g:aurum_hypsites| option.
+
+AuJunk [forget] [ignore] [remove] [ignoreglobs] glob1 [...]          *:AuJunk*
+    Forget, ignore or remove (default: remove) files matching given globs 
+    (specify “:” to act on current file). With “ignoreglobs” it will ignore 
+    not matching files, but given globs. Unlike other commands you must 
+    specify at least one glob (or “:”) here, without this it will fail.
+
+AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
+    Open buffer with changeset log. For {diffoptions} see |aurum-diffoptions|.
+    Possible options:
+    Option      Description ~
+    files       Glob. If present, only revisions where file matching glob was 
+                modified are shown. It also tracks renames and copies of 
+                a file. May be specified more then once.
+                Note: This option also affects files shown when “stat”, 
+                      “patch”, “showfiles”, “showrenames” and “showcopies” 
+                      options are specified (unless |aurum-lo-ignfiles| is 
+                      also present).
+    date        String of a form y-m-d_H:M where all components except first 
+                are optional. Each of y, m, d, H, M may be either a number, 
+                a dot (meaning put current value here) and a star (meaning 
+                “any”). “y” is either a four- or two-digit year. If present, 
+                selects revisions that match given date. You can also use 
+                “>={date}”, “<={date}” and “{date1}<=>{date2}” (“=” may be 
+                omitted).
+    search      Regex. If present, selects revisions where description matches 
+                given regular expression.
+    user        Regex. If present, selects revisions where user matches given 
+                regular expression.
+    branch      String. If present, selects revisions with given branch name.
+    limit       Number (1 to inf). Shows at most {limit} revisions, starting 
+                from the tip.
+    revision    Revision. Shows only specified revision.
+    revrange    Two revisions. Shows revisions that are between specified 
+                ones.
+    [no]merges  Flag. “merges” selects revisions with more then one parent, 
+                “nomerges” selects revisions that have one or no parents.
+    style       String. Specifies template name, see |aurum-logstyles|.
+    template    Variable name. Specifies variable from which template should 
+                be loaded.
+                                                           *aurum-lo-ignfiles*
+    ignfiles    One of “patch”, “renames”, “copies”, “files”. May be specified 
+                more then once. Overrides |g:aurum_ignorefiles|. Determines 
+                when “files” option will be ignored:
+                  Value    Description ~
+                  patch    “patch” and “stat” will always show full changeset 
+                           patch or statistics.
+                  renames  “showrenames” will always show all renamed files.
+                  copies   “showcopies” will always show all copied files.
+                  files    “showfiles” will always show all changed files.
+    cmd         Command. Determines which command should be used to open log.
+                Default: “silent new”.
+    [no]stat    Flag. Determines whether summary of changes should be shown.
+    [no]patch   Flag. Determines whether revision patch should be shown.
+    [no]showfiles
+                Flag. Determines whether list of files changed in given 
+                revision should be shown.
+    [no]showcopies
+                Flag. Determines whether copies should be shown.
+    [no]showrenames
+                Flag. Determines whether renames should be shown.
+
+                                                                     *:AuMove*
+AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
+    Move (with “copy” option: copy) files. Depending on number and type of 
+    arguments it can be one of the following:
+    - No arguments: move current file to current directory.
+    - One argument that is a name of existing directory: move current file to 
+      given directory.
+    - At least two arguments with “rightrepl” option given: capture parts of 
+      filenames matching wildcards and use last argument as the replacement 
+      string (see |substitute()|). Example: >
+          AuMove rightrepl **.txt \\1.doc
+            file.txt     -> file.doc
+            dir/file.txt -> dir/file.doc
+<   - At least two arguments with “leftpattern” option given: take all 
+      arguments except last as a pattern and use the last argument as 
+      replacement string (see |substitute()|). Example: >
+          AuMove leftpattern \\v^(.*)\\.txt$ \\1.doc
+            file.txt     -> file.doc
+            dir/file.txt -> dir/file.doc
+<     Note that this is the only case when paths are assumed to be relative to 
+           repository root. In any other cases they are assumed to be relative 
+           to current directory.
+    - Two arguments containing at least one star or question mark which both 
+      have just the same number of unescaped stars and/or question marks 
+      arranged in the same order. In this case it acts like “zmv -W”: parts of 
+      filename matching wildcards are captured (note vim allows only up to 
+      9 capturing groups), and each wildcard in the right argument is replaced 
+      by the match: >
+          AuMove **.txt **.doc
+            file.txt     -> file.doc
+            dir/file.txt -> dir/file.doc
+<     Note that “AuMove */*.txt **.doc” won't work.
+    - Two or more arguments with last one that is a name of existing 
+      directory: move files matching given patterns (all arguments but the 
+      last one) to given directory (last argument).
+    - One or more arguments that have not matched any of the above rules: move 
+      files matching given patterns (patterns are all arguments) to the 
+      current directory.
+    If “pretend” option is given :AuMove won't actually do anything, just 
+    print what it will do (relative to repository root, not to current 
+    directory).
+    Note: you must either be at repository root (see |:cd|) or have all 
+          arguments look like “path/to/repository/{meaningfulPart}”.
+
+AuRecord {opts} [glob1 [...]]                                      *:AuRecord*
+    Start record mode (|aurum-record|). Possible options are just the same as 
+    |:AuCommit| has (except for “type” option that is absent).
+
+AuStatus [{repo}] {opts}                                           *:AuStatus*
+    Display status of the repository. Possible options:
+    Option  Description ~
+    files   Glob. If given, only status of files that match given glob will be 
+            displayed. May be specified more then once.
+    rev1    Revision. If given :AuStatus will display status not relative to 
+            working revision, but to the given one. If “rev2” is specified, 
+            then it will display status as if {rev2} was working directory 
+            state and current working directory was revision from repository.
+    rev2    Revision. If given :AuStatus will display status as if {rev2} was 
+            working directory state.
+    show    Either one of modified/added/removed/deleted/unknown/ignored/clean 
+            or string containing capitalized first letters of mentined status 
+            names (additionally “?” for unknown and “!” for deleted). May be 
+            specified more then once. Determines files with what statuses 
+            should be displayed. Default: modified, added, removed, deleted, 
+            unknown. You can also specify “all” instead of statuses, it will 
+            act as “show MARDUIC”.
+    cmd     Command. Determines which command should be used to open 
+            |aurum://status| buffer. Default: “silent botright new”. If 
+            specified, |g:aurum_usestatwin| option has no effect and status 
+            window also won't be resized.
+
+AuTrack[!] [glob1 [...]]                                            *:AuTrack*
+    Make files matching given globs be tracked by VCS (current file if no 
+    globs were given). You can also specify “:” instead of one of the globs to 
+    track current file name. Adding “!” is equivalent to passing “--force” to 
+    the underlying VCS.
+    Note that this command matches files that has unknown and removed status, 
+    so it won't make ignored files tracked.
+
+AuUpdate[!] [{rev} [{repo}]]                                       *:AuUpdate*
+    Update working directory state to revision {rev}. With “!” it will ignore 
+    uncommited changes (really it is specifying “--force” to the underlying 
+    VCS).
+
+AuVimDiff {opts} [rev1 [...]]                                     *:AuVimDiff*
+    Opens a vimdiff windows. Possible options:
+    Option       Description ~
+    file         File to be opened. Default: |aurum-current-file|.
+                 Not used when “full” option is enabled.
+    files        Pattern, determines files to be opened. Default: all files.
+                 Not used when “full” option is disabled.
+                 Note: each pattern must contain at least one non-word 
+                       character (|/\W|).
+    [no]curfile  Determines whether current state of the file should be used.
+    [no]usewin   Overrides |g:aurum_usewin|. Determines whether new window 
+                 should be opened instead of using existing one. First file 
+                 will always be opened in current window unless “full” is 
+                 enabled.
+    [no]full     If enabled, opens multiple tabs containing all files changed 
+                 between selected revisions (revisions and working directory 
+                 state if “curfile” is enabled). Overrides “file” option, 
+                 makes |g:aurum_usewin| and “usewin” options not applicable.
+    [no]onlymodified
+                 Determines whether removed and added files should be included 
+                 in the full diff (default: not included: option enabled).
+    [no]untracked
+                 Determines whether untracked (deleted and unknown) files 
+                 should be included in the full diff (default: no) in addition 
+                 to tracked ones.
+                 Disables “onlymodified” option.
+    repo         Path. Repository that should be used.
+
+    Note: if less then two revisions (or one revision and “curfile”) were 
+          specified, one will be working directory state or current revision 
+          (see |aurum-current-revision|) and second (unless one revision is 
+          specified) will either be working directory revision or, if it is 
+          equal to current revision, its first parent.
+                          *g:frawormap_AuVimDiff* *g:frawormap_AuVimDiff_Exit*
+    :AuVimDiff command defines Exit mappings for all opened buffers. By 
+    default lhs of this mapping is “X” with leader “<Leader>” (“<Leader>X”), 
+    but this can be customized using g:frawormap_AuVimDiff and 
+    g:frawormap_AuVimDiff_Exit variables. This mapping will disable diff, 
+    close (and, possibly, wipe out) opened buffers and try to restore view 
+    state of the first buffer (unless it was opened by :AuVimDiff).
+
+------------------------------------------------------------------------------
+2.2. Functions                                               *aurum-functions*
+
+aurum#repository :: () -> repo                              *aurum#repository*
+    Returns a repository object. Cached (update time is controlled by 
+    |g:aurum_repocachetime|). See |aurum-repository|.
+
+aurum#changeset :: ([{repo}]) -> changeset                   *aurum#changeset*
+    Returns a working directory changeset object. Cached (update time is 
+    controlled by |g:aurum_cscachetime|). See |aurum-changeset|.
+
+aurum#status :: ([{repo}]) -> status                            *aurum#status*
+    Returns a current file status (one of the keys of a dictionary returned by 
+    |aurum-rf-status|) or zero. Cached (update time is controlled by 
+    |g:aurum_statuscachetime|).
+
+------------------------------------------------------------------------------
+2.3. aurum:// pseudo-protocol                                       *aurum://*
+
+Aurum provides a number of commands that can be opened or read using filenames 
+starting with aurum://. Some things you should know:
+- If pseudo-protocol supports more then one argument, in all but last 
+  arguments colons and backslashes should be escaped. In a last argument you 
+  may not escape anything (unless this argument is an options dictionary).
+- While all commands take filenames relative to current directory, all 
+  pseudo-protocols should be passed filenames relative to repository root.
+- None of pseudo-protocols accepts globs outside of {opts}.
+- When stated that {opts} are the same as used by some command it does not 
+  mean that you can truncate options or use “no{option}” version. Truncations 
+  are not allowed and flags should look like “{option}:1” or “{option}:0”. Two 
+  subsequent options look like “{o1}:{v1},{o2}:{v2}”. Options that accept 
+  lists or more then one argument will look like “{o}:{v1};{v2};...”. To 
+  include semicolon here it should be escaped. You should also escape commas, 
+  backslashes and colons. If command accepts {diffopts} then they can also be 
+  added.
+  Options “cmd” and “repo” are always ignored.
+- All arguments for all pseudo-protocols are assumed to be escaped in the 
+  following fashion:
+                 Char  Esc ~
+                    %  %%
+                    ,  %c
+                    :  %.
+                    ;  %s
+                    /  %-
+                    \  %+
+                  [,]  %b, %B
+                  {,}  %f, %F
+                    *  %a
+                    ?  %q
+                    `  %'
+                    $  %d
+  You must escape only argument delimiters (colon for most arguments, colon 
+  and comma for non-list option arguments, colon, semicolon and comma for list 
+  option arguments) and percent sign, but in this case you may run into 
+  trouble: for example, “*” produces |E480| (no match) error on windows 
+  because it can't be escaped with backslash which is path separator.
+- All mappings are created using |frawor-f-mapgroup.add| and thus can 
+  customized using |g:frawormap_mgid| and |g:frawormap_mgid_mapname|.
+- All buffers that define mappings also define Exit mapping (with default 
+  LHS=X)
+
+aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
+    Annotate file {file} from repository {repo} at revision {rev}.
+    Local mappings (mgid=AuAnnotate, without leader by default) (current 
+    revision=revision under cursor):                  *g:frawormap_AuAnnotate*
+             *g:frawormap_AuAnnotate_Enter*  *g:frawormap_AuAnnotate_Fdiff*
+             *g:frawormap_AuAnnotate_RFdiff* *g:frawormap_AuAnnotate_Diff*
+             *g:frawormap_AuAnnotate_Rdiff*  *g:frawormap_AuAnnotate_Annotate*
+             *g:frawormap_AuAnnotate_RVdiff* *g:frawormap_AuAnnotate_Open*
+             *g:frawormap_AuAnnotate_Update* *g:frawormap_AuAnnotate_Next*
+             *g:frawormap_AuAnnotate_Prev*       *aurum-m-AuAnnotate_Prev*
+                 *aurum-m-AuAnnotate_Enter*      *aurum-m-AuAnnotate_Fdiff*
+                 *aurum-m-AuAnnotate_RFdiff*     *aurum-m-AuAnnotate_Diff*
+                 *aurum-m-AuAnnotate_Rdiff*      *aurum-m-AuAnnotate_Annotate*
+                 *aurum-m-AuAnnotate_RVdiff*     *aurum-m-AuAnnotate_Open*
+                 *aurum-m-AuAnnotate_Update*     *aurum-m-AuAnnotate_Next*
+    Mapname  LHS  Description ~
+    Enter    <CR> View changes between file and current revision (|vimdiff|)
+    Fdiff    gd   View diff between working directory and current revision
+    RFdiff   gc   View diff between current revision and its parent
+    Diff      d   View diff between file and current revision
+    Rdiff     c   Like Fdiff, but view only changes made to annotated file
+    Vdiff     D   Same as Enter
+    RVdiff    C   View changes between current revision and its parent 
+                  (|vimdiff|)
+    Annotate  a   Reannotate file using current revision (only if both 
+                  annotate and annotated buffers are open)
+    Open      o   Open file from current revision (if both annotate and 
+                  annotated buffers are open: and annotate it)
+    Update    U   Update working directory to current revision.
+                  Accepts count: {count}=3: update to first parent of first 
+                  parent of current revision
+    Next      K   Reannotate file using first child of annotated revision.
+                  Accepts count, in this case first child is taken {count} 
+                  times ({count}=2: first child of first child)
+    Prev      J   Reannotate file using first parent of annotated revision.
+                  Accepts count, in this case first parent is taken {count} 
+                  times ({count}=2: first parent of first parent)
+
+    Note These mappings are defined for aurumannotate filetype.
+
+aurum://commit:{repo}:{user}:{date}:{files}                   *aurum://commit*
+    Open buffer that prompts for a commit message. Writing this buffer will 
+    record the commit and close the buffer. It is the only pseudo-protocol 
+    type you can't use this with |:read|.
+    Local mappings (mgid=AuCommitMessage, default leader: "<LocalLeader>"):
+                                                 *g:frawormap_AuCommitMessage*
+                                          *g:frawormap_AuCommitMessage_Commit*
+                                              *aurum-m-AuCommitMessage_Commit*
+    Mapname  LHS  Description ~
+    Commit    i   Finish writing commit message and commit changes
+
+    Note These mappings are defined for aurumcommit filetype.
+
+aurum://diff:{repo}:{rev1}:{rev2}:{files}:{diffopts}            *aurum://diff*
+    Open differencies between revisions {rev1} and {rev2} of files {files} 
+    (semicolon-delimited list, semicolons in filenames can be escaped). For 
+    {diffopts} see |aurum-diffoptions|. If one of {rev1} or {rev2} is empty 
+    then it will open the same diff as |:AuDiff| would if “rev1”, “rev2” and 
+    “changes” options were not given. If {files} is empty, then it will show 
+    all changes.
+    Local mappings (mgid=AuDiff, without leader by default):
+                                                          *g:frawormap_AuDiff*
+                         *g:frawormap_AuDiff_Next* *g:frawormap_AuDiff_Prev*
+                         *g:frawormap_AuDiff_Open* *g:frawormap_AuDiff_Update*
+                         *g:frawormap_AuDiff_Vdiff*    *aurum-m-AuDiff_Vdiff*
+                             *aurum-m-AuDiff_Next*     *aurum-m-AuDiff_Prev*
+                             *aurum-m-AuDiff_Open*     *aurum-m-AuDiff_Update*
+    Mapname  LHS  Description ~
+    Next      K   Change all revisions specified to aurum://diff to their 
+                  first children. Accepts count, in this case first child is 
+                  taken {count} times ({count}=2: first child of first 
+                  child)
+    Prev      J   Change all revisions specified to aurum://diff to their 
+                  first parents. Accepts count, in this case first parent is 
+                  taken {count} times ({count}=2: first parent of first 
+                  parent)
+    Update    U   Update working directory to one of revisions (first or 
+                  second, which is non-empty).
+                  Accepts count: {count}=3: update to first parent of first 
+                  parent of the revision
+    Open      o   Open file which diff is located under cursor. If {rev1} is 
+                  empty it will try to open file located in working directory 
+                  and fallback to {rev2} version. If {rev1} is not empty, it 
+                  will open {rev1} version.
+    Vdiff     D   View diff section under cursor using |vimdiff|.
+
+    Note These mappings are defined only when buffer is created using 
+         |:AuDiff| command or Prev/Next above mappings.
+
+aurum://file:{repo}:{rev}:{file}                                *aurum://file*
+    Open file {file} from repository {repo} as it was at revision {rev}.
+    Local mappings (mgid=AuFile, without leader by default):
+                                                          *g:frawormap_AuFile*
+                        *g:frawormap_AuFile_Next*  *g:frawormap_AuFile_Prev*
+                        *g:frawormap_AuFile_Diff*  *g:frawormap_AuFile_Update*
+                        *g:frawormap_AuFile_Rdiff* *g:frawormap_AuFile_RVdiff*
+                        *g:frawormap_AuFile_Vdiff*     *aurum-m-AuFile_Vdiff*
+                            *aurum-m-AuFile_Next*      *aurum-m-AuFile_Prev*
+                            *aurum-m-AuFile_Rdiff*     *aurum-m-AuFile_RVdiff*
+                            *aurum-m-AuFile_Diff*      *aurum-m-AuFile_Update*
+    Mapname  LHS  Description ~
+    Next      K   View current file as it was at first child of current 
+                  revision. Accepts count, in this case first child is taken 
+                  {count} times ({count}=2: first child of first child)
+    Prev      J   View current file as it was at first parent of current 
+                  revision. Accepts count, in this case first parent is taken 
+                  {count} times ({count}=2: first parent of first parent)
+    Update    U   Update working directory to current revision.
+                  Accepts count: {count}=3: update to first parent of first 
+                  parent of current revision
+    Diff      d   View diff between current buffer and file from working 
+                  directory
+    Rdiff     c   View changes introduced to {file} in {rev}
+    Vdiff     D   View |vimdiff| between current buffer and file from working 
+                  directory
+    RVdiff    C   View |vimdiff| between current buffer and aurum://file 
+                  buffer with revision set to first parent of {rev} and same 
+                  {repo} and {file} arguments
+
+    Note These mappings are defined only when buffer is created using 
+         |:AuFile| command or Prev/Next above mappings.
+
+aurum://log:{repo}:{opts}                                        *aurum://log*
+    Open log for given repo. {opts} are the same as used by |:AuLog|.
+    Local mappings (mgid=AuLog, current revision=revision under cursor):
+                                                           *g:frawormap_AuLog*
+                         *g:frawormap_AuLog_File* *g:frawormap_AuLog_Enter*
+                         *g:frawormap_AuLog_User* *g:frawormap_AuLog_Update*
+                         *g:frawormap_AuLog_Rev*  *g:frawormap_AuLog_Branch*
+                         *g:frawormap_AuLog_Diff* *g:frawormap_AuLog_Fdiff*
+                         *g:frawormap_AuLog_Next* *g:frawormap_AuLog_RFdiff*
+                         *g:frawormap_AuLog_Prev* *g:frawormap_AuLog_Rdiff*
+                         *g:frawormap_AuLog_Open* *g:frawormap_AuLog_Annotate*
+                         *g:frawormap_AuLog_Date*     *aurum-m-AuLog_Date*
+                             *aurum-m-AuLog_File*     *aurum-m-AuLog_Enter*
+                             *aurum-m-AuLog_User*     *aurum-m-AuLog_Update*
+                             *aurum-m-AuLog_Rev*      *aurum-m-AuLog_Branch*
+                             *aurum-m-AuLog_Diff*     *aurum-m-AuLog_Fdiff*
+                             *aurum-m-AuLog_Next*     *aurum-m-AuLog_RFdiff*
+                             *aurum-m-AuLog_Prev*     *aurum-m-AuLog_Rdiff*
+                             *aurum-m-AuLog_Open*     *aurum-m-AuLog_Annotate*
+    Mapname  LHS  Description ~
+    Enter    <CR> Depending on element under cursor:
+                  Element          Action ~
+                  branch           Same as Branch mapping
+                  user             Same as User mapping
+                  time             Same as Date mapping
+                  revision number  Same as Rev mapping
+                  revision hash    Same as Rev mapping
+                  filename         Same as Open mapping
+                  (any other)      Same as RFdiff mapping
+    File     gF   View history of one of the files present in revision under 
+                  cursor (if there is a filename under cursor then it will be 
+                  used)
+    User     gu   View only revisions that were added by the user who added 
+                  current one
+    Date     gD   View only revisions that were added in the same month as 
+                  current one
+    Branch   gb   View only revisions that are in the same branch as current
+    Rev      gr   View only ancestors of current revision
+    Fdiff    gd   View changes between repository state at current revision 
+                  and working directory state
+    RFdiff   gc   View changes introduced by current revision
+    Diff      d   View diff between working directory and current revision 
+                  versions of one of the files
+    Rdiff     c   View changes introduced by current revision to one of the 
+                  files
+    Next      K   Jump to first child of current revision
+                  Accepts count, in this case first child is taken {count} 
+                  times ({count}=2: first child of first child)
+    Prev      J   Jump to first parent of current revision
+                  Accepts count, in this case first parent is taken {count} 
+                  times ({count}=2: first parent of first parent)
+    Open      o   Open one of the files changed in current revision
+    Annotate  a   Open one of the files changed in current revision and 
+                  annotate it
+    Update    U   Update working directory to current revision
+                  Accepts count: {count}=3: update to first parent of first 
+                  parent of current revision
+
+    Note These mappings are defined for aurumlog filetype.
+
+aurum://status:{repo}:{opts}                                  *aurum://status*
+    View status of a repository {repo}. {opts} are the same as used by 
+    |:AuStatus|.
+    Local mappings (mgid=AuStatus, without leader by default):
+                                                        *g:frawormap_AuStatus*
+                 *g:frawormap_AuStatus_Open*   *g:frawormap_AuStatus_ROpen*
+                 *g:frawormap_AuStatus_RFdiff* *g:frawormap_AuStatus_Fdiff*
+                 *g:frawormap_AuStatus_Diff*   *g:frawormap_AuStatus_vDiff*
+                 *g:frawormap_AuStatus_Rdiff*  *g:frawormap_AuStatus_vRdiff*
+                 *g:frawormap_AuStatus_Vdiff*  *g:frawormap_AuStatus_RVdiff*
+                 *g:frawormap_AuStatus_Commit* *g:frawormap_AuStatus_Annotate*
+                 *g:frawormap_AuStatus_Track*  *g:frawormap_AuStatus_vCommit*
+                 *g:frawormap_AuStatus_vTrack* *g:frawormap_AuStatus_Forget*
+                 *g:frawormap_AuStatus_vForget*    *aurum-m-AuStatus_vForget*
+                     *aurum-m-AuStatus_Open*       *aurum-m-AuStatus_ROpen*
+                     *aurum-m-AuStatus_RFdiff*     *aurum-m-AuStatus_Fdiff*
+                     *aurum-m-AuStatus_Diff*       *aurum-m-AuStatus_vDiff*
+                     *aurum-m-AuStatus_Rdiff*      *aurum-m-AuStatus_vRdiff*
+                     *aurum-m-AuStatus_Vdiff*      *aurum-m-AuStatus_RVdiff*
+                     *aurum-m-AuStatus_Commit*     *aurum-m-AuStatus_Annotate*
+                     *aurum-m-AuStatus_Track*      *aurum-m-AuStatus_vCommit*
+                     *aurum-m-AuStatus_vTrack*     *aurum-m-AuStatus_Forget*
+    Mapname  LHS  Description ~
+    Open     <CR> Open file under cursor
+    ROpen     o   Open file under cursor as it was at first revision (working 
+                  directory revision by default)
+    RFdiff   gd   View changes introduced by first revision
+    Fdiff    gc   View diff between two revisions (or working directory state 
+                  and first revision)
+    Diff      d   Like RFdiff, but show only current file
+    vDiff     d   Like RFdiff, but shows files selected in visual mode
+    Rdiff     c   Like Fdiff, but show only current file
+    vRdiff    c   Like Fdiff, but shows files selected in visual mode
+    Vdiff     D   Like Diff, but use |vimdiff| to view changes
+    RVdiff    C   Like Rdiff, but use |vimdiff| to view changes
+    Annotate  a   Open file under cursor and annotate it
+    Commit    i   Commit changes made to file under cursor
+    vCommit   i   Commit changes made to selected files
+    Track     A   Make file under cursor be tracked by VCS
+    vTrack    A   Make selected files be tracked by VCS
+    Forget    R   Make VCS forget file under cursor
+    vForget   R   Make VCS forget selected files
+
+    Note all mappings that have v{Mapname} version also accept count. In this 
+         case it will work like selecting {count} lines starting from current 
+         one and invoking v{Mapname}
+    Note These mappings are defined for aurumstatus filetype.
+
+------------------------------------------------------------------------------
+2.4. Global mappings                                          *aurum-mappings*
+                                                           *g:frawormap_Aurum*
+
+All mappings (not only global) are created using |frawor-f-mapgroup.add| and 
+thus can customized using |g:frawormap_mgid| and |g:frawormap_mgid_mapname|. 
+For global mappings mgid=Aurum, default leader is “<Leader>a”. Unlike other 
+mappings (which call internal functions), global ones call one of :Au* 
+commands. Present mappings:
+
+                      *g:frawormap_Aurum_Commit* *g:frawormap_Aurum_CommitAll*
+                      *g:frawormap_Aurum_ROpen*  *g:frawormap_Aurum_Revert*
+                      *g:frawormap_Aurum_Vdiff*  *g:frawormap_Aurum_Diff*
+                      *g:frawormap_Aurum_Fdiff*  *g:frawormap_Aurum_Annotate*
+                      *g:frawormap_Aurum_Status* *g:frawormap_Aurum_Record*
+                      *g:frawormap_Aurum_Log*    *g:frawormap_Aurum_LogFile*
+                      *g:frawormap_Aurum_URL*    *g:frawormap_Aurum_LineURL*
+                      *g:frawormap_Aurum_Track*  *g:frawormap_Aurum_Forget*
+                      *g:frawormap_Aurum_FVdiff*     *aurum-m-Aurum-FVdiff*
+                          *aurum-m-Aurum_Commit*     *aurum-m-Aurum_CommitAll*
+                          *aurum-m-Aurum_ROpen*      *aurum-m-Aurum_Revert*
+                          *aurum-m-Aurum_Vdiff*      *aurum-m-Aurum_Diff*
+                          *aurum-m-Aurum_Fdiff*      *aurum-m-Aurum_Annotate*
+                          *aurum-m-Aurum_Status*     *aurum-m-Aurum_Record*
+                          *aurum-m-Aurum_Log*        *aurum-m-Aurum_LogFile*
+                          *aurum-m-Aurum_URL*        *aurum-m-Aurum_LineURL*
+                          *aurum-m-Aurum_Track*      *aurum-m-Aurum_Forget*
+Mapname    LHS  Command     Description ~
+Commit      i   AuCommit    Commit changes to current file
+CommitAll   I   AuCommit**  Commit changes to all files
+ROpen       o   AuFile      View contents of the current file as it was at the 
+                            the working directory revision
+Revert      O   AuFile . : replace
+                            Replace current buffer with contents of the 
+                            current file as it was at the working directory 
+                            revision
+Vdiff       D   AuVimDiff   View differencies between buffer contents and 
+                            version from working directory revision
+Diff        d   AuDiff :    Like Vdiff, but view them in diff format
+Fdiff      gd   AuDiff      Like Diff, but view changes in all files
+FVdiff     gD   AuVimDiff full
+                            View all differencies between working directory 
+                            state and working directory revision
+Annotate    a   AuAnnotate  Annotate current buffer
+Status      s   AuStatus | wincmd p
+                            Open status window and switch back
+Record      r   AuRecord    Switch to record mode
+Log         L   AuLog       View the revision history
+LogFile     l   AuLog : files :
+                            View revisions where current file was changed
+URL         H   AuHyperlink Create URL where current file can be viewed 
+                            remotely and copy it to clipboard (|quote+|)
+LineURL     h   AuHyperlink line 0
+                            As URL, but also adds URL fragment pointing to 
+                            current line
+Track       A   AuTrack     Make current file be tracked by VCS
+Forget      R   AuJunk forget :
+                            Make VCS forget current file (it won't remove the 
+                            file though)
+
+==============================================================================
+4. Options                                                     *aurum-options*
+
+All options used by aurum are obtained using |frawor-f-getoption| and thus you 
+can write g:aurumOptions.option instead of g:aurum_option. All options are 
+also global-local: you can also define an option for the current buffer using 
+buffer-local b:aurum_option (b:aurumOptions.option) variable.
+
+                                                         *g:aurum_cscachetime*
+*cachetime                   *g:aurum_statuscachetime* *g:aurum_repocachetime*
+    Unsigned integer, defines time since last cache update after which cache 
+    will become invalid. Time is specified in seconds.
+    Type  Default  Used by ~
+    cs       3     |aurum#changeset|
+    status   5     |aurum#status|
+    repo     7     |aurum#repository|, all completion functions
+
+ignorefiles                                              *g:aurum_ignorefiles*
+    List containing 0 or more strings. Determines when “files” option given to 
+    |:AuLog| (or to |aurum://log|) should be ignored. See |aurum-lo-ignfiles|.
+    Default: empty.
+
+closewindow                                              *g:aurum_closewindow*
+    Bool. Determines whether log window should be closed when executing 
+    mappings (except mappings that add a filter and exit mapping).
+    Default:
+
+recheight                                                  *g:aurum_recheight*
+    VimL |expression| that evaluates to unsigned integer or unsigned integer. 
+    Determines height of status window shown in record mode (|aurum-record|).
+    Default: winheight/5 (in empty tab |winheight()| will return roughly the 
+             same value as 'lines').
+
+diffopts                                                    *g:aurum_diffopts*
+    Dictionary. For possible keys see |aurum-diffoptions| (no truncations are 
+    allowed, flags should be turned into “{option : 0}” for “nooption”, 
+    “{option : 1}” for “option”).
+    Default: empty.
+
+usestatwin                                                *g:aurum_usestatwin*
+    Bool. Determines whether sequential calls to |:AuStatus| with same 
+    arguments should use existing status window or open a new one.
+    Default: 1.
+
+remembermsg                                              *g:aurum_remembermsg*
+    Bool. Determines whether message typed in commit buffer should be saved in 
+    case of rollback. This message will appear in commit buffer if you do 
+    |:AuCommit| and tip revision hash is equal to hash of tip revision saved 
+    after previous |:AuCommit| run.
+                                                   *g:AuPreviousCommitMessage*
+                                      *g:AuPreviousTip* *g:AuPreviousRepoPath*
+    Note that this option determines whether message should be saved, not 
+         whether it should be restored. Message will be restored from 
+         g:AuPreviousCommitMessage variable if repository path is equal to 
+         g:AuPreviousRepoPath and tip revision hash is equal to 
+         g:AuPreviousTip. It does not matter who set these variables and what 
+         is the value of “remembermsg” option.
+
+usewin                                                        *g:aurum_usewin*
+    Bool. Determines whether |:AuVimDiff| should use existing window. Existing 
+    window will be used if it is located to the left or right ('diffopt' 
+    contains “vertical”) or below or above ('diffopt' does not contain 
+    “vertical”) current window and has just the same vertical or horizontal 
+    size (vertical if 'diffopt' contains “vertical”, horizontal otherwise).
+    Default: 0.
+
+workdirfiles                                            *g:aurum_workdirfiles*
+    Bool. Determines whether |:AuGrep| should output files in working 
+    directory if they have not changed since revision found.
+    Default: 1.
+
+hypsites                                                    *g:aurum_hypsites*
+    List of pairs, just like |aurum-repo.hypsites|. Defines additional 
+    repository information in case some repository support is not/can not be 
+    added to the aurum.
+    Values of this option are checked before |aurum-repo.hypsites|.
+
+==============================================================================
+5. Globs                                                         *aurum-globs*
+
+Globs used by aurum are similar to globs used by mercurial, but have different 
+implementation: they are transformed into vim regular expressions that are 
+then applied to a list of filenames in normalized form (path/to/file: path 
+comoponents are separated by exactly one forward slash, used path is relative 
+to repository root). Supported metacharacters:
+Meta  Regex     Description ~
+**    .*        Like “*” below, but also match inside subdirectories
+*     [^/]*     Matches any number of any characters in given directory
+?     [^/]      Matches exactly one character in given directory
+[!ab] [^ab]     Matches any character that is neither a nor b (see |/[]|)
+[ab]  [ab]      Matches a or b (see |/[]|)
+{a,b} \(a\|b\)  Matches a or b. Unlike [ab], {a,b} treats a and b as globs
+
+==============================================================================
+6. Log templates                                          *aurum-logtemplates*
+
+Log template is a list of NL-separated lines. Inside a string only two 
+characters are special: newline and $. First designates that here new line 
+should be started. Second designates that next word should be replaced with 
+appropriate value. You can pass additional arguments using ${word}#{args}# 
+syntax where {args} is {positional1},{positional2},...,{keyword}:{value},...
+Accepted {keyword}s are
+Keyword    Description ~
+flbeg      For multiline template strings: determine what string should be 
+           prepended to the first line.
+expr       Use this expression instead of default to get resulting string. 
+           Inside an expression “@@@” refers to original data, “@N@” - to Nth 
+           positional parameter (count starts from zero), “@<@” - to string 
+           that should be prepended to every line (valid for complex multiline 
+           template strings).
+synreg     Pass this regular expression to “syn match”. Useful if you override 
+           output of the {word} using “expr” keyword.
+pref, suf  For some single-line statements (currently: parents, children, 
+           tags, bookmarks and branch): if result of evaluating {word} is 
+           non-empty (for branch: is not equal to "default") add value of the 
+           argument before (pref) or after (suf) the {word}.
+Number of positional parameters is fixed and depends on {word}. You can escape 
+“#” if you need it included into one of parameters. You should also escape 
+backslash, colon (unless it separates {keyword} from value) and comma (unless 
+it separates arguments).
+
+Generator created after parsing templates throws away lines that contain only 
+one {word} that is “parents”, “children”, “tags”, “bookmarks”, “files” or 
+“changes” if it expands to an empty string.
+
+Multiline {word}s have two types:
+1. Simple multiline: line beginnings are added by generator.
+2. Complex multiline: line beginnings are added by expression (using @<@).
+
+When multiline {word} is preceded by another text, this text is repeated at 
+the start of each line. Text that follows multiline {word} is not repeated 
+thus you can see it only on the last line. Example: >
+        S$hide#H# $description#flbeg:F# E
+expands to >
+        FSH First line of description
+        SH second line of description
+        SH last line of description E
+
+Note you can't have two multiline {word}s on one line.
+
+Possible {word}s:
+Word         Description ~
+hide         Requires one positional parameter. $hide#{text}# is just like 
+             plain {text}, except that with $hide {text} will be highlighted 
+             using |hl-Ignore| highlighting group. It is useful if you want to 
+             be able to properly highlight multiline {word}s.
+empty        Nothing. Should be used to include empty line somewhere or force 
+             generator not to throw away some line.
+branch       String, branch name. Accepts one positional parameter which 
+             determines whether “default” branch should be shown. Any value 
+             other then "keep" will tell template engine not to show the 
+             branch name in this case. Default value: "keep".
+hex, user, rev
+             String with value equal to the value of corresponding changeset 
+             property.
+time         String representation of the date. Accepts one positional 
+             parameter: string that will be passed to |strftime()| to format 
+             the time. Default value: "%d %b %Y %H:%M".
+parents, children
+             List of space-separated hashes designating parents or children of 
+             current changeset.
+tags, bookmarks
+             List of tags or bookmarks separated by the first positional 
+             parameter (default value: ", ").
+summary      First line of description.
+description  (multiline) Description of a changeset.
+patch        (multiline) Differences introduced by processed changeset. Not 
+             shown unless “patch” option was given.
+stat         (multiline) Summary of changes introduced by processed changeset. 
+             Not shown unless “stat” option was given.
+files, changes
+             (complex multiline) Files that were changed in processed 
+             revision. “files” will only show modified and added files (files 
+             that are present in processed changeset), “changes” will also 
+             show removed files. Accepts one positional parameter: string used 
+             to separate two filenames (default: ", "). Not shown unless 
+             “showfiles” option was given.
+renames, copies
+             (complex multiline) Renames or copies in a form {src}{p1}{dest}. 
+             Accepts one positional parameter: string used to separate two 
+             filenames (default: " to "). Not shown unless “showrenames” or 
+             “showcopies” option was given.
+
+------------------------------------------------------------------------------
+6.1. Built-in template styles                               *aurum-logstyles*
+
+default                                                  *aurum-style-default*
+    Default style: >
+      Changeset 1:454ae580ce74 (branch A)
+      Commited 01 Jan 2011 00:00 by Bob <bob@example.com>
+      Tags: tip
+      Files: foo/bar.txt, foo/barbaz.txt, foo/baz.txt
+      Renamed foo/baz.txt to foo/bar.txt
+      Copied foo/baz.txt to foo/barbaz.txt
+        Guess bar is better name for baz
+        And barbaz is not worse
+
+hgdef                                                      *aurum-style-hgdef*
+    Style that mimics default “hg log” style: >
+      changeset:   1:454ae580ce74
+      branch:      A
+      tags:        tip
+      user:        Bob <bob@example.com>
+      date:        Sun Jan 01 00:00:00 2011
+      files:       foo/bar.txt foo/barbaz.txt foo/baz.txt
+      summary:     Guess bar is better name for baz
+
+hgdescr                                                  *aurum-style-hgdescr*
+    Style that mimics default “hg log” style with verbose flag on (the only 
+    difference is description instead of summary as other shown items are 
+    controlled by other |:AuLog| options): >
+      changeset:   1:454ae580ce74
+      branch:      A
+      tags:        tip
+      user:        Bob <bob@example.com>
+      date:        Sun Jan 01 00:00:00 2011
+      files:       foo/bar.txt foo/barbaz.txt foo/baz.txt
+      description:
+      Guess bar is better name for baz
+      And barbaz is not worse
+
+compact                                                  *aurum-style-compact*
+    Style that mimics “compact” “hg log” style: >
+      1[tip]   454ae580ce74 2011-01-01 00:00 Bob <bob@example.com>
+        Guess bar is better name for baz
+
+cdescr                                                    *aurum-style-cdescr*
+    Like “compact” above, but with full description instead of summary: >
+      1[tip]   454ae580ce74 2011-01-01 00:00 Bob <bob@example.com>
+        Guess bar is better name for baz
+        And barbaz is not worse
+
+Note that in all styles handling of “stat” and “patch” |:AuLog| options is the 
+     same: required info is added to the end of the block, “stat” goes first.
+
+     Timezone info is never present as aurum does not use it, all dates are 
+     shown using local time. I won't fix this: Vim built-in |strftime()| 
+     function does not accept timezone argument and I do not think it is worth 
+     implementing in vimscript.
+
+==============================================================================
+7. Record mode                                                  *aurum-record*
+
+Record mode is used to interactively select changes that should be committed. 
+|:AuRecord| command opens a new tab page and splits it into three windows: 
+recorded, original and status:
+  +------------------+------------------+ `
+  |                  |                  | `
+  |                  |                  | `
+  |                  |                  | `
+  |     recorded     |     original     | `
+  |                  |                  | `
+  |                  |                  | `
+  |                  |                  | `
+  +------------------+------------------+ `
+  |                                     | `
+  |                status               | `
+  |                                     | `
+  +-------------------------------------+ `
+After entering record mode status window becomes focused. It contains output 
+similar to the output of |:AuStatus| command, but with one additional column 
+added at the beginning of the line. This column may contain one of four status 
+characters:
+Character  Meaning ~
+    -      Changes done to this file won't be committed (default)
+    +      All changes done to this file will be committed
+    *      You have made changes to this file in record mode. These changes 
+           will be commited
+    ^      You have made changes to this file in record mode, but then chose 
+           not to commit them. They will reappear again when you use 
+           |aurum-m-AuRecord_Edit| mapping
+In status window there are additional mappings available (mgid=AuRecord, 
+without leader by default):                             *g:frawormap_AuRecord*
+                       *g:frawormap_AuRecord_Edit* *g:frawormap_AuRecord_Undo*
+                           *aurum-m-AuRecord_Edit*     *aurum-m-AuRecord_Undo*
+Mapping  LHS  Description ~
+Edit      O   Edit file under cursor. In original window there will be changed 
+              version of file (for modified files) or nothing (files with 
+              other statuses when edited for the first time), in recorded 
+              window there will be version of file that will be committed 
+              (initially unmodified compared to version stored in repository). 
+              If file is edited for the second time in recorded window there 
+              will be version of file modified in record mode and in original 
+              window there will be backup of the file (or version from 
+              repository if file in question was removed or deleted).
+Undo      u   Undo adds/removes of the file. Won't undo changes made to the 
+              file using Edit mapping.
+:AuRecord also makes some AuStatus mappings change their meaning:
+Mapping                 New meaning ~
+|aurum-m-AuStatus_Track|  select changes made to file(s) for committing
+|aurum-m-AuStatus_Commit| finish record mode and commit selected changes
+|aurum-m-AuStatus_Forget| unselect changes made to file(s), don't commit them
+
+Note that if you quit commit buffer or close status window you will also exit 
+     record mode discarding all changes you have made.
+
+:AuRecord defines the following mappings in recorded window 
+(mgid=AuRecordLeft, default leader: "<Leader>"):    *g:frawormap_AuRecordLeft*
+          *g:frawormap_AuRecordLeft_Discard* *g:frawormap_AuRecordLeft_Exit*
+          *g:frawormap_AuRecordLeft_Commit*  *g:frawormap_AuRecordLeft_Remove*
+              *aurum-m-AuRecordLeft_Discard*     *aurum-m-AuRecordLeft_Exit*
+              *aurum-m-AuRecordLeft_Commit*      *aurum-m-AuRecordLeft_Remove*
+Mapping  LHS  Description ~
+Discard   x   Discard all changes made to edited file. If file is opened for 
+              the second time only unsaved changes will be discarded
+Exit      X   Exit record mode, discarding all changes made to all files and 
+              not committing anything
+Commit    i   Commit selected changes and exit record mode
+Remove    R   Like Discard, but also unselect it (makes difference if file is 
+              edited for the second time)
+
+==============================================================================
+8. Internal objects                                            *aurum-objects*
+
+------------------------------------------------------------------------------
+8.1. Repository                                             *aurum-repository*
+
+Repository is a dictionary containing at least the following keys:
+
+cslist :: [ cs ]                                           *aurum-repo.cslist*
+    List of |aurum-changeset| objects. If it is not empty, then for each 
+    changeset in repository cs is repo.cslist[cs.rev]. It is empty by default 
+    and populated only when you call |aurum-rf-getchangesets|. See also 
+    |aurum-cs.rev|.
+changesets :: {hex : cs}                               *aurum-repo.changesets*
+    Dictionary containing all |aurum-changeset| objects that are associated 
+    with the repository. For each changeset cs is repo.changesets[cs.hex].
+csnum :: UInt                                               *aurum-repo.csnum*
+    Total number of revisions in repository. For any changeset 
+    cs.rev<repo.csnum. See also |aurum-cs.rev|.
+local :: Bool                                               *aurum-repo.local*
+    1 if repository is local, 0 otherwise.
+    Note that aurum is really useless for working with remote repositories.
+path :: path                                                 *aurum-repo.path*
+    String which was passed to |aurum-rf-repo| function.
+hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
+    List of pairs that determines how string returned by 
+    |aurum-rf-getrepoprop| with (repo, "url") as arguments should be 
+    transformed into a URL by |:AuHyperlink| command. First expression is 
+    “matcher”: if it evaluates to true, then expressions from the following 
+    dictionary will be used, keys are same as url types (|aurum-ho-url|). 
+    Unsupported URL types should not be represented by dictionary key. 
+    Additional keys “hline” and “aline” stand for URL fragments pointing to 
+    the specified line (“hline” for “html”, “aline” for “annotate”) (without 
+    the leading hash).
+    Local variables you can use in expressions:
+        Variable   Description ~
+        repo       Repository object (|aurum-repository|).
+        cs         Changeset object (|aurum-changeset|) (url≠clone,push).
+        url        URL of remote repository from local repository 
+                   configuration.
+        protocol, user, domain, port, path
+                   Parts of the URL: {protocol}://{user}@{domain}{path}, 
+                   {path} must start with either forward slash or colon.
+        matcher    First item in the current pair.
+        dict       Second item in the current pair.
+        utype      URL type.
+        line       Line number (only inside “hline” and “aline” expressions).
+    You should not normally use or alter this key, use |g:aurum_hypsites| if 
+    you want to add support for particular remote repository.
+functions :: {String : FRef}                            *aurum-repo.functions*
+    Dictionary that contains all driver-specific functions. All functions 
+    except |aurum-rf-repo| accept repository object as its first argument, so 
+    it is not mentioned in function descriptions. Here is the list:
+  repo :: path -> repo                                         *aurum-rf-repo*
+    Creates new repository object using repository located at given path.
+    Note you must not ever use this directly, this is to be called by repo.get 
+         function from plugin/aurum/repo. If you use it directly, you will be 
+         missing some setup that will render newly created object useless.
+                                                             *aurum-rf-commit*
+  commit :: message[, [ file ][, user[, date[, closebranch[, force]]]]] -> _
+    Commit changes made to specified files (default depends on VCS, normally 
+    it is `commit changes made to all tracked files (including additions and 
+    removes))'. “closebranch” and “force” arguments have Bool type, “user” and 
+    “date” are strings. Neither “user” nor “date” argument should have any 
+    normalized form, they just should be accepted by VCS.
+  update :: hex, force                                       *aurum-rf-update*
+    Update working directory to changeset {hex}.
+  move :: force, file, file -> _                               *aurum-rf-move*
+  copy :: force, file, file -> _                               *aurum-rf-copy*
+    Move or copy given file (second argument) to given destination (third 
+    argument).
+  forget :: file -> _                                        *aurum-rf-forget*
+  remove :: file -> _                                        *aurum-rf-remove*
+  add    :: file -> _                                        *aurum-rf-add*
+  ignore :: file -> _                                        *aurum-rf-ignore*
+    Forget, remove, add (make tracked) or ignore (add to .hgignore or 
+    something similar) given file. “ignore” function properly escapes file if 
+    it happen to contain any wildcards.
+  ignoreglob :: glob -> _                                *aurum-rf-ignoreglob*
+    Add given glob to .hgignore or similar.
+                                                               *aurum-rf-grep*
+  grep :: pattern, [ file ], [ Either hex (hex, hex) ], ic, wdf -> qflist
+    Search repository for given pattern and return results in a list that can 
+    be passed to |setqflist()| function with small modifications (see below). 
+    Second argument here controls what files should be searched for. Third 
+    controls revisions that are to be searched (tuple variant: range of 
+    revisions). {ic} determines whether case should be ignored and {wdf} 
+    determines whether grep should output files in working directory if they 
+    have not changed since found revision.
+    Note: If you want to use grep() directly, you should remember that 
+          “filename” key may contain either an absolute filename or pair 
+          (revision, filename (relative to repository root)). Second is to be 
+          transformed into |aurum://file| path.
+                                                             *aurum-rf-status*
+  status :: [hex[, hex[, [ file ]]]] -> {status : [ files ]}
+    Returns dictionary where values are lists of files and keys are 
+    "modified", "added" (new tracked files), "removed" (made untracked, not 
+    necessary deleted from filesystem), "deleted" (just deleted from 
+    filesystem without making files untracked), "unknown" (new untracked 
+    files), "ignored" and "clean" (unmodified).
+  dirty :: file -> Bool                                       *aurum-rf-dirty*
+    Check whether file is “dirty” (meaning that it has changes that can be 
+    committed).
+  annotate :: repo, hex, file -> [ rev ]                   *aurum-rf-annotate*
+    Returns a list of revision numbers: one revision number for each line of 
+    the file as it was at given changeset.
+  diff :: hex, hex, [ file ], diffopts -> [ String ]           *aurum-rf-diff*
+    Returns list of strings (similar to |readfile()| output with 'b' flag set) 
+    that contains changes made to given files between given revisions. If list 
+    of files is empty, then changes made to all files will be returned. See 
+    |aurum-diffopts| for description of {diffopts} argument.
+                                                       *aurum-rf-difftobuffer*
+  difftobuffer :: bufnr, hex, hex, [ file ], diffopts -> + buffer
+    Like writing output of |aurum-rf-diff| to specified buffer.
+  diffre :: diffopts -> regex                                *aurum-rf-diffre*
+    Returns a regular expression that will be used for searching diff section 
+    headers (normally lines starting with ^diff) and obtaining file names from 
+    them. Is used by a number of command for obtaining current file name while 
+    in diff buffer and also by |aurum-rf-getstats| function.
+  getstats :: diff, diffopts -> stats                      *aurum-rf-getstats*
+    Returns a dictionary describing summary of changes described in {diff} (it 
+    is what |aurum-rf-diff| returns). Dictionary will contain the following 
+    keys:
+    Key         Description ~
+    insertions  Number of lines inserted.
+    deletions   Number of lines deleted.
+    files       Dictionary where keys are file names and values are 
+                dictionaries with two keys: “insertions” and “deletions”. They 
+                contain same information as above stats keys, but these 
+                statistics refers to one file only.
+  getrepoprop :: propname -> propvalue                  *aurum-rf-getrepoprop*
+    Get some repository property. Supported {propname}s:
+    Property name  Description ~
+    tagslist, brancheslist, bookmarkslist
+                   List of strings containing tags, branches and bookmarks 
+                   present in current repo respectively. Is used for 
+                   completion in commands that accept {rev} argument.
+    url            Remote repository URL. For mercurial it is either 
+                   paths.default-push or paths.default whichever is defined.
+  getchangesets :: () -> [ cs ]                       *aurum-rf-getchangesets*
+    Pull all changesets contained in repository into |aurum-repo.changesets| 
+    dictionary. If this function is not called, then |aurum-repo.changesets| 
+    dictionary contains only changesets that were used at least ones. Returns 
+    list of changesets as contained in |aurum-repo.cslist|.
+  getcs :: hex -> cs                                          *aurum-rf-getcs*
+    Returns |aurum-changeset| object which has given hash. See also 
+    |aurum-cs.hex|.
+  getcsprop :: cs | hex, propname -> propvalue            *aurum-rf-getcsprop*
+    Returns requested changeset property. Can accept either |aurum-changeset| 
+    object or changeset hash. “propname” can be a name of any property 
+    described in |aurum-changeset| section, but it should be normally used for 
+    pulling properties that are not obtained by |aurum-rf-getcs| by default: 
+    “files”, “changes”, “renames”, “copies”, “allfiles”, “chidlren”.
+  getrevhex :: csdescr -> hex                             *aurum-rf-getrevhex*
+    Given some changeset description (it may be tag, bookmark, branch name, 
+    revision number, ... - whatever VCS supports) get changeset hash.
+    Note that functions mentioned above may support not only revision hashes 
+         in place of {hex} arguments, but also whatever “getrevhex” supports, 
+         but this is not guaranteed. For example, status() accepts revision 
+         number in both mercurial drivers, but though zero is a valid 
+         revision, it is used to indicate absence of an argument and thus you 
+         have to write '0' (String) where you want to write just 0 (Number).
+  gettiphex :: () -> hex                                  *aurum-rf-gettiphex*
+    Get changeset hash of the last revision in a repository.
+  getworkhex :: () -> hex                                *aurum-rf-getworkhex*
+    Get changeset hash of the working directory revision.
+  getwork :: () -> cs                                       *aurum-rf-getwork*
+    Get changeset object for the working directory revision.
+  updatechangesets :: () -> _                      *aurum-rf-updatechangesets*
+    Updates data stored in repository. Is called automatically when you get 
+    the repository object unless this object is obtained from cash used by 
+    |aurum#repository|.
+
+------------------------------------------------------------------------------
+8.2. Changeset                                               *aurum-changeset*
+
+Changeset is a dictionary containing the following keys (some of them may be 
+not present by default and will be added only after running 
+|aurum-rf-getcsprop|):
+
+Key          Description ~
+hex          Revision hash                                      *aurum-cs.hex*
+rev          Revision number                                    *aurum-cs.rev*
+time         Time when cs was added (in second since epoch)    *aurum-cs.time*
+description  Changeset description                      *aurum-cs.description*
+user         Name of the user who added the changeset          *aurum-cs.user*
+parents      List of revision parents hashes                *aurum-cs.parents*
+children     List of revision children hashes              *aurum-cs.children*
+branch       Branch name                                     *aurum-cs.branch*
+tags         List of tags associated with the changeset        *aurum-cs.tags*
+bookmarks    List of bookmarks associated with the cs     *aurum-cs.bookmarks*
+allfiles     List of all files present in the revision     *aurum-cs.allfiles*
+files        List of files present in cs that were modified   *aurum-cs.files*
+changes      List of files that were modified in cs         *aurum-cs.changes*
+             (unlike |aurum-cs.files| contains removed files)
+renames      Dictionary {newname : oldname}                 *aurum-cs.renames*
+copies       Dictionary {copyname : originname}              *aurum-cs.copies*
+
+vim: ft=help:tw=78

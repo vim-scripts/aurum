@@ -1,0 +1,40 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=3828
+
+
+This plugin provides a vim <--> VCS (currently only mercurial) integration for 
+your projects. Features:
+  • Partially committing changes (:AuRecord).
+  • Viewing file state at particular revision (aurum://file, :AuFile).
+  • Viewing uncommited changes in a vimdiff, as well as changes between 
+    specific revisions (:AuVimDiff). It is also possible to open multiple 
+    tabs with all changes to all files viewed as side-by-side diffs.
+  • Viewing revisions log (:AuLog). Output is highly customizable.
+  • Viewing working directory status (:AuStatus).
+  • Commiting changes (:AuCommit), commit messages are remembered in case of 
+    rollback (g:aurum_remembermsg).
+  • Obtaining various URL’s out of remote repository URL (like URL of the HTML 
+    version of the current file with URL fragment pointing to the current line 
+    attached: useful for sharing) (:AuHyperlink).
+  • aurum#changeset(), aurum#repository() and aurum#status() functions 
+    that are to be used from modeline.
+  • Frontends for various other VCS commands.
+Most commands can be reached with a set of mappings (see aurum-mappings), 
+all mappings are customizable.
+
+Plugin’s mercurial driver is able to use mercurial python API as well as its 
+CLI, but remember that the former is much slower and less tested. In order to 
+use mercurial python API you must have vim compiled with +python (mercurial 
+currently does not support python 3) and have mercurial in python’s sys.path 
+(note: on windows msi installer is not adding mercurial to sys.path, so you 
+won’t be able to use its python API).
+
+Plugin requires some additional plugins:
+  • frawor (https://bitbucket.org/ZyX_I/frawor)
+(with their dependencies).
+
+Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
+      is prefered that you use it for aurum installation.
+
+Project page: https://bitbucket.org/ZyX_I/aurum
+Documentation: http://vimpluginloader.sourceforge.net/doc/aurum.txt.html
+
