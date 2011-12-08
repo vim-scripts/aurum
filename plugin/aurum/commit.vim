@@ -6,7 +6,7 @@ if !exists('s:_pluginloaded')
                 \              '@aurum/status': '0.0',
                 \            '@aurum/cmdutils': '0.0',
                 \             '@aurum/bufvars': '0.0',
-                \                '@aurum/repo': '0.0',
+                \                '@aurum/repo': '1.0',
                 \                '@aurum/edit': '0.0',
                 \                      '@/fwc': '0.3',
                 \                 '@/commands': '0.0',

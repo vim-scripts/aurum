@@ -2,7 +2,7 @@
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/python': '0.0',
-                \             '@/resources': '0.0',
+                \             '@aurum/repo': '1.0',
                 \                    '@/os': '0.0',}, 0)
     finish
 elseif s:_pluginloaded
@@ -93,12 +93,20 @@ endif
 "  http://hg.savannah.nongnu.org/hgweb/mechsys/
 "  https://sharesource.org/hg/alqua/
 "  http://mercurial.tuxfamily.org/mercurialroot/slitaz/tazlito/
+"  git://repo.or.cz/test2.git / http://repo.or.cz/r/test2.git /
+"       ssh://repo.or.cz/srv/git/test2.git
+"  git://gitorious.org/test4/test.git / https://git.gitorious.org/test4/test.git
+"       / git+ssh://git@gitorious.org:test4/test.git
 let s:ghpath='substitute(path, "\\v^[:/]|\\.git$", "", "g")'
 let s:gcproj='matchstr(domain, "\\v^[^.]+")'
 let s:pkbase='"http://".matchstr(domain, ''\v[^.]+\.[^.]+$'')."/projects/".matchstr(path, ''\v.*\/\zs[^~]+'').'.
             \                                                '"/sources/". matchstr(path, "\\v[^~]+$")'
 let s:cpbase='"http://".path[1:].".codeplex.com/SourceControl'
 let s:cbbase='"https://".%s.".".domain."/projects/".%s."/repositories/".%s'
+let s:roproj='matchstr(path, ''\v\/@<=[^/]{-1,}%(%(\.git)?\/*$)@='').".git"'
+let s:robase='"http://".domain."/w/".'.s:roproj
+let s:godomain='substitute(domain, "^git\\.", "", "")'
+let s:gobase='"http://".'.s:godomain.'."/".'.s:ghpath
 let s:cbssh=printf(s:cbbase, 'matchstr(path, "\\v^[^/]+", 1)',
             \                'matchstr(path, ''\v[^/]+%(\/[^/]+\/?$)'')',
             \                'matchstr(path[:-4], "\\v[^/]+$")')
@@ -113,9 +121,18 @@ let s:gb  =  '((!empty(cs.bookmarks))?'.
             \        '"default/master")[8:])'.
             \':'.
             \   '("master")))'
-let s:hypsites=[
-\['domain is? "bitbucket.org"',
-\ {     'html': '"https://".domain.path."/src/".cs.hex."/".file',      'hline': '"cl-".line',
+let s:dport='domain.(empty(port)?"":":".port)'
+let s:link='shellescape("http://".'.s:dport.'.path)'
+" TODO cache
+let s:dl=    '(executable("curl")?'.
+            \   '(system("curl -L ".'.s:link.')):'.
+            \'(executable("wget")?'.
+            \   '(system("wget -O- ".'.s:link.'))'.
+            \':'.
+            \   '(0)))'
+unlet s:link
+let s:bbdict={
+\       'html': '"https://".domain.path."/src/".cs.hex."/".file',      'hline': '"cl-".line',
 \        'raw': '"https://".domain.path."/raw/".cs.hex."/".file',
 \   'annotate': '"https://".domain.path."/annotate/".cs.hex."/".file', 'aline': '"line-".line',
 \   'filehist': '"https://".domain.path."/history/".file',
@@ -123,7 +140,24 @@ let s:hypsites=[
 \  'changeset': '"https://".domain.path."/changeset/".cs.hex',
 \        'log': '"https://".domain.path."/changesets"',
 \      'clone': '"https://".domain.path',
-\       'push': '"ssh://hg@".domain.path',}],
+\       'push': '"ssh://hg@".domain.path',
+\}
+let s:hgwebdict={
+\       'html': '"http://".'.s:dport.'.path."/file/".cs.hex."/".file',     'hline': '"l".line',
+\        'raw': '"http://".'.s:dport.'.path."/raw-file/".cs.hex."/".file',
+\   'annotate': '"http://".'.s:dport.'.path."/annotate/".cs.hex."/".file', 'aline': '"l".line',
+\   'filehist': '"http://".'.s:dport.'.path."/log/".cs.hex."/".file',
+\  'changeset': '"http://".'.s:dport.'.path."/rev/".cs.hex',
+\        'log': '"http://".'.s:dport.'.path."/graph"',
+\      'clone': '"http://".'.s:dport.'.path',
+\}
+unlet s:dport
+let s:hypsites=[
+\['domain is? "bitbucket.org" && protocol[:2] is? "git"',
+\ map(copy(s:bbdict), '(v:key is# "push" || v:key is# "clone")? '.
+\                           '("\"git+".v:val[1:]):'.
+\                           '(substitute(v:val, "\\Vcs.hex", s:gb, ""))')],
+\['domain is? "bitbucket.org"', s:bbdict],
 \['domain is? "github.com"',
 \ {     'html': '"https://".domain."/".'.s:ghpath.'."/blob/".'.s:gb.'."/".file',   'hline': '"L".line',
 \        'raw': '"https://".domain."/".'.s:ghpath.'."/raw/". '.s:gb.'."/".file',
@@ -133,7 +167,7 @@ let s:hypsites=[
 \  'changeset': '"https://".domain."/".'.s:ghpath.'."/commit/".'.s:gb.'',
 \        'log': '"https://".domain."/".'.s:ghpath.'."/commits"',
 \      'clone': '"git://".domain."/".'.s:ghpath,
-\       'push': '"git+ssh://git@".domain.":".'.s:ghpath,}],
+\       'push': '"git+ssh://git@".domain.":".'.s:ghpath.'.".git"',}],
 \['domain =~? "\\Vhg.sourceforge.net\\$"',
 \ {     'html': '"http://".domain."/hgweb".path[7:]."/file/".cs.hex."/".file',     'hline': '"l".line',
 \        'raw': '"http://".domain."/hgweb".path[7:]."/raw-file/".cs.hex."/".file',
@@ -150,7 +184,7 @@ let s:hypsites=[
 \  'changeset': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=commitdiff;hb=".'.s:gb,
 \        'log': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=log"',
 \      'clone': '"http://".domain.":8000".path',
-\       'push': '"ssh://".user."@".domain.path',}],
+\       'push': '"git+ssh://".user."@".domain.path',}],
 \['domain =~? "\\Vsvn.sourceforge.net\\$"',
 \ {     'html': '"http://".domain."/viewvc".path[8:]."/".file."?view=log"',
 \        'raw': '"http://".domain."/viewvc".path[8:]."/".file',
@@ -174,6 +208,15 @@ let s:hypsites=[
 \      'clone': 'url',}],
 \['domain is? "code.google.com"',
 \ {     'html': '"http://code.google.com/".substitute(path, "/$", "", "")."/source/browse/".file."?r=".'.s:gb,}],
+\['domain =~? ''\v^%(git\.)?gitorious\.org$''',
+\ {     'html': s:gobase.'."/blobs/".'.s:gb.'."/".file',       'hline': '"line".line',
+\        'raw': s:gobase.'."/blobs/raw/".'.s:gb.'."/".file',
+\   'annotate': s:gobase.'."/blobs/blame/".'.s:gb.'."/".file', 'aline': '"line".line',
+\   'filehist': s:gobase.'."/blobs/history/".'.s:gb.'."/".file',
+\  'changeset': s:gobase.'."/commit/".'.s:gb,
+\        'log': s:gobase.'."/commits/".'.s:gb,
+\      'clone': '"git://".'.s:godomain.'."/".'.s:ghpath,
+\       'push': '"git+ssh://git@".'.s:godomain.'.":".'.s:ghpath.'.".git"',}],
 \['domain is? "hg.assembla.com"',
 \ {     'html': '"http://trac-".domain.path."/browser/".file."?rev=".cs.hex',                'hline': '"L".line',
 \   'annotate': '"http://trac-".domain.path."/browser/".file."?annotate=blame&rev=".cs.hex', 'aline': '"L".line',
@@ -225,25 +268,24 @@ let s:hypsites=[
 \        'log': s:pkbase.'."/history"',
 \      'clone': '"https://".domain."/hg/".matchstr(path, "\\v[^/]+$")',
 \       'push': '"ssh://".domain."/".matchstr(path, "\\v[^/]+$")',}],
+\['domain is? "repo.or.cz"',
+\ {     'html': s:robase.'."/blob/".'.s:gb.'.":/".file',  'hline': '"l".line',
+\        'raw': s:robase.'."/blob_plain/".'.s:gb.'.":/".file',
+\   'annotate': s:robase.'."/blame/".'.s:gb.'.":/".file', 'aline': '"l".line',
+\   'filehist': s:robase.'."/history/".'.s:gb.'.":/".file',
+\  'changeset': s:robase.'."/commit/".'.s:gb,
+\        'log': s:robase.'."/log/".'.s:gb,
+\      'clone': '"git://".domain."/".'.s:roproj,
+\       'push': '"git+ssh://".domain."/srv/git/".'.s:roproj,}],
 \['domain is? "sharesource.org" && path[:2] is? "/hg"',
-\ {     'html': '"https://".domain.path."/file/".cs.hex."/".file',     'hline': '"l".line',
-\        'raw': '"https://".domain.path."/raw-file/".cs.hex."/".file',
-\   'annotate': '"https://".domain.path."/annotate/".cs.hex."/".file', 'aline': '"l".line',
-\   'filehist': '"https://".domain.path."/log/".cs.hex."/".file',
-\  'changeset': '"https://".domain.path."/rev/".cs.hex',
-\        'log': '"https://".domain.path."/graph"',
-\      'clone': '"https://".domain.path',}],
+\ map(copy(s:hgwebdict), 'substitute(v:val, "http", "https", "")')],
 \[ 'domain =~? ''\v^%(mercurial\.%(intuxication|tuxfamily)|hg\.mozdev|hg\.savannah\.%(non)?gnu)\.org$'' || '.
-\ '(domain is? "anonscm.debian.org" && path[:2] is? "/hg")',
-\ {     'html': '"http://".domain.path."/file/".cs.hex."/".file',     'hline': '"l".line',
-\        'raw': '"http://".domain.path."/raw-file/".cs.hex."/".file',
-\   'annotate': '"http://".domain.path."/annotate/".cs.hex."/".file', 'aline': '"l".line',
-\   'filehist': '"http://".domain.path."/log/".cs.hex."/".file',
-\  'changeset': '"http://".domain.path."/rev/".cs.hex',
-\        'log': '"http://".domain.path."/graph"',
-\      'clone': '"http://".domain.path',}],
+\ '(domain is? "anonscm.debian.org" && path[:2] is? "/hg") || '.
+\ '('.s:dl.'=~#''\V<link rel="icon" href="\[^"]\*static/hgicon.png" type="image/png" />'')',
+\ s:hgwebdict],
 \]
-unlet s:ghpath s:gcproj s:cbssh s:cbhttps s:pkbase s:cpbase s:gb
+unlet s:ghpath s:gcproj s:cbssh s:cbhttps s:pkbase s:cpbase s:gb s:dl s:hgwebdict s:bbdict s:robase s:roproj s:gobase
+unlet s:godomain
 "▶1 removechangesets :: repo, start_rev_num → + repo
 function s:F.removechangesets(repo, start)
     let changesets=a:repo.changesets
@@ -1225,8 +1267,12 @@ function s:hg.grep(repo, pattern, files, revisions, ignore_case, wdfiles)
     return r
 endfunction
 endif
-"▶1 Post resource
-call s:_f.postresource('mercurial', s:hg)
+"▶1 hg.checkdir :: dir → Bool
+function s:hg.checkdir(dir)
+    return s:_r.os.path.isdir(s:_r.os.path.join(a:dir, '.hg'))
+endfunction
+"▶1 Register driver
+call s:_f.regdriver('Mercurial', s:hg)
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

@@ -13,7 +13,7 @@ setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
             \                 '@aurum/bufvars': '0.0',
-            \                    '@aurum/repo': '0.0',
+            \                    '@aurum/repo': '1.0',
             \                    '@aurum/edit': '0.0',
             \                           '@/os': '0.0',
             \                     '@/mappings': '0.0',})

@@ -11,7 +11,7 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/repo': '0.0',
+execute frawor#Setup('0.0', {'@aurum/repo': '1.0',
             \             '@aurum/bufvars': '0.0',
             \             '@aurum/vimdiff': '0.0',
             \            '@aurum/annotate': '0.0',

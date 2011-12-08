@@ -4,7 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/autocommands': '0.0',
                 \                   '@/functions': '0.0',
                 \                   '@/resources': '0.0',
-                \                   '@aurum/repo': '0.0',
+                \                   '@aurum/repo': '1.0',
                 \                '@aurum/bufvars': '0.0',}, 0)
     call FraworLoad('@/autocommands')
     call FraworLoad('@/functions')

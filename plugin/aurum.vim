@@ -14,7 +14,7 @@ if !exists('s:_pluginloaded')
                 \             '@aurum/status': '0.0',
                 \                '@aurum/log': '0.0',
                 \             '@aurum/commit': '0.0',
-                \               '@aurum/repo': '0.0',
+                \               '@aurum/repo': '1.0',
                 \               '@aurum/edit': '0.0',
                 \            '@aurum/bufvars': '0.0',
                 \            '@aurum/vimdiff': '0.0',}, 0)

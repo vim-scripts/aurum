@@ -15,6 +15,8 @@ CONTENTS                                                      *aurum-contents*
     8. Internal objects                                  |aurum-objects|
         8.1. Repository                                  |aurum-repository|
         8.2. Changeset                                   |aurum-changeset|
+    9. Creating your own driver                          |aurum-new-driver|
+    10. Changelog                                        |aurum-changelog|
 
 ==============================================================================
 1. Intro                                                         *aurum-intro*
@@ -33,7 +35,9 @@ your projects. Features:
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
     attached: useful for sharing) (|:AuHyperlink|).
-  - Frontends for various VCS commands.
+  - |aurum#changeset()|, |aurum#repository()| and |aurum#status()| functions 
+    that are to be used from modeline.
+  - Frontends for various other VCS commands.
 Most commands can be reached with a set of mappings (see |aurum-mappings|), 
 all mappings are customizable.
 
@@ -63,8 +67,8 @@ There are some common things for all commands:
 2. If some command accepts file or glob argument it is likely to be able to 
    get repository location from it, thus “repo” option is not needed (or is 
    even ignored). This also applies to options like “file”/“files”.
-3. Commands accepting filenames or globs also accept “:” meaning `current 
-   file'.                      *aurum-current-revision* *aurum-current-file*
+3. Commands accepting filenames or globs also accept “:” meaning “current 
+   file”.                      *aurum-current-revision* *aurum-current-file*
 4. “current file” and “current revision” are determined in the following 
    fashion:
    1. |aurum://file|:{repo}:{rev}:{file} buffers: current revision is {rev} 
@@ -95,8 +99,8 @@ AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
             containing capitalized first letters of mentined status names 
             (additionally “?” for unknown and “!” for deleted). May be 
             specified more then once. Determines what files should be matched 
-            against given globs: “AuCommit **” is equivalent to `AuCommit 
-            all', but “AuCommit type MARDU **” will also add untracked and 
+            against given globs: “AuCommit **” is equivalent to “AuCommit 
+            all”, but “AuCommit type MARDU **” will also add untracked and 
             remove missing files (like “hg commit -A”). Does not affect 
             “:AuCommit all” and “:AuCommit”, latter will always add current 
             file if it was untracked.
@@ -309,14 +313,14 @@ AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
           AuMove **.txt **.doc
             file.txt     -> file.doc
             dir/file.txt -> dir/file.doc
-<     Note that “AuMove */*.txt **.doc” won't work.
+<     Note that “AuMove */*.txt **.doc” won’t work.
     - Two or more arguments with last one that is a name of existing 
       directory: move files matching given patterns (all arguments but the 
       last one) to given directory (last argument).
     - One or more arguments that have not matched any of the above rules: move 
       files matching given patterns (patterns are all arguments) to the 
       current directory.
-    If “pretend” option is given :AuMove won't actually do anything, just 
+    If “pretend” option is given :AuMove won’t actually do anything, just 
     print what it will do (relative to repository root, not to current 
     directory).
     Note: you must either be at repository root (see |:cd|) or have all 
@@ -347,7 +351,7 @@ AuStatus [{repo}] {opts}                                           *:AuStatus*
     cmd     Command. Determines which command should be used to open 
             |aurum://status| buffer. Default: “silent botright new”. If 
             specified, |g:aurum_usestatwin| option has no effect and status 
-            window also won't be resized.
+            window also won’t be resized.
 
 AuTrack[!] [glob1 [...]]                                            *:AuTrack*
     Make files matching given globs be tracked by VCS (current file if no 
@@ -355,7 +359,7 @@ AuTrack[!] [glob1 [...]]                                            *:AuTrack*
     track current file name. Adding “!” is equivalent to passing “--force” to 
     the underlying VCS.
     Note that this command matches files that has unknown and removed status, 
-    so it won't make ignored files tracked.
+    so it won’t make ignored files tracked.
 
 AuUpdate[!] [{rev} [{repo}]]                                       *:AuUpdate*
     Update working directory state to revision {rev}. With “!” it will ignore 
@@ -458,7 +462,7 @@ starting with aurum://. Some things you should know:
   and comma for non-list option arguments, colon, semicolon and comma for list 
   option arguments) and percent sign, but in this case you may run into 
   trouble: for example, “*” produces |E480| (no match) error on windows 
-  because it can't be escaped with backslash which is path separator.
+  because it can’t be escaped with backslash which is path separator.
 - All mappings are created using |frawor-f-mapgroup.add| and thus can 
   customized using |g:frawormap_mgid| and |g:frawormap_mgid_mapname|.
 - All buffers that define mappings also define Exit mapping (with default 
@@ -507,7 +511,7 @@ aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
 aurum://commit:{repo}:{user}:{date}:{files}                   *aurum://commit*
     Open buffer that prompts for a commit message. Writing this buffer will 
     record the commit and close the buffer. It is the only pseudo-protocol 
-    type you can't use this with |:read|.
+    type you can’t use this with |:read|.
     Local mappings (mgid=AuCommitMessage, default leader: "<LocalLeader>"):
                                                  *g:frawormap_AuCommitMessage*
                                           *g:frawormap_AuCommitMessage_Commit*
@@ -751,7 +755,7 @@ LineURL     h   AuHyperlink line 0
                             current line
 Track       A   AuTrack     Make current file be tracked by VCS
 Forget      R   AuJunk forget :
-                            Make VCS forget current file (it won't remove the 
+                            Make VCS forget current file (it won’t remove the 
                             file though)
 
 ==============================================================================
@@ -892,7 +896,7 @@ expands to >
         SH second line of description
         SH last line of description E
 
-Note you can't have two multiline {word}s on one line.
+Note you can’t have two multiline {word}s on one line.
 
 Possible {word}s:
 Word         Description ~
@@ -990,7 +994,7 @@ Note that in all styles handling of “stat” and “patch” |:AuLog| options 
      same: required info is added to the end of the block, “stat” goes first.
 
      Timezone info is never present as aurum does not use it, all dates are 
-     shown using local time. I won't fix this: Vim built-in |strftime()| 
+     shown using local time. I won’t fix this: Vim built-in |strftime()| 
      function does not accept timezone argument and I do not think it is worth 
      implementing in vimscript.
 
@@ -1018,7 +1022,7 @@ similar to the output of |:AuStatus| command, but with one additional column
 added at the beginning of the line. This column may contain one of four status 
 characters:
 Character  Meaning ~
-    -      Changes done to this file won't be committed (default)
+    -      Changes done to this file won’t be committed (default)
     +      All changes done to this file will be committed
     *      You have made changes to this file in record mode. These changes 
            will be commited
@@ -1039,13 +1043,13 @@ Edit      O   Edit file under cursor. In original window there will be changed
               will be version of file modified in record mode and in original 
               window there will be backup of the file (or version from 
               repository if file in question was removed or deleted).
-Undo      u   Undo adds/removes of the file. Won't undo changes made to the 
+Undo      u   Undo adds/removes of the file. Won’t undo changes made to the 
               file using Edit mapping.
 :AuRecord also makes some AuStatus mappings change their meaning:
 Mapping                 New meaning ~
 |aurum-m-AuStatus_Track|  select changes made to file(s) for committing
 |aurum-m-AuStatus_Commit| finish record mode and commit selected changes
-|aurum-m-AuStatus_Forget| unselect changes made to file(s), don't commit them
+|aurum-m-AuStatus_Forget| unselect changes made to file(s), don’t commit them
 
 Note that if you quit commit buffer or close status window you will also exit 
      record mode discarding all changes you have made.
@@ -1116,18 +1120,14 @@ hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
     you want to add support for particular remote repository.
 functions :: {String : FRef}                            *aurum-repo.functions*
     Dictionary that contains all driver-specific functions. All functions 
-    except |aurum-rf-repo| accept repository object as its first argument, so 
-    it is not mentioned in function descriptions. Here is the list:
-  repo :: path -> repo                                         *aurum-rf-repo*
-    Creates new repository object using repository located at given path.
-    Note you must not ever use this directly, this is to be called by repo.get 
-         function from plugin/aurum/repo. If you use it directly, you will be 
-         missing some setup that will render newly created object useless.
+    except |aurum-rf-repo|, |aurum-rf-checkdir| and |aurum-rf-checkremote| 
+    accept repository object as its first argument, so it is not mentioned in 
+    function descriptions. Here is the list:
                                                              *aurum-rf-commit*
   commit :: message[, [ file ][, user[, date[, closebranch[, force]]]]] -> _
     Commit changes made to specified files (default depends on VCS, normally 
-    it is `commit changes made to all tracked files (including additions and 
-    removes))'. “closebranch” and “force” arguments have Bool type, “user” and 
+    it is “commit changes made to all tracked files (including additions and 
+    removes))”. “closebranch” and “force” arguments have Bool type, “user” and 
     “date” are strings. Neither “user” nor “date” argument should have any 
     normalized form, they just should be accepted by VCS.
   update :: hex, force                                       *aurum-rf-update*
@@ -1172,7 +1172,7 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Returns a list of revision numbers: one revision number for each line of 
     the file as it was at given changeset.
   diff :: hex, hex, [ file ], diffopts -> [ String ]           *aurum-rf-diff*
-    Returns list of strings (similar to |readfile()| output with 'b' flag set) 
+    Returns list of strings (similar to |readfile()| output with "b" flag set) 
     that contains changes made to given files between given revisions. If list 
     of files is empty, then changes made to all files will be returned. See 
     |aurum-diffopts| for description of {diffopts} argument.
@@ -1226,7 +1226,7 @@ functions :: {String : FRef}                            *aurum-repo.functions*
          but this is not guaranteed. For example, status() accepts revision 
          number in both mercurial drivers, but though zero is a valid 
          revision, it is used to indicate absence of an argument and thus you 
-         have to write '0' (String) where you want to write just 0 (Number).
+         have to write "0" (String) where you want to write just 0 (Number).
   gettiphex :: () -> hex                                  *aurum-rf-gettiphex*
     Get changeset hash of the last revision in a repository.
   getworkhex :: () -> hex                                *aurum-rf-getworkhex*
@@ -1237,6 +1237,27 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Updates data stored in repository. Is called automatically when you get 
     the repository object unless this object is obtained from cash used by 
     |aurum#repository|.
+  reltorepo :: repo, path -> path                         *aurum-rf-reltorepo*
+    Turn absolute or relative to current directory path into relative to 
+    repository root one.
+The following functions do not accept repo argument:
+  repo :: path -> repo                                         *aurum-rf-repo*
+    Creates new repository object using repository located at given path.
+    Note you must not ever use this directly, this is to be called by repo.get 
+         function from plugin/aurum/repo. If you use it directly, you will be 
+         missing some setup that will render newly created object useless.
+  checkdir    :: path -> Bool                           *aurum-rf-checkdir*
+  checkremote :: path -> Bool                           *aurum-rf-checkremote*
+    These two functions check whether given path contains repository supported 
+    by specific driver. First is called once for each directory in path, 
+    ending with root (drive name like “C:” in windows, “/” in POSIX OS’es) and 
+    is likely to contain something as simple as >
+        function s:driver.checkdir(path)
+            return isdirectory(a:path."/.hg")
+        endfunction
+<   . Second is called once on paths that contain “://” in their string (it is 
+    likely to return just 0 because normal work with remote repositories is 
+    impossible in most VCS’es).
 
 ------------------------------------------------------------------------------
 8.2. Changeset                                               *aurum-changeset*
@@ -1262,5 +1283,39 @@ changes      List of files that were modified in cs         *aurum-cs.changes*
              (unlike |aurum-cs.files| contains removed files)
 renames      Dictionary {newname : oldname}                 *aurum-cs.renames*
 copies       Dictionary {copyname : originname}              *aurum-cs.copies*
+
+==============================================================================
+9. Creating your own driver                                 *aurum-new-driver*
+                                                           *aurum-f-regdriver*
+In order to create driver you must use “regdriver” feature defined in 
+plugin/aurum/repo (you must specify it in dependencies and then you will get 
+|s:_f|.regdriver() function). This feature accepts two arguments: name of the 
+driver (only latin letters, digits and underscores are allowed, see |/\w|) and 
+dictionary with repository functions (only function references are allowed):
+Required functions: |aurum-rf-repo|, |aurum-rf-getcs|, |aurum-rf-checkdir|.
+Optional functions:
+  Function               Default behavior ~
+  |aurum-rf-dirty|         Use |aurum-rf-status| and check whether file has 
+                         status different from “ignored” or “clean”
+  |aurum-rf-getnthparent|  Use |aurum-rf-getcs| and |aurum-rf-getcsprop| 
+                         (properties "parents" or "children")
+  |aurum-rf-getcsprop|     Checks whether requested key is present in the 
+                         changeset object. If yes returns its value, otherwise 
+                         throws an exception.
+  |aurum-rf-reltorepo|     Uses |aurum-repo.path| to get requested path.
+  |aurum-rf-difftobuffer|  Wrapper around |aurum-rf-diff|.
+  |aurum-rf-move|          Uses |aurum-rf-copy| and |aurum-rf-remove| to 
+                         emulate renaming command.
+  |aurum-rf-remove|        Uses |aurum-rf-forget| to untrack file and then 
+                         |delete()|s it.
+  |aurum-rf-checkremote|   Returns 0.
+Other functions, mentioned in |aurum-repo.functions|, but not mentioned here, 
+throw an "nimp" exception.
+
+==============================================================================
+10. Changelog                                                *aurum-changelog*
+
+@aurum/repo:
+    1.0: Instead of depending on drivers, make drivers depend on @aurum/repo
 
 vim: ft=help:tw=78
