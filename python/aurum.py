@@ -188,10 +188,12 @@ def get_cs(path, rev):
 def new_repo(path):
     try:
         repo=g_repo(path)
+        # TODO remove bookmark label type if it is not available
         vim_repo={
             'changesets': {},
                 'cslist': [],
                  'local': 1 if repo.local() else 0,
+            'labeltypes': ['tag', 'bookmark'],
                  }
         if hasattr(repo, '__len__'):
             vim_repo['csnum']=len(repo)+1

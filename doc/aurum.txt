@@ -88,6 +88,9 @@ AuAnnotate [file {file}] [rev {rev}] [repo {repo}]               *:AuAnnotate*
     Annotate rev {rev} of a file {file}. By default annotates current revision 
     of a current file (|aurum-current-file|).
 
+AuBranch[!] {branch} [repo {repo}]                                 *:AuBranch*
+    Set current branch name to {branch}.
+
 AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
     Commit files matching given globs (current file if no globs were given). 
     If “message” option was not specified, opens |aurum://commit| buffer. You 
@@ -325,6 +328,21 @@ AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
     directory).
     Note: you must either be at repository root (see |:cd|) or have all 
           arguments look like “path/to/repository/{meaningfulPart}”.
+
+AuName[!] {name} {opts} [{rev}]                                      *:AuName*
+    Name (tag/bookmark/...) revision {rev} (default: working directory 
+    revision) as {name}. If bang is given, then force naming even if {name} 
+    already exists. Possible options:
+    Option      Description ~
+    type        String, determines what will be done. Depends on repository 
+                object, for mercurial repositories it will be likely “tag” or 
+                “bookmark”.
+                Default: first item present in |aurum-repo.labeltypes|.
+    [no]delete  Flag. If enabled, then {rev} argument will be ignored and 
+                tag/bookmark/... will be deleted. Default: disabled.
+    [no]local   Flag. If enabled, then name will not be pushed.
+                Default: disabled.
+    repo        Path. Repository that should be operated upon.
 
 AuRecord {opts} [glob1 [...]]                                      *:AuRecord*
     Start record mode (|aurum-record|). Possible options are just the same as 
@@ -1118,6 +1136,9 @@ hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
         line       Line number (only inside “hline” and “aline” expressions).
     You should not normally use or alter this key, use |g:aurum_hypsites| if 
     you want to add support for particular remote repository.
+labeltypes :: [ String ]                               *aurum-repo.labeltypes*
+    List of label types supported by |aurum-rf-label|. First type will be 
+    default used by |:AuName|.
 functions :: {String : FRef}                            *aurum-repo.functions*
     Dictionary that contains all driver-specific functions. All functions 
     except |aurum-rf-repo|, |aurum-rf-checkdir| and |aurum-rf-checkremote| 
@@ -1201,7 +1222,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     tagslist, brancheslist, bookmarkslist
                    List of strings containing tags, branches and bookmarks 
                    present in current repo respectively. Is used for 
-                   completion in commands that accept {rev} argument.
+                   completion in commands that accept {rev} argument and by 
+                   |:AuBranch| and |:AuName| in order to check whether branch 
+                   can be created/revision can be named.
     url            Remote repository URL. For mercurial it is either 
                    paths.default-push or paths.default whichever is defined.
   getchangesets :: () -> [ cs ]                       *aurum-rf-getchangesets*
@@ -1237,9 +1260,16 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Updates data stored in repository. Is called automatically when you get 
     the repository object unless this object is obtained from cash used by 
     |aurum#repository|.
-  reltorepo :: repo, path -> path                         *aurum-rf-reltorepo*
+  reltorepo :: path -> path                               *aurum-rf-reltorepo*
     Turn absolute or relative to current directory path into relative to 
     repository root one.
+  branch :: branch, force -> _                               *aurum-rf-branch*
+    Create new branch.
+  label :: type, label, hex, force, local -> _                *aurum-rf-label*
+    Label specific revision (if rev is 0 then remove label).
+    Note: if this function accepts label with type {type}, 
+          |aurum-rf-getrepoprop| must be able to list labels of this type in 
+          property "{type}slist".
 The following functions do not accept repo argument:
   repo :: path -> repo                                         *aurum-rf-repo*
     Creates new repository object using repository located at given path.
@@ -1317,5 +1347,8 @@ throw an "nimp" exception.
 
 @aurum/repo:
     1.0: Instead of depending on drivers, make drivers depend on @aurum/repo
+    1.1: Added repo.branch and repo.label
+@aurum:
+    0.1: Added :AuBranch and :AuName
 
 vim: ft=help:tw=78

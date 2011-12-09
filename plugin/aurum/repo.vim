@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/resources': '0.0',
+    execute frawor#Setup('1.1', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                  '@/options': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
@@ -194,9 +194,7 @@ function s:F.getrepo(path)
     endif
     let repo.type=driver.id
     let repo.path=path
-    if !has_key(repo, 'functions')
-        let repo.functions=copy(driver.functions)
-    endif
+    let repo.functions=copy(driver.functions)
     let repo.diffopts=copy(s:_f.getoption('diffopts'))
     lockvar! repo
     unlockvar! repo.cslist
@@ -220,7 +218,8 @@ call s:_f.postresource('repo', {'get': s:F.getrepo,
 "▶1 regdriver feature
 let s:requiredfuncs=['repo', 'getcs', 'checkdir']
 let s:optfuncs=['readfile', 'annotate', 'diff', 'status', 'commit', 'update',
-            \   'dirty', 'diffre', 'getstats', 'getrepoprop', 'copy', 'forget']
+            \   'dirty', 'diffre', 'getstats', 'getrepoprop', 'copy', 'forget',
+            \   'branch', 'label']
 "▶2 regdriver :: {f}, name, funcs → + s:drivers
 function s:F.regdriver(plugdict, fdict, name, funcs)
     "▶3 Check arguments
@@ -240,14 +239,13 @@ function s:F.regdriver(plugdict, fdict, name, funcs)
     let driver.plid=a:plugdict.id
     let driver.id=a:name
     call extend(driver.functions, s:deffuncs, 'keep')
-    for funname in filter(copy(s:optfuncs),
-                \         '!exists("*driver.functions[v:val]")')
+    for funname in filter(copy(s:optfuncs), '!has_key(driver.functions, v:val)')
         execute      "function driver.functions.".funname."(...)\n".
                     \"    call s:_f.throw('nimp', '".funname."', ".
                     \                    "'".a:name."')\n".
                     \"endfunction"
     endfor
-    lockvar driver
+    lockvar! driver
     let a:fdict[a:name]=driver
     let s:drivers[a:name]=driver
 endfunction

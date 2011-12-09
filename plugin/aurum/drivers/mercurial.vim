@@ -1,9 +1,10 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/python': '0.0',
-                \             '@aurum/repo': '1.0',
-                \                    '@/os': '0.0',}, 0)
+    execute frawor#Setup('0.1', {      '@/python': '0.0',
+                \                   '@aurum/repo': '1.0',
+                \                          '@/os': '0.0',
+                \'@aurum/drivers/common/hypsites': '0.0'}, 0)
     finish
 elseif s:_pluginloaded
     finish
@@ -37,6 +38,7 @@ let s:_messages={
             \ 'nhgiwr': 'File %s is either a directory or not writeable',
             \'reponwr': 'Unable to write to repository root (%s)',
             \  'nocfg': 'Failed to get property %s of repository %s ',
+            \'nlocbms': 'Bookmarks can’t be local',
         \}
 if !s:usepythondriver
     call extend(s:_messages, {
@@ -67,225 +69,25 @@ if !s:usepythondriver
     let s:nullrev=repeat('0', 40)
 endif
 "▶1 s:hypsites
-" len("hgroot")=6
-" examples: (t: only tip is shown; g: git branches only, u: unstable)
-"  https://bitbucket.org/ZyX_I/aurum / ssh://hg@bitbucket.org/ZyX_I/aurum
-"g git+ssh://git@github.com:MarcWeber/vim-addon-manager /
-"       git://github.com/MarcWeber/vim-addon-manager
-"  ssh://zyxsf@translit3.hg.sourceforge.net/hgroot/translit3/translit3 /
-"       http://translit3.hg.sourceforge.net:8000/hgroot/translit3/translit3
-"g git://vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository
-"       / git+ssh://zyxsf@vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository
-"t svn+https://vimpluginloader.svn.sourceforge.net/svnroot/vimpluginloader
-"  https://vim-pyinteractive-plugin.googlecode.com/hg/
-"t svn+http://conque.googlecode.com/svn/trunk
-"? (unable to clone with hg-git) https://code.google.com/p/tortoisegit/
-"t http://anonscm.debian.org/hg/minicom/
-"  http://hg.assembla.com/CMakeLua
-"  https://zyx@zyx.codebasehq.com/test/test.hg /
-"       ssh://hg@codebasehq.com/zyx/test/test.hg
-"  https://hg01.codeplex.com/visualhg
-"  http://mercurial.intuxication.org/hg/tryton-client_ru
-"  https://mirrors.kilnhg.com/Repo/Mirrors/Hg/Mercurial
-"  http://hg.mozdev.org/maf/ / ssh://USER:PASS@hg.mozdev.org/maf
-"u https://projectkenai.com/hg/sonichg~test (rev numbers must match)
-"  https://hg.kenai.com/hg/sonichg~test / ssh://user@hg.kenai.com/sonichg~test
-"  http://hg.savannah.nongnu.org/hgweb/mechsys/
-"  https://sharesource.org/hg/alqua/
-"  http://mercurial.tuxfamily.org/mercurialroot/slitaz/tazlito/
-"  git://repo.or.cz/test2.git / http://repo.or.cz/r/test2.git /
-"       ssh://repo.or.cz/srv/git/test2.git
-"  git://gitorious.org/test4/test.git / https://git.gitorious.org/test4/test.git
-"       / git+ssh://git@gitorious.org:test4/test.git
-let s:ghpath='substitute(path, "\\v^[:/]|\\.git$", "", "g")'
-let s:gcproj='matchstr(domain, "\\v^[^.]+")'
-let s:pkbase='"http://".matchstr(domain, ''\v[^.]+\.[^.]+$'')."/projects/".matchstr(path, ''\v.*\/\zs[^~]+'').'.
-            \                                                '"/sources/". matchstr(path, "\\v[^~]+$")'
-let s:cpbase='"http://".path[1:].".codeplex.com/SourceControl'
-let s:cbbase='"https://".%s.".".domain."/projects/".%s."/repositories/".%s'
-let s:roproj='matchstr(path, ''\v\/@<=[^/]{-1,}%(%(\.git)?\/*$)@='').".git"'
-let s:robase='"http://".domain."/w/".'.s:roproj
-let s:godomain='substitute(domain, "^git\\.", "", "")'
-let s:gobase='"http://".'.s:godomain.'."/".'.s:ghpath
-let s:cbssh=printf(s:cbbase, 'matchstr(path, "\\v^[^/]+", 1)',
-            \                'matchstr(path, ''\v[^/]+%(\/[^/]+\/?$)'')',
-            \                'matchstr(path[:-4], "\\v[^/]+$")')
-let s:cbhttps=printf(s:cbbase, 'matchstr(domain, "\\v^[^.]+")',
-            \                  'matchstr(path, "\\v^[^/]+")',
-            \                  'matchstr(path[:-4], "\\v[^/]+$")')
-unlet s:cbbase
-let s:gb  =  '((!empty(cs.bookmarks))?'.
-            \   '(cs.bookmarks[0]):'.
-            \'((!empty(cs.tags))?'.
-            \   '(get(filter(copy(cs.tags), "v:val[:7] is# ''default/''"), 0, '.
-            \        '"default/master")[8:])'.
-            \':'.
-            \   '("master")))'
-let s:dport='domain.(empty(port)?"":":".port)'
-let s:link='shellescape("http://".'.s:dport.'.path)'
-" TODO cache
-let s:dl=    '(executable("curl")?'.
-            \   '(system("curl -L ".'.s:link.')):'.
-            \'(executable("wget")?'.
-            \   '(system("wget -O- ".'.s:link.'))'.
-            \':'.
-            \   '(0)))'
-unlet s:link
-let s:bbdict={
-\       'html': '"https://".domain.path."/src/".cs.hex."/".file',      'hline': '"cl-".line',
-\        'raw': '"https://".domain.path."/raw/".cs.hex."/".file',
-\   'annotate': '"https://".domain.path."/annotate/".cs.hex."/".file', 'aline': '"line-".line',
-\   'filehist': '"https://".domain.path."/history/".file',
-\     'bundle': '"https://".domain.path."/get/".cs.hex.".tar.bz2"',
-\  'changeset': '"https://".domain.path."/changeset/".cs.hex',
-\        'log': '"https://".domain.path."/changesets"',
-\      'clone': '"https://".domain.path',
-\       'push': '"ssh://hg@".domain.path',
-\}
-let s:hgwebdict={
-\       'html': '"http://".'.s:dport.'.path."/file/".cs.hex."/".file',     'hline': '"l".line',
-\        'raw': '"http://".'.s:dport.'.path."/raw-file/".cs.hex."/".file',
-\   'annotate': '"http://".'.s:dport.'.path."/annotate/".cs.hex."/".file', 'aline': '"l".line',
-\   'filehist': '"http://".'.s:dport.'.path."/log/".cs.hex."/".file',
-\  'changeset': '"http://".'.s:dport.'.path."/rev/".cs.hex',
-\        'log': '"http://".'.s:dport.'.path."/graph"',
-\      'clone': '"http://".'.s:dport.'.path',
-\}
-unlet s:dport
-let s:hypsites=[
-\['domain is? "bitbucket.org" && protocol[:2] is? "git"',
-\ map(copy(s:bbdict), '(v:key is# "push" || v:key is# "clone")? '.
-\                           '("\"git+".v:val[1:]):'.
-\                           '(substitute(v:val, "\\Vcs.hex", s:gb, ""))')],
-\['domain is? "bitbucket.org"', s:bbdict],
-\['domain is? "github.com"',
-\ {     'html': '"https://".domain."/".'.s:ghpath.'."/blob/".'.s:gb.'."/".file',   'hline': '"L".line',
-\        'raw': '"https://".domain."/".'.s:ghpath.'."/raw/". '.s:gb.'."/".file',
-\   'annotate': '"https://".domain."/".'.s:ghpath.'."/blame/". '.s:gb.'."/".file', 'aline': '"LID".line',
-\   'filehist': '"https://".domain."/".'.s:ghpath.'."/commits/".'.s:gb.'."/".file',
-\     'bundle': '"https://".domain."/".'.s:ghpath.'."/zipball/".'.s:gb.'',
-\  'changeset': '"https://".domain."/".'.s:ghpath.'."/commit/".'.s:gb.'',
-\        'log': '"https://".domain."/".'.s:ghpath.'."/commits"',
-\      'clone': '"git://".domain."/".'.s:ghpath,
-\       'push': '"git+ssh://git@".domain.":".'.s:ghpath.'.".git"',}],
-\['domain =~? "\\Vhg.sourceforge.net\\$"',
-\ {     'html': '"http://".domain."/hgweb".path[7:]."/file/".cs.hex."/".file',     'hline': '"l".line',
-\        'raw': '"http://".domain."/hgweb".path[7:]."/raw-file/".cs.hex."/".file',
-\   'annotate': '"http://".domain."/hgweb".path[7:]."/annotate/".cs.hex."/".file', 'aline': '"l".line',
-\   'filehist': '"http://".domain."/hgweb".path[7:]."/log/".cs.hex."/".file',
-\  'changeset': '"http://".domain."/hgweb".path[7:]."/rev/".cs.hex',
-\        'log': '"http://".domain."/hgweb".path[7:]."/graph"',
-\      'clone': '"http://".domain.":8000".path',
-\       'push': '"ssh://".user."@".domain.path',}],
-\['domain =~? "\\Vgit.sourceforge.net\\$"',
-\ {     'html': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=blob;hb=".'.s:gb.'.";f=".file', 'hline': '"l".line',
-\        'raw': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=blob_plain;hb=".'.s:gb.'.";f=".file',
-\   'filehist': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=history;hb=".'.s:gb.'.";f=".file',
-\  'changeset': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=commitdiff;hb=".'.s:gb,
-\        'log': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=log"',
-\      'clone': '"http://".domain.":8000".path',
-\       'push': '"git+ssh://".user."@".domain.path',}],
-\['domain =~? "\\Vsvn.sourceforge.net\\$"',
-\ {     'html': '"http://".domain."/viewvc".path[8:]."/".file."?view=log"',
-\        'raw': '"http://".domain."/viewvc".path[8:]."/".file',
-\   'annotate': '"http://".domain."/viewvc".path[8:]."/".file."?annotate=HEAD"',
-\     'bundle': '"http://".domain."/viewvc".path[8:]."?view=tar"',
-\        'log': '"http://".domain."/viewvc".path[8:]."?view=log"',
-\      'clone': 'url',}],
-\['domain =~? "\\Vgooglecode.com\\$" && path[:2] is? "/hg"',
-\ {     'html': '"http://code.google.com/p/".'.s:gcproj.'."/source/browse/".file."?r=".cs.hex', 'hline': 'line',
-\        'raw': '"http://".domain."/hg-history/".cs.hex."/".file',
-\   'filehist': '"http://code.google.com/p/".'.s:gcproj.'."/source/list?path=/".file."&r=".cs.hex',
-\  'changeset': '"http://code.google.com/p/".'.s:gcproj.'."/source/detail?r=".cs.hex',
-\        'log': '"http://code.google.com/p/".'.s:gcproj.'."/source/list"',
-\      'clone': 'url',
-\       'push': 'url',}],
-\['domain =~? "\\Vgooglecode.com\\$" && path[:3] is? "/svn"',
-\ {     'html': '"http://code.google.com/p/".'.s:gcproj.'."/source/browse".path[4:]."/".file', 'hline': 'line',
-\        'raw': '"http://".domain.path."/".file',
-\   'filehist': '"http://code.google.com/p/".'.s:gcproj.'."/source/list?path=/".file."&r=".cs.hex',
-\        'log': '"http://code.google.com/p/".'.s:gcproj.'."/source/list"',
-\      'clone': 'url',}],
-\['domain is? "code.google.com"',
-\ {     'html': '"http://code.google.com/".substitute(path, "/$", "", "")."/source/browse/".file."?r=".'.s:gb,}],
-\['domain =~? ''\v^%(git\.)?gitorious\.org$''',
-\ {     'html': s:gobase.'."/blobs/".'.s:gb.'."/".file',       'hline': '"line".line',
-\        'raw': s:gobase.'."/blobs/raw/".'.s:gb.'."/".file',
-\   'annotate': s:gobase.'."/blobs/blame/".'.s:gb.'."/".file', 'aline': '"line".line',
-\   'filehist': s:gobase.'."/blobs/history/".'.s:gb.'."/".file',
-\  'changeset': s:gobase.'."/commit/".'.s:gb,
-\        'log': s:gobase.'."/commits/".'.s:gb,
-\      'clone': '"git://".'.s:godomain.'."/".'.s:ghpath,
-\       'push': '"git+ssh://git@".'.s:godomain.'.":".'.s:ghpath.'.".git"',}],
-\['domain is? "hg.assembla.com"',
-\ {     'html': '"http://trac-".domain.path."/browser/".file."?rev=".cs.hex',                'hline': '"L".line',
-\   'annotate': '"http://trac-".domain.path."/browser/".file."?annotate=blame&rev=".cs.hex', 'aline': '"L".line',
-\   'filehist': '"http://trac-".domain.path."/log/".file."?rev=".cs.hex',
-\  'changeset': '"http://trac-".domain.path."/changeset/".cs.hex',
-\        'log': '"http://trac-".domain.path."/log"',
-\      'clone': '"http://".domain.path',}],
-\['domain is? "codebasehq.com" && path[-3:] is? ".hg"',
-\ {     'html': s:cbssh.'."/blob/".cs.hex."/".file', 'hline': '"L".line',
-\        'raw': s:cbssh.'."/raw/".cs.hex."/".file',
-\   'annotate': s:cbssh.'."/blame/".cs.hex."/".file',
-\   'filehist': s:cbssh.'."/commits/".cs.hex."/".file',
-\     'bundle': s:cbssh.'."/archive/zip/".cs.hex',
-\  'changeset': s:cbssh.'."/commit/".cs.hex',
-\        'log': s:cbssh.'."/commits/tip"',
-\      'clone': '"https://".matchstr(path, "\\v^[^/]+", 1).".".domain.matchstr(path, ''\v[^/]+\/[^/]+$'')',
-\       'push': '"ssh://hg@".domain.path',}],
-\['domain =~? "\\Vcodebasehq.com\\$" && path[-3:] is? ".hg"',
-\ {     'html': s:cbhttps.'."/blob/".cs.hex."/".file', 'hline': '"L".line',
-\        'raw': s:cbhttps.'."/raw/".cs.hex."/".file',
-\   'annotate': s:cbhttps.'."/blame/".cs.hex."/".file',
-\   'filehist': s:cbhttps.'."/commits/".cs.hex."/".file',
-\     'bundle': s:cbhttps.'."/archive/zip/".cs.hex',
-\  'changeset': s:cbhttps.'."/commit/".cs.hex',
-\        'log': s:cbhttps.'."/commits/tip"',
-\      'clone': '"https://".domain.path',
-\       'push': '"ssh://hg@".matchstr(domain, ''\v\.@<=.*$'')."/".matchstr(domain, "\\v^[^.]+").path',}],
-\['domain =~? "\\V\\^hg\\d\\+.codeplex.com\\$"',
-\ {     'html': s:cpbase.'"/changeset/view/".cs.hex[:11]."#".substitute(file, "/", "%2f", "g")',
-\     'bundle': '"http://download.codeplex.com/Download/SourceControlFileDownload.ashx'.
-\                       '?ProjectName=".path[1:]."&changeSetId=".cs.hex[:11]',
-\  'changeset': s:cpbase.'"/changeset/changes/".cs.hex[:11]',
-\        'log': s:cpbase.'"/list/changesets"',
-\      'clone': '"https://".domain.path',
-\       'push': '"https://".domain.path',}],
-\['domain =~? "\\Vkilnhg.com\\$"',
-\ {     'html': '"https://".domain.path."/File/".file."?rev=".cs.hex',               'hline': 'line',
-\        'raw': '"https://".domain.path."/FileDownload/".file."?rev=".cs.hex',
-\   'annotate': '"https://".domain.path."/File/".file."?rev=".cs.hex&view=annotate', 'aline': 'line',
-\   'filehist': '"https://".domain.path."/FileHistory/".file."?rev=".cs.hex',
-\  'changeset': '"https://".domain.path."/History/".cs.hex',
-\        'log': '"https://".domain.path',
-\      'clone': '"https://".domain.path',}],
-\['domain =~? ''\V\%(project\)\?kenai.com\$'' && (path[:2] is? "/hg" || domain[:2] is? "hg.")',
-\ {     'html': s:pkbase.'."/content/".file."?rev=".cs.rev',
-\        'raw': s:pkbase.'."/content/".file."?raw=true&rev=".cs.rev',
-\   'filehist': s:pkbase.'."/history/".file',
-\  'changeset': s:pkbase.'."/revision/".cs.rev',
-\        'log': s:pkbase.'."/history"',
-\      'clone': '"https://".domain."/hg/".matchstr(path, "\\v[^/]+$")',
-\       'push': '"ssh://".domain."/".matchstr(path, "\\v[^/]+$")',}],
-\['domain is? "repo.or.cz"',
-\ {     'html': s:robase.'."/blob/".'.s:gb.'.":/".file',  'hline': '"l".line',
-\        'raw': s:robase.'."/blob_plain/".'.s:gb.'.":/".file',
-\   'annotate': s:robase.'."/blame/".'.s:gb.'.":/".file', 'aline': '"l".line',
-\   'filehist': s:robase.'."/history/".'.s:gb.'.":/".file',
-\  'changeset': s:robase.'."/commit/".'.s:gb,
-\        'log': s:robase.'."/log/".'.s:gb,
-\      'clone': '"git://".domain."/".'.s:roproj,
-\       'push': '"git+ssh://".domain."/srv/git/".'.s:roproj,}],
-\['domain is? "sharesource.org" && path[:2] is? "/hg"',
-\ map(copy(s:hgwebdict), 'substitute(v:val, "http", "https", "")')],
-\[ 'domain =~? ''\v^%(mercurial\.%(intuxication|tuxfamily)|hg\.mozdev|hg\.savannah\.%(non)?gnu)\.org$'' || '.
-\ '(domain is? "anonscm.debian.org" && path[:2] is? "/hg") || '.
-\ '('.s:dl.'=~#''\V<link rel="icon" href="\[^"]\*static/hgicon.png" type="image/png" />'')',
-\ s:hgwebdict],
-\]
-unlet s:ghpath s:gcproj s:cbssh s:cbhttps s:pkbase s:cpbase s:gb s:dl s:hgwebdict s:bbdict s:robase s:roproj s:gobase
-unlet s:godomain
+let s:hypsites=[]
+let s:gitrev='((!empty(cs.bookmarks))?'.
+            \      '(cs.bookmarks[0]):'.
+            \   '((!empty(cs.tags))?'.
+            \      '(get(filter(copy(cs.tags), "v:val[:7] is# ''default/''"), 0, '.
+            \           '"default/master")[8:])'.
+            \   ':'.
+            \      '("master")))'
+let s:hypsites+=map(copy(s:_r.hypsites.git), '["protocol[:2] is# ''git'' && (".v:val[0].")", '.
+            \                                 'map(copy(v:val[1]), '.
+            \                                     '''(v:key is# "clone" || v:key is# "push")?'.
+            \                                           '(substitute(v:val, "\\v^\"%(git)@!", "\"git+", "")):'.
+            \                                           '(substitute(v:val, "\\Vcs.hex", s:gitrev, "g"))'')]')
+unlet s:gitrev
+let s:hypsites+=s:_r.hypsites.mercurial
+let s:svnrev='"HEAD"'
+let s:hypsites+=map(copy(s:_r.hypsites.svn), '[v:val[0], map(copy(v:val[1]), '.
+            \                                               '''substitute(v:val, "\\Vcs.rev", s:svnrev, "g")'')]')
+unlet s:svnrev
 "▶1 removechangesets :: repo, start_rev_num → + repo
 function s:F.removechangesets(repo, start)
     let changesets=a:repo.changesets
@@ -457,7 +259,7 @@ function s:F.getkeylist(repo, key)
         return []
     endif
     return map(copy(lines), 'matchlist(v:val, '.
-                \                    '''\v^(.{-})\ +(\d+)\:\x{12}$'')[1:2]')
+                \                         '''\v^(.{-})\ +(\d+)\:\x{12}'')[1:2]')
 endfunction
 "▲2
 endif
@@ -562,9 +364,10 @@ function s:hg.repo(path)
 endfunction
 else "▶2
 function s:hg.repo(path)
+    " TODO remove bookmark label type if it is not available
     let repo={'path': a:path, 'changesets': {}, 'cslist': [],
                 \'local': (stridx(a:path, '://')==-1),
-                \'functions': copy(s:hg),}
+                \'labeltypes': ['tag', 'bookmark'],}
     return repo
 endfunction
 endif
@@ -1075,7 +878,8 @@ function s:F.runcmd(repo, attr, args, kwargs)
                 \                      '**vim.eval("a:kwargs"))'
 endfunction
 else "▶2
-" XXX Here all args must be paths
+" XXX Here all args must be paths unless attr is listed in nopathattrs
+let s:nopathattrs=['branch', 'tag', 'bookmark']
 function s:F.runcmd(repo, attr, args, kwargs, ...)
     let cmd=a:attr
     if !empty(a:kwargs)
@@ -1085,9 +889,12 @@ function s:F.runcmd(repo, attr, args, kwargs, ...)
                 \               '("--".v:val[0]." ".shellescape(v:val[1],1)))'))
     endif
     if !empty(a:args)
-        let cmd.=' -- '.join(map(copy(a:args),
-                \                'shellescape(s:_r.os.path.join(a:repo.path, '.
-                \                                              'v:val), 1)'))
+        if index(s:nopathattrs, a:attr)==-1
+            let expr='shellescape(s:_r.os.path.join(a:repo.path, v:val), 1)'
+        else
+            let expr='shellescape(v:val, 1)'
+        endif
+        let cmd.=' -- '.join(map(copy(a:args), expr))
     endif
     let prevempty=0
     for line in s:F.hg(a:repo, cmd, a:0 && a:1, 'cmd', cmd)[:-2+(a:0 && a:1)]
@@ -1124,6 +931,37 @@ endfunction
 "▶1 hg.add :: repo, file → + FS
 function s:hg.add(repo, ...)
     return s:F.runcmd(a:repo, 'add', a:000, {})
+endfunction
+"▶1 hg.branch :: repo, branchname, force → + FS
+function s:hg.branch(repo, branch, force)
+    return s:F.runcmd(a:repo, 'branch', [a:branch], a:force ? {'force': 1} : {})
+endfunction
+"▶1 hg.label :: repo, type, label, rev, force, local → + FS
+function s:hg.label(repo, type, label, rev, force, local)
+    let kwargs={}
+    if a:force
+        let kwargs.force=1
+    endif
+    if a:type is# 'tag'
+        if a:local
+            let kwargs.local=1
+        endif
+        if a:rev is 0
+            let kwargs.remove=1
+        else
+            let kwargs.rev=a:rev
+        endif
+    elseif a:type is# 'bookmark'
+        if a:local
+            call s:_f.throw('nlocbms')
+        endif
+        if a:rev is 0
+            let kwargs.delete=1
+        else
+            let kwargs.rev=a:rev
+        endif
+    endif
+    return s:F.runcmd(a:repo, a:type, [a:label], kwargs)
 endfunction
 "▶1 addtosection :: repo, hgignore::path, section, line → + FS(hgignore)
 function s:F.addtosection(repo, hgignore, section, line)

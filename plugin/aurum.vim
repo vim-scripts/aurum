@@ -2,7 +2,7 @@
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
     "▶2 frawor#Setup
-    execute frawor#Setup('0.0', {'@/commands': '0.0',
+    execute frawor#Setup('0.1', {'@/commands': '0.0',
                 \               '@/functions': '0.0',
                 \                   '@/table': '0.0',
                 \                '@/mappings': '0.0',
@@ -14,7 +14,7 @@ if !exists('s:_pluginloaded')
                 \             '@aurum/status': '0.0',
                 \                '@aurum/log': '0.0',
                 \             '@aurum/commit': '0.0',
-                \               '@aurum/repo': '1.0',
+                \               '@aurum/repo': '1.1',
                 \               '@aurum/edit': '0.0',
                 \            '@aurum/bufvars': '0.0',
                 \            '@aurum/vimdiff': '0.0',}, 0)
@@ -24,8 +24,10 @@ if !exists('s:_pluginloaded')
     " TODO improve files completion
     " TODO :AuMerge ?
     " TODO :AuExplore
-    let s:addargs={'Update': {'bang': 1}, 'Move': {'bang': 1}}
-    for s:cmd in ['Update', 'Move', 'Junk', 'Track', 'Hyperlink', 'Grep']
+    let s:addargs={'Update': {'bang': 1}, 'Move': {'bang': 1},
+                \  'Branch': {'bang': 1}, 'Name': {'bang': 1}}
+    for s:cmd in ['Update', 'Move', 'Junk', 'Track', 'Hyperlink', 'Grep',
+                \ 'Branch', 'Name']
         let s:part=tolower(s:cmd[:3])
         if len(s:cmd)>4 && stridx('aeiouy', s:part[-1:])!=-1
             let s:part=s:part[:-2]
@@ -74,6 +76,11 @@ let s:_messages={
             \'nofiles': 'No files were specified',
             \   'nogf': 'No files found',
             \  'nrepo': 'Not a repository: %s',
+            \ 'bexsts': 'Error while creating branch %s for repository %s: '.
+            \           'branch already exists',
+            \ 'nunsup': 'Naming is not supported for repository %s',
+            \'ukntype': 'Unknown label type: %s. Supported types: %s',
+            \   'ldef': 'Label %s with type %s was alredy defined',
             \'_mvheader': ['Source', 'Destination'],
         \}
 let s:utypes=['html', 'raw', 'annotate', 'filehist', 'bundle', 'changeset',
@@ -475,6 +482,72 @@ call add(s:grepcomp,
             \substitute(substitute(s:grepfunc['@FWC'][0],
             \'\Vfiles \+type ""', 'files (path)', ''),
             \'\v(rev%(ision|range))\ +\Vtype ""', '\1 '.s:_r.comp.rev, 'g'))
+"▶1 branfunc
+function s:branfunc.function(bang, branch, opts)
+    let repo=s:_r.repo.get(a:opts.repo)
+    call s:_r.cmdutils.checkrepo(repo)
+    let force=a:bang
+    if !force && index(repo.functions.getrepoprop(repo, 'brancheslist'),
+                \      a:branch)!=-1
+        call s:_f.throw('bexsts', a:branch, repo.path)
+    endif
+    call repo.functions.branch(repo, a:branch, force)
+endfunction
+let s:branfunc['@FWC']=['-onlystrings _ '.
+            \           'type "" '.
+            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
+            \           '}', 'filter']
+call add(s:brancomp, s:branfunc['@FWC'][0])
+"▶1 namefunc
+function s:namefunc.function(bang, name, opts, ...)
+    let repo=s:_r.repo.get(a:opts.repo)
+    call s:_r.cmdutils.checkrepo(repo)
+    if !has_key(repo, 'labeltypes') || empty(repo.labeltypes)
+        call s:_f.throw('nunsup', repo.path)
+    endif
+    if get(a:opts, 'delete', 0)
+        let rev=0
+    else
+        let rev=repo.functions.getrevhex(repo, get(a:000, 0, '.'))
+    endif
+    if has_key(a:opts, 'type')
+        let type=a:opts.type
+        let lts=repo.labeltypes
+        if index(lts, type)==-1
+            let type=get(filter(copy(lts),
+                        \       'v:val[:'.(len(type)-1).'] is# type'), 0, 0)
+            if type is 0
+                call s:_f.throw('ukntype', a:opts.type, join(lts, ', '))
+            endif
+        endif
+    else
+        let type=repo.labeltypes[0]
+    endif
+    let force=a:bang
+    if rev isnot 0 && !force
+        try
+            let labels=repo.functions.getrepoprop(repo, type.'slist')
+            if index(labels, a:name)!=-1
+                let rev=0
+            endif
+        catch
+        endtry
+        if rev is 0
+            call s:_f.throw('ldef', a:name, type)
+        endif
+    endif
+    call repo.functions.label(repo, type, a:name, rev, force,
+                \             get(a:opts, 'local', 0))
+endfunction
+let s:namefunc['@FWC']=['-onlystrings _ '.
+            \           'type ""'.
+            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
+            \           ' ? type   type ""'.
+            \           ' ?!delete'.
+            \           ' ?!local'.
+            \           '} '.
+            \           '+ type ""', 'filter']
+call add(s:namecomp, s:namefunc['@FWC'][0])
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲
