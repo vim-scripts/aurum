@@ -16,7 +16,7 @@ function aurum#changeset(...)
     if empty(repo)
         return {}
     endif
-    return s:_r.cache.get('cs', repo.functions.getcs, [repo, '.'], {})
+    return s:_r.cache.get('cs', repo.functions.getwork, [repo], {})
 endfunction
 let s:_functions+=['aurum#changeset']
 "▶1 aurum#status

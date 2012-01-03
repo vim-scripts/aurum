@@ -15,7 +15,7 @@ if !exists('s:_pluginloaded')
                 \                '@aurum/log': '0.0',
                 \             '@aurum/commit': '0.0',
                 \               '@aurum/repo': '1.1',
-                \               '@aurum/edit': '0.0',
+                \               '@aurum/edit': '1.0',
                 \            '@aurum/bufvars': '0.0',
                 \            '@aurum/vimdiff': '0.0',}, 0)
     "▶2 Команды
@@ -71,7 +71,7 @@ endif
 "▶1 Globals
 let s:_messages={
             \ 'uknurl': 'Failed to process url %s of repository %s',
-            \ 'uunsup': 'Url type `%s'' is not supported for repository %s '.
+            \ 'uunsup': 'Url type “%s” is not supported for repository %s '.
             \           'linked with %s',
             \'nofiles': 'No files were specified',
             \   'nogf': 'No files found',
@@ -96,13 +96,16 @@ let s:_options={
             \            },
         \}
 "▶1 getexsttrckdfiles
-function s:F.getexsttrckdfiles(repo)
+function s:F.getexsttrckdfiles(repo, ...)
     let cs=a:repo.functions.getwork(a:repo)
     let r=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
     let status=a:repo.functions.status(a:repo)
     call filter(r, 'index(status.removed, v:val)==-1 && '.
                 \  'index(status.deleted, v:val)==-1')
     let r+=status.added
+    if a:0 && a:1
+        let r+=status.unknown
+    endif
     return r
 endfunction
 "▶1 getaddedermvdfiles
@@ -141,17 +144,21 @@ endfunction
 function s:updfunc.function(bang, rev, repopath)
     let repo=s:_r.repo.get(a:repopath)
     call s:_r.cmdutils.checkrepo(repo)
-    let rev=repo.functions.getrevhex(repo, a:rev)
+    if a:rev is 0
+        let rev=repo.functions.gettiphex(repo)
+    else
+        let rev=repo.functions.getrevhex(repo, a:rev)
+    endif
     return repo.functions.update(repo, rev, a:bang)
 endfunction
 let s:updfunc['@FWC']=['-onlystrings _ '.
-            \          '[:"tip" type ""'.
+            \          '[:=(0) type ""'.
             \          '['.s:_r.cmdutils.nogetrepoarg.']]', 'filter']
 call add(s:updcomp,
             \substitute(substitute(substitute(s:updfunc['@FWC'][0],
             \'\V _',                '',            ''),
             \'\V|*_r.repo.get',     '',            ''),
-            \'\V:"tip"\s\+type ""', s:_r.comp.rev, ''))
+            \'\V:=(0)\s\+type ""', s:_r.comp.rev, ''))
 "▶1 movefunc
 " :AuM          — move current file to current directory
 " :AuM dir      — move current file to given directory
@@ -224,8 +231,8 @@ function s:movefunc.function(bang, opts, ...)
         if fst is# ':'
             let fst=s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3]
         endif
-        let moves[repo.functions.reltorepo(repo, fst)]=
-                    \repo.functions.reltorepo(repo, a:2)
+        let moves = {repo.functions.reltorepo(repo, fst):
+                    \repo.functions.reltorepo(repo, a:2)}
     else
         let globs=filter(copy(a:000), 'v:val isnot# ":"')
         let hascur=(len(globs)!=a:0)
@@ -273,7 +280,11 @@ function s:junkfunc.function(opts, ...)
     endif
     let repo=s:_r.repo.get(a:1)
     call s:_r.cmdutils.checkrepo(repo)
-    let allfiles=s:F.getexsttrckdfiles(repo)
+    let forget=get(a:opts, 'forget',      0)
+    let ignore=get(a:opts, 'ignore',      0)
+    let igglob=get(a:opts, 'ignoreglobs', 0)
+    let remove=get(a:opts, 'remove',      !(forget || ignore || igglob))
+    let allfiles=s:F.getexsttrckdfiles(repo, ignore)
     let globs=filter(copy(a:000), 'v:val isnot# ":"')
     let hascur=(len(globs)!=a:0)
     let files=s:F.filterfiles(repo, globs, allfiles)
@@ -282,15 +293,12 @@ function s:junkfunc.function(opts, ...)
         let files+=[repo.functions.reltorepo(repo,
                     \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3])]
     endif
-    let forget=get(a:opts, 'forget',      0)
-    let ignore=get(a:opts, 'ignore',      0)
-    let igglob=get(a:opts, 'ignoreglobs', 0)
-    let remove=get(a:opts, 'remove',      !(forget || ignore || igglob))
     for key in filter(['forget', 'remove', 'ignore'], 'eval(v:val)')
         call map(copy(files), 'repo.functions[key](repo, v:val)')
     endfor
     if igglob
-        call map(copy(globs), 'repo.functions.ignoreglob(repo, v:val)')
+        call map(copy(globs), 'repo.functions.ignoreglob(repo, '.
+                    \         'repo.functions.reltorepo(repo, v:val))')
     endif
 endfunction
 let s:junkfunc['@FWC']=['-onlystrings '.
@@ -352,12 +360,12 @@ function s:hypfunc.function(opts)
         endif
     endif
     let url=repo.functions.getrepoprop(repo, 'url')
-    let [dummystr, protocol, user, domain, port, path; dummylst]=
+    let [protocol, user, domain, port, path]=
                 \matchlist(url, '\v^%(([^:]+)\:\/\/)?'.
                 \                  '%(([^@/:]+)\@)?'.
                 \                   '([^/:]*)'.
                 \                  '%(\:(\d+))?'.
-                \                   '(.*)$')
+                \                   '(.*)$')[1:5]
     for [matcher, dict] in s:_f.getoption('hypsites')+repo.hypsites
         if eval(matcher)
             if !has_key(dict, utype)
@@ -413,7 +421,7 @@ function s:grepfunc.function(pattern, opts)
         let [rev1, rev2; revrange]=revrange
         let cs1=repo.functions.getcs(repo, rev1)
         let cs2=repo.functions.getcs(repo, rev2)
-        if cs1.rev>cs2.rev
+        if type(cs1.rev)==type(0) && cs1.rev>cs2.rev
             let [cs1, cs2]=[cs2, cs1]
         elseif cs1 is cs2
             let revisions+=[cs1.hex]
@@ -427,18 +435,18 @@ function s:grepfunc.function(pattern, opts)
             if get(a:opts, 'workmatch', 1)
                 let css=[repo.functions.getwork(repo)]
             else
-                let css=repo.functions.getchangesets(repo)[:-2]
+                call repo.functions.getchangesets(repo)
+                let css=values(repo.changesets)
             endif
         else
             let css=[]
-            for r in revisions
-                if type(r)==type([])
-                    let css+=map(call('range', r),
-                                \'repo.functions.getcs(repo, v:val)')
+            for s in revisions
+                if type(s)==type([])
+                    let css+=repo.functions.revrange(a:repo, s[0], s[1])
                 else
-                    let css+=[repo.functions.getcs(repo, r)]
+                    let css+=[repo.functions.getcs(repo, s)]
                 endif
-                unlet r
+                unlet s
             endfor
         endif
         let allfiless=map(copy(css), 'repo.functions.getcsprop(repo, v:val,'.
@@ -507,8 +515,10 @@ function s:namefunc.function(bang, name, opts, ...)
     endif
     if get(a:opts, 'delete', 0)
         let rev=0
+    elseif a:0
+        let rev=repo.functions.getrevhex(repo, a:1)
     else
-        let rev=repo.functions.getrevhex(repo, get(a:000, 0, '.'))
+        let rev=repo.functions.getworkhex(repo)
     endif
     if has_key(a:opts, 'type')
         let type=a:opts.type
@@ -531,6 +541,7 @@ function s:namefunc.function(bang, name, opts, ...)
                 let rev=0
             endif
         catch
+            let rev=0
         endtry
         if rev is 0
             call s:_f.throw('ldef', a:name, type)

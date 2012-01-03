@@ -84,7 +84,9 @@ class CaptureUI(PrintUI):
         target=self._buffers[-1] if self._buffers else self._captured
         target.extend([str(a) for a in args])
 
-    def _getCaptured(self):
+    def _getCaptured(self, verbatim=False):
+        if verbatim:
+            return "".join(self._captured)
         r=[s.replace("\0", "\n") for s in ("".join(self._captured)).split("\n")]
         self._captured=[]
         return r
@@ -189,11 +191,12 @@ def new_repo(path):
     try:
         repo=g_repo(path)
         # TODO remove bookmark label type if it is not available
-        vim_repo={
-            'changesets': {},
-                'cslist': [],
-                 'local': 1 if repo.local() else 0,
-            'labeltypes': ['tag', 'bookmark'],
+        vim_repo={'has_octopus_merges': 0,
+                       'requires_sort': 0,
+                          'changesets': {},
+                              'cslist': [],
+                               'local': 1 if repo.local() else 0,
+                          'labeltypes': ['tag', 'bookmark'],
                  }
         if hasattr(repo, '__len__'):
             vim_repo['csnum']=len(repo)+1
@@ -341,7 +344,7 @@ def get_status(path, rev1=None, rev2=None, files=None):
     except AurumError:
         pass
 
-def commit(path, text, force=False, user=None, date=None, files=None, close_branch=False):
+def commit(path, text, user=None, date=None, files=None, close_branch=False):
     try:
         repo=g_repo(path)
         if not hasattr(repo, 'commit'):
@@ -355,8 +358,6 @@ def commit(path, text, force=False, user=None, date=None, files=None, close_bran
             kwargs['date']=date
         if user:
             kwargs['user']=user
-        if force:
-            kwargs['force']=True
         run_in_dir(repo.root, commands.commit, *args, **kwargs)
     except AurumError:
         pass
@@ -422,7 +423,6 @@ def call_cmd(path, attr, *args, **kwargs):
     except AurumError:
         pass
 
-grepre=re.compile('^(.*?):(0|[1-9]\d*):([1-9]\d*):(.*)$')
 def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
     try:
         repo=g_repo(path)
@@ -434,9 +434,11 @@ def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
         if not revisions:
             revisions=None
         kwargs={'rev': revisions, 'ignore_case': bool(ignore_case),
-                'line_number': True, 'follow': True}
+                'line_number': True, 'follow': True, 'print0': True}
         run_in_dir(repo.root, commands.grep, *args, **kwargs)
-        lines=ui._getCaptured()
+        items=(ui._getCaptured(verbatim=True)).split("\0")
+        # XXX grep uses "\0" as a terminator, thus last line ends with "\0"
+        items.pop()
         r_vim=[]
         status_cache={}
         def check_not_modified_since(rev, file):
@@ -448,11 +450,11 @@ def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
                                                     exact=True))[6]
             status_cache[key]=r
             return r
-        for line in lines:
-            m=grepre.match(line)
-            if not m:
-                continue
-            (file, rev, lnum, text)=m.groups()
+        while items:
+            file=items.pop(0)
+            rev=items.pop(0)
+            lnum=int(items.pop(0))
+            text=items.pop(0)
             if wdfiles and check_not_modified_since(rev, file):
                 file=os.path.join(repo.root, file)
             else:

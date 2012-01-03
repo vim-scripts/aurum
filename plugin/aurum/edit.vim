@@ -1,10 +1,10 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/autocommands': '0.0',
+    execute frawor#Setup('1.0', {'@/autocommands': '0.0',
                 \                   '@/functions': '0.0',
                 \                   '@/resources': '0.0',
-                \                   '@aurum/repo': '1.0',
+                \                   '@aurum/repo': '1.2',
                 \                '@aurum/bufvars': '0.0',}, 0)
     call FraworLoad('@/autocommands')
     call FraworLoad('@/functions')
@@ -12,6 +12,7 @@ if !exists('s:_pluginloaded')
     call s:_f.augroup.add('Aurum',
                 \[['BufReadCmd',   'aurum://*', 0, [s:auefunc,  0]],
                 \ ['FileReadCmd',  'aurum://*', 0, [s:auefunc,  1]],
+                \ ['SourceCmd',    'aurum://*', 0, [s:auefunc,  2]],
                 \ ['BufWriteCmd',  'aurum://*', 0, [s:auefunc, -1]],
                 \ ['FileWriteCmd', 'aurum://*', 0, [s:auefunc, -2]],
                 \])
@@ -21,22 +22,23 @@ elseif s:_pluginloaded
 endif
 let s:commands={}
 let s:_messages={
-            \'ucmd': 'Unknown command: %s',
-            \ 'nwr': 'Write feature is not implemented for command %s',
+            \    'ucmd': 'Unknown command: %s',
+            \     'nwr': 'Write feature is not implemented for command %s',
+            \'nosource': 'Can not source %s',
         \}
 call extend(s:_messages, map({
             \'creg': 'command was already registered by plugin %s',
             \'ndct': 'command description is not a dictionary',
-            \'mfun': '`function'' key is missing',
-            \'nfun': 'value of key `%s'' must be a callable function reference',
-            \'odct': 'key `options'' is not a dictionary',
-            \'nnum': 'key `%s'' is not a natural number',
-            \ 'nbl': 'key `%s'' is not 1 or 0',
-            \'nlst': 'key `%s'' is not a list of strings',
-            \'nstr': 'key `%s'' is not a string',
-            \ 'ift': 'invalid filetype: `%s'' '.
+            \'mfun': '“function” key is missing',
+            \'nfun': 'value of key “%s” must be a callable function reference',
+            \'odct': 'key “options” is not a dictionary',
+            \'nnum': 'key “%s” is not a natural number',
+            \ 'nbl': 'key “%s” is not 1 or 0',
+            \'nlst': 'key “%s” is not a list of strings',
+            \'nstr': 'key “%s” is not a string',
+            \ 'ift': 'invalid filetype: “%s” '.
             \        '(only lowercase latin letters allowed)',
-            \ 'dup': 'string `%s'' from key `%s'' was already listed',
+            \ 'dup': 'string “%s” from key “%s” was already listed',
         \}, '"Error while registering command %s for plugin %s: ".v:val'))
 "▶1 globtopat :: glob[, catchstars] → pattern
 function s:F.globtopat(glob, ...)
@@ -191,26 +193,14 @@ function s:F.encodeopts(opts)
     endfor
     return r
 endfunction
-"▶1 setlines :: [String], read::Bool → + buffer
-function s:F.setlines(lines, read)
-    let d={'set': function((a:read)?('append'):('setline'))}
-    if len(a:lines)>1 && empty(a:lines[-1])
-        call d.set('.', a:lines[:-2])
-    else
-        if !a:read
-            setlocal binary noendofline
-        endif
-        call d.set('.', a:lines)
-    endif
-endfunction
 "▶1 copy
 function s:F.copy(read, file)
-    call s:F.setlines(readfile(a:file, 'b'), a:read)
+    call s:_r.setlines(readfile(a:file, 'b'), a:read)
     if !a:read
         let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'copy'}
-    endif
-    if exists('#filetypedetect#BufRead')
-        execute 'doautocmd filetypedetect BufRead' fnameescape(a:file)
+        if exists('#filetypedetect#BufRead')
+            execute 'doautocmd filetypedetect BufRead' fnameescape(a:file)
+        endif
     endif
 endfunction
 "▶1 repotuplesplit :: str, UInt → (repo, String, ...)
@@ -304,6 +294,11 @@ function s:auefunc.function(rw)
     endif
     "▲2
     let cdescr=s:commands[command]
+    "▶2 Check SourceCmd support
+    if a:rw==2 && !get(cdescr, 'sourceable', 0)
+        call s:_f.throw('nosource', amatch)
+    endif
+    "▲2
     let arguments=get(cdescr, 'arguments', 0)
     let argnum=arguments+get(cdescr, 'listargs', 0)
     let hasopts=has_key(cdescr, 'options')
@@ -347,11 +342,6 @@ function s:auefunc.function(rw)
         setlocal modifiable noreadonly
     endif
     if a:rw<0
-        if a:rw==-1
-            let lines=getline(1, '$')
-        else
-            let lines=getline("'[", "']")
-        endif
         call call(cdescr.write, [call('getline', ((a:rw==-1)?([ 1,   '$' ]):
                     \                                        (["'[", "']"])))]+
                     \                            args)
@@ -385,13 +375,15 @@ function s:F.newcommand(plugdict, fdict, cdescr)
         endif
         let cdescr[key]=a:cdescr[key]
     endfor
-    "▶2 Boolean keys: modifiable
-    if has_key(a:cdescr, 'modifiable')
-        if type(a:cdescr.modifiable)!=type(0)
-            call s:_f.throw('nbl')
+    "▶2 Boolean keys: modifiable, sourceable
+    for key in ['modifiable', 'sourceable']
+        if has_key(a:cdescr, key)
+            if type(a:cdescr[key])!=type(0)
+                call s:_f.throw('nbl')
+            endif
+            let cdescr[key]=(!!a:cdescr[key])
         endif
-        let cdescr.modifiable=(!!a:cdescr.modifiable)
-    endif
+    endfor
     "▶2 `options' dictionary
     if has_key(a:cdescr, 'options')
         if type(a:cdescr.options)!=type({})
@@ -497,7 +489,6 @@ endfunction
 "▶1 Register resources
 call s:_f.postresource('run',       s:F.run)
 call s:_f.postresource('fname',     s:F.fname)
-call s:_f.postresource('setlines',  s:F.setlines)
 call s:_f.postresource('globtopat', s:F.globtopat)
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r,commands')

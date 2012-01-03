@@ -4,7 +4,8 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.1', {      '@/python': '0.0',
                 \                   '@aurum/repo': '1.0',
                 \                          '@/os': '0.0',
-                \'@aurum/drivers/common/hypsites': '0.0'}, 0)
+                \   '@aurum/drivers/common/utils': '0.0',
+                \'@aurum/drivers/common/hypsites': '0.0',}, 0)
     finish
 elseif s:_pluginloaded
     finish
@@ -37,7 +38,7 @@ let s:_messages={
             \ 'destex': 'Cannot copy %s to %s: destination already exists',
             \ 'nhgiwr': 'File %s is either a directory or not writeable',
             \'reponwr': 'Unable to write to repository root (%s)',
-            \  'nocfg': 'Failed to get property %s of repository %s ',
+            \  'nocfg': 'Failed to get property %s of repository %s',
             \'nlocbms': 'Bookmarks can’t be local',
         \}
 if !s:usepythondriver
@@ -127,27 +128,12 @@ function s:F.addchangesets(repo, css)
 endfunction
 "▶2 hg :: repo, cmd, hasnulls, msgid[, throwarg1[, …]] → [String]
 function s:F.hg(repo, cmd, hasnulls, msgid, ...)
-    let cmd='hg -R '.shellescape(a:repo.path, 1).' '.a:cmd
-    if a:hasnulls
-        let savedlazyredraw=&lazyredraw
-        set lazyredraw
-        noautocmd tabnew
-        if a:repo.local
-            noautocmd execute 'lcd' fnameescape(a:repo.path)
-        endif
-        " XXX this is not able to distinguish between output with and without 
-        " trailing newline
-        noautocmd execute '%!'.cmd
-        let r=getline(1, '$')
-        noautocmd bwipeout!
-        let &lazyredraw=savedlazyredraw
-    else
-        let r=split(system(cmd), "\n", 1)
-    endif
+    let cmd='hg -R '.shellescape(a:repo.path, a:hasnulls).' '.a:cmd
+    let r=s:_r.utils.run(cmd, a:hasnulls, a:repo.path)
     if v:shell_error
         if a:msgid isnot 0
             call call(s:_f.throw, [a:msgid.'fail']+a:000+[a:repo.path,
-                        \                                 join(r[:-1-(a:hasnulls)],
+                        \                              join(r[:-1-(a:hasnulls)],
                         \                                      "\n")], {})
         endif
     endif
@@ -159,7 +145,7 @@ let s:F.unesc=function('eval')
 function s:F.refile(path)
     return join(s:_r.os.path.split(a:path)[1:], '/')
 endfunction
-"▶2 parsecs :: csdata, lstart::UInt → [cs, line::UInt]
+"▶2 parsecs :: csdata, lstart::UInt → (cs, line::UInt)
 let s:stylefile=shellescape(s:_r.os.path.join(s:_frawor.runtimepath,
                 \                             'misc', 'map-cmdline.csinfo'))
 let s:chars = [['P', 'parents'  ],
@@ -367,7 +353,8 @@ function s:hg.repo(path)
     " TODO remove bookmark label type if it is not available
     let repo={'path': a:path, 'changesets': {}, 'cslist': [],
                 \'local': (stridx(a:path, '://')==-1),
-                \'labeltypes': ['tag', 'bookmark'],}
+                \'labeltypes': ['tag', 'bookmark'],
+                \'has_octopus_merges': 0, 'requires_sort': 0}
     return repo
 endfunction
 endif
@@ -375,6 +362,31 @@ endif
 function s:hg.getchangesets(repo)
     call a:repo.functions.updatechangesets(a:repo)
     return a:repo.cslist
+endfunction
+"▶1 hg.revrange :: repo, rev, rev → [cs]
+function s:F.getrev(repo, rev, cslist)
+    if type(a:rev)==type(0)
+        if a:rev<0
+            return len(a:cslist)+a:rev-1
+        else
+            return a:rev
+        endif
+    else
+        return a:repo.functions.getcs(a:repo, a:rev).rev
+    endif
+endfunction
+function s:hg.revrange(repo, rev1, rev2)
+    if empty(a:repo.cslist)
+        let cslist=a:repo.functions.getchangesets(a:repo)
+    else
+        let cslist=a:repo.cslist
+    endif
+    let rev1=s:F.getrev(a:repo, a:rev1, cslist)
+    let rev2=s:F.getrev(a:repo, a:rev2, cslist)
+    if rev1>rev2
+        let [rev1, rev2]=[rev2, rev1]
+    endif
+    return cslist[(rev1):(rev2)]
 endfunction
 "▶1 hg.getrevhex :: repo, rev → rev(hex)
 if s:usepythondriver "▶2
@@ -420,9 +432,8 @@ function s:hg.readfile(repo, rev, file)
 endfunction
 else "▶2
 function s:hg.readfile(repo, rev, file)
-    let r=s:F.hg(a:repo, 'cat -r '.shellescape(a:rev, 1).' -- '.
-                \             shellescape(a:file, 1), 1, 'file', a:file)
-    return r
+    return s:F.hg(a:repo, 'cat -r '.shellescape(a:rev, 1).' -- '.
+                \                   shellescape(a:file, 1), 1, 'file', a:file)
 endfunction
 endif
 "▶1 hg.annotate :: repo, rev, file → [(file, rev, linenumber)]
@@ -454,26 +465,25 @@ function s:hg.annotate(repo, rev, file)
     return r
 endfunction
 endif
-"▶1 hg.getcsprop :: repo, Either cs rev, propname → a
-"▶2 setcsprop
-if s:usepythondriver "▶3
-function s:F.setcsprop(repo, cs, propname)
+"▶1 hg.setcsprop :: repo, cs, propname → a
+if s:usepythondriver "▶2
+function s:hg.setcsprop(repo, cs, prop)
     try
         execute s:_r.py.cmd 'aurum.get_cs_prop(vim.eval("a:repo.path"), '.
                     \                         'vim.eval("a:cs.hex"), '.
-                    \                         'vim.eval("a:propname"))'
+                    \                         'vim.eval("a:prop"))'
     endtry
 endfunction
-else "▶3
-function s:F.setcsprop(repo, cs, propname)
-    if a:propname is# 'allfiles'
+else "▶2
+function s:hg.setcsprop(repo, cs, prop)
+    if a:prop is# 'allfiles'
         let r=s:F.hg(a:repo, 'manifest -r '.a:cs.rev, 0,
-                    \'csp', a:propname, a:cs.rev)[:-2]
-    elseif a:propname is# 'children'
+                    \'csp', a:prop, a:cs.rev)[:-2]
+    elseif a:prop is# 'children'
         " XXX str2nr('123:1f6de') will return number 123
         let r=map(split(s:F.hg(a:repo, 'log -r '.a:cs.rev.' --template '.
                     \                       shellescape('{children}'), 0,
-                    \          'csp', a:propname, a:cs.rev)[0]),
+                    \          'csp', a:prop, a:cs.rev)[0]),
                     \    'str2nr(v:val)')
         if empty(a:repo.cslist)
             call map(r, 'a:repo.functions.getrevhex(a:repo, v:val)')
@@ -481,25 +491,10 @@ function s:F.setcsprop(repo, cs, propname)
             call map(r, 'a:repo.cslist[v:val].hex')
         endif
     endif
-    let a:cs[a:propname]=r
+    let a:cs[a:prop]=r
     return r
 endfunction
 endif
-"▲2
-function s:hg.getcsprop(repo, csr, propname)
-    if type(a:csr)==type({})
-        let cs=a:csr
-    else
-        let cs=a:repo.functions.getcs(a:repo, a:csr)
-    endif
-    if has_key(cs, a:propname)
-        return cs[a:propname]
-    endif
-    call s:F.setcsprop(a:repo, cs, a:propname)
-    " XXX There is much code relying on the fact that after getcsprop property 
-    " with given name is added to changeset dictionary
-    return cs[a:propname]
-endfunction
 "▶1 hg.getcs :: repo, rev → cs
 "▶2 getcs
 if s:usepythondriver "▶3
@@ -540,8 +535,9 @@ function s:hg.getcs(repo, rev)
         return cs
     endif
 endfunction
-"▶1 diffopts :: opts → diffopts
-let s:diffopts={
+"▶1 hg.diff :: repo, rev1, rev2, [path], opts → diff::[String]
+"▶2 s:difftrans
+let s:difftrans={
             \      'git': 'git',
             \  'reverse': 'reverse',
             \ 'ignorews': 'ignore_all_space',
@@ -550,35 +546,25 @@ let s:diffopts={
             \ 'numlines': 'unified',
             \ 'showfunc': 'show_function',
             \  'alltext': 'text',
+            \    'dates': 'nodates',
         \}
-function s:F.diffopts(opts, defaultdiffopts)
-    let opts=extend(copy(a:defaultdiffopts), a:opts)
-    let r={}
-    call map(filter(copy(s:diffopts), 'has_key(opts, v:key)'),
-            \'extend(r, {v:val : opts[v:key]})')
-    if has_key(opts, 'dates')
-        let r.nodates=!opts.dates
-    endif
-    return r
-endfunction
-"▶1 hg.diff :: repo, rev1, rev2, [path], opts → diff::[String]
 if s:usepythondriver "▶2
 function s:hg.diff(repo, rev1, rev2, files, opts)
     let r=[]
-    let opts=s:F.diffopts(a:opts, a:repo.diffopts)
+    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
     try
         execute s:_r.py.cmd 'aurum.diff(vim.eval("a:repo.path"), '.
                     \                  'vim.eval("a:rev1"), '.
                     \                  'vim.eval("a:rev2"), '.
                     \                  'vim.eval("a:files"), '.
-                    \                  'vim.eval("opts"))'
+                    \                  'vim.eval("diffopts"))'
     endtry
     return r
 endfunction
 else "▶2
 "▶3 getdiffcmd
 function s:F.getdiffcmd(repo, rev1, rev2, files, opts)
-    let opts=s:F.diffopts(a:opts, a:repo.diffopts)
+    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
     let rev1=((empty(a:rev1))?(0):(shellescape(a:rev1, 1)))
     let rev2=((empty(a:rev2))?(0):(shellescape(a:rev2, 1)))
     let cmd='diff '
@@ -592,11 +578,11 @@ function s:F.getdiffcmd(repo, rev1, rev2, files, opts)
             let cmd.='-r '.rev1.' '
         endif
     endif
-    for [o, v] in items(opts)
+    for [o, v] in items(diffopts)
         if o is# 'unified'
             let cmd.='--'.o.' '.v.' '
         elseif v
-            let cmd.='--'.substitute(o, '_', '-', 'g').' '
+            let cmd.='--'.tr(o, '_', '-').' '
         endif
     endfor
     let cmd.='-- '.join(map(copy(a:files), 'shellescape(v:val, 1)'))
@@ -619,12 +605,12 @@ function s:hg.difftobuffer(repo, buf, rev1, rev2, files, opts)
         execute 'buffer' a:buf
     endif
     try
-        let opts=s:F.diffopts(a:opts, a:repo.diffopts)
+        let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
         execute s:_r.py.cmd 'aurum.diffToBuffer(vim.eval("a:repo.path"), '.
                     \                          'vim.eval("a:rev1"), '.
                     \                          'vim.eval("a:rev2"), '.
                     \                          'vim.eval("a:files"), '.
-                    \                          'vim.eval("opts"))'
+                    \                          'vim.eval("diffopts"))'
     finally
         if oldbuf!=a:buf
             execute 'buffer' oldbuf
@@ -661,7 +647,7 @@ function s:hg.status(repo, ...)
     return r
 endfunction
 else "▶2
-let s:hgstatchars={
+let s:statchars={
             \'M': 'modified',
             \'A': 'added',
             \'R': 'removed',
@@ -671,7 +657,7 @@ let s:hgstatchars={
             \'C': 'clean',
         \}
 let s:initstatdct={}
-call map(values(s:hgstatchars), 'extend(s:initstatdct, {v:val : []})')
+call map(values(s:statchars), 'extend(s:initstatdct, {v:val : []})')
 " TODO test whether zero revision may cause bugs in some commands
 function s:hg.status(repo, ...)
     let cmd='status -marduic'
@@ -693,15 +679,11 @@ function s:hg.status(repo, ...)
         endif
     endif
     let slines=s:F.hg(a:repo, cmd, 0, 'stat')[:-2]
-    if !empty(filter(copy(slines), '!has_key(s:hgstatchars, v:val[0])'))
+    if !empty(filter(copy(slines), '!has_key(s:statchars, v:val[0])'))
         call s:_f.throw('statfail', a:repo.path, join(slines, "\n"))
     endif
     let r=deepcopy(s:initstatdct)
-    call map(copy(slines), 'add(r[s:hgstatchars[v:val[0]]], '.
-                \              's:F.refile(v:val[2:]))')
-    if a:0>2 && !empty(a:3)
-        call map(r, 'map(v:val, "a:repo.functions.reltorepo(a:repo, v:val)")')
-    endif
+    call map(copy(slines),'add(r[s:statchars[v:val[0]]],s:F.refile(v:val[2:]))')
     if reverse
         let [r.deleted, r.unknown]=[r.unknown, r.deleted]
         let [r.added,   r.removed]=[r.removed, r.added  ]
@@ -713,7 +695,6 @@ endif
 if s:usepythondriver "▶2
 function s:hg.commit(repo, message, ...)
     let args  =  'text=vim.eval("a:message"), '.
-                \'force='.((get(a:000, 3, 0))?('True'):('False')).', '.
                 \join(map(['files', 'user', 'date', 'close_branch'],
                 \         'v:val."=".(empty(a:000[v:key])?'.
                 \                       '"None":'.
@@ -788,58 +769,15 @@ function s:hg.dirty(repo, file)
     endtry
 endfunction
 endif
-"▶1 hg.diffre :: _, diffopts → regex
-function s:hg.diffre(repo, diffopts)
+"▶1 diffre :: _, opts → regex
+function s:hg.diffre(repo, opts)
     " XXX first characters must be identical for hg.getstats(), but it must not 
     " match lines not containing filename for getdifffile()
-    if get(a:diffopts, 'git', 0)
+    if get(a:opts, 'git', 0)
         return '\m^diff \V--git a/\(\.\{-}\) b/'
     else
         return '\m^diff \v.*\-r\ \w+\s(.*)$'
     endif
-endfunction
-"▶1 hg.getstats :: _, diff, diffopts → stats
-" stats :: { ( "insertions" | "deletions" ): UInt,
-"            "files": { ( "insertions" | "deletions" ): UInt } }
-function s:hg.getstats(repo, diff, diffopts)
-    let diffre=a:repo.functions.diffre(a:repo, a:diffopts)
-    let i=0
-    let llines=len(a:diff)
-    let stats={'files': {}, 'insertions': 0, 'deletions': 0}
-    let file=0
-    while i<llines
-        let line=a:diff[i]
-        if line[:3] is# 'diff'
-            let file=get(matchlist(line, diffre[8:], 5), 1, 0)
-            if file isnot 0
-                let stats.files[file]={'insertions': 0, 'deletions': 0,}
-                let i+=1
-                let oldi=i
-                let pmlines=2
-                while pmlines && i<llines
-                    let lstart=a:diff[i][:2]
-                    if lstart is# '+++' || lstart is# '---'
-                        let pmlines-=1
-                    endif
-                    let i+=1
-                    if i-oldi>=4
-                        let i=oldi
-                        break
-                    endif
-                endwhile
-                continue
-            endif
-        elseif file is 0
-        elseif line[0] is# '+'
-            let stats.insertions+=1
-            let stats.files[file].insertions+=1
-        elseif line[0] is# '-'
-            let stats.deletions+=1
-            let stats.files[file].deletions+=1
-        endif
-        let i+=1
-    endwhile
-    return stats
 endfunction
 "▶1 hg.getrepoprop :: repo, prop → a
 if s:usepythondriver "▶2
@@ -853,7 +791,8 @@ function s:hg.getrepoprop(repo, prop)
 endfunction
 else "▶2
 function s:hg.getrepoprop(repo, prop)
-    if a:prop is# 'tagslist' || a:prop is# 'brancheslist' || a:prop is# 'bookmarkslist'
+    if a:prop is# 'tagslist' || a:prop is# 'brancheslist' ||
+                \               a:prop is# 'bookmarkslist'
         return map(copy(s:F.getkeylist(a:repo, a:prop[:-5])), 'v:val[0]')
     elseif a:prop is# 'url'
         let lines=s:F.hg(a:repo, 'showconfig paths', 0, 'sc')[:-2]
@@ -881,35 +820,13 @@ else "▶2
 " XXX Here all args must be paths unless attr is listed in nopathattrs
 let s:nopathattrs=['branch', 'tag', 'bookmark']
 function s:F.runcmd(repo, attr, args, kwargs, ...)
-    let cmd=a:attr
-    if !empty(a:kwargs)
-        let cmd.=' '.join(map(filter(items(a:kwargs), 'v:val[1] isnot 0'),
-                \             '((v:val[1] is 1)?'.
-                \               '("--".v:val[0]):'.
-                \               '("--".v:val[0]." ".shellescape(v:val[1],1)))'))
+    let e=(a:0 && a:1)
+    let args=copy(a:args)
+    if !empty(args)
+        call insert(args, '--')
     endif
-    if !empty(a:args)
-        if index(s:nopathattrs, a:attr)==-1
-            let expr='shellescape(s:_r.os.path.join(a:repo.path, v:val), 1)'
-        else
-            let expr='shellescape(v:val, 1)'
-        endif
-        let cmd.=' -- '.join(map(copy(a:args), expr))
-    endif
-    let prevempty=0
-    for line in s:F.hg(a:repo, cmd, a:0 && a:1, 'cmd', cmd)[:-2+(a:0 && a:1)]
-        if empty(line)
-            let prevempty+=1
-        else
-            if prevempty
-                while prevempty
-                    echomsg ' '
-                    let prevempty-=1
-                endwhile
-            endif
-            echomsg line
-        endif
-    endfor
+    let cmd=s:_r.utils.getcmd(a:attr, args, a:kwargs, e)
+    return s:_r.utils.printm(s:F.hg(a:repo, cmd, e, 'cmd', cmd)[:-2+e])
 endfunction
 endif
 "▶1 hg.move :: repo, force, source, target → + FS
@@ -1095,7 +1012,8 @@ function s:hg.grep(repo, pattern, files, revisions, ignore_case, wdfiles)
         endif
         let [file, rev, lnum, text]=match[1:4]
         if a:wdfiles && s:F.checknotmodifiedsince(a:repo, rev, file, cnmscache)
-            let filename=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, file))
+            let filename=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path,
+                        \                      file))
         else
             let filename=[rev, file]
         endif

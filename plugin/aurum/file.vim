@@ -4,8 +4,8 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
                 \                 '@aurum/bufvars': '0.0',
                 \                 '@aurum/vimdiff': '0.0',
-                \                    '@aurum/repo': '1.0',
-                \                    '@aurum/edit': '0.0',
+                \                    '@aurum/repo': '1.2',
+                \                    '@aurum/edit': '1.0',
                 \                           '@/os': '0.0',
                 \                          '@/fwc': '0.0',
                 \                     '@/mappings': '0.0',
@@ -21,19 +21,28 @@ if !exists('s:_pluginloaded')
 elseif s:_pluginloaded
     finish
 endif
+let s:_messages={
+            \'wfail': 'Writing to %s failed',
+            \'dfail': 'Failed to delete %s',
+        \}
 "▶1 filefunc
 function s:filefunc.function(rev, file, opts)
-    let opts=extend(copy(a:opts), {'rev': a:rev})
-    if a:file isnot 0
-        if a:file isnot# ':'
-            let opts.file=a:file
-        endif
+    let opts=copy(a:opts)
+    if a:rev isnot 0 && a:rev isnot ':'
+        let opts.rev=a:rev
+    endif
+    if a:file isnot 0 && a:file isnot# ':'
+        let opts.file=a:file
     endif
     let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(opts, 'noffile', 0)
     if repo is 0
         return
     endif
-    let rev=repo.functions.getrevhex(repo, a:rev)
+    if rev is 0
+        let rev=repo.functions.getworkhex(repo)
+    else
+        let rev=repo.functions.getrevhex(repo, a:rev)
+    endif
     if get(a:opts, 'replace', 0)
         call s:_r.setlines(repo.functions.readfile(repo, rev, file), 0)
         return
@@ -53,7 +62,7 @@ function s:filefunc.function(rev, file, opts)
     call s:_f.mapgroup.map('AuFile', bufnr('%'))
 endfunction
 let s:filefunc['@FWC']=['-onlystrings '.
-            \           '[:"."    type "" '.
+            \           '[:=(0)   type "" '.
             \           '[:=(0)   either (match /\L/, path fr)]]'.
             \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
             \           ' !?replace'.
@@ -63,12 +72,30 @@ call add(s:filecomp,
             \'\V:=(0)\s\+either (\[^)]\+)', 'path',                         ''),
             \'\Vcmd\s\+type ""',            'cmd '.s:_r.comp.cmd,           ''),
             \'\V:"."\s\+type ""', 'either ((type ""), '.s:_r.comp.rev.')',  ''))
+"▶1 docmd :: [String], read::0|1|2 → _ + ?
+function s:F.docmd(lines, read)
+    if a:read==0 || a:read==1
+        return s:_r.setlines(a:lines, a:read)
+    elseif a:read==2
+        let tmpname=tempname()
+        if writefile(a:lines, tmpname, 'b')==-1
+            call s:_f.throw('wfail', tmpname)
+        endif
+        try
+            execute 'source' fnameescape(tmpname)
+        finally
+            if delete(tmpname)
+                call s:_f.throw('dfail', tmpname)
+            endif
+        endtry
+    endif
+endfunction
 "▶1 file resource
-let s:file={'arguments': 2,}
+let s:file={'arguments': 2, 'sourceable': 1}
 function s:file.function(read, repo, rev, file)
     let rev=a:repo.functions.getrevhex(a:repo, a:rev)
-    call s:_r.setlines(a:repo.functions.readfile(a:repo, rev, a:file), a:read)
-    if exists('#filetypedetect#BufRead')
+    call s:F.docmd(a:repo.functions.readfile(a:repo, rev, a:file), a:read)
+    if !a:read && exists('#filetypedetect#BufRead')
         execute 'doautocmd filetypedetect BufRead'
                     \ fnameescape(s:_r.os.path.normpath(
                     \             s:_r.os.path.join(a:repo.path, a:file)))

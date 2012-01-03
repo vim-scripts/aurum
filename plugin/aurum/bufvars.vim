@@ -24,6 +24,7 @@ function s:F.bufwipeout()
         unlet s:bufvars[buf]
     endif
 endfunction
+"▶1 AurumBufVars augroup
 augroup AurumBufVars
     autocmd BufWipeOut * :call s:F.bufwipeout()
 augroup END

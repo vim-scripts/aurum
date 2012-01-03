@@ -4,7 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/table': '0.1',
                 \        '@aurum/cmdutils': '0.0',
                 \         '@aurum/bufvars': '0.0',
-                \            '@aurum/edit': '0.0',
+                \            '@aurum/edit': '1.0',
                 \                  '@/fwc': '0.3',
                 \             '@/commands': '0.0',
                 \            '@/functions': '0.0',
@@ -34,7 +34,7 @@ function s:F.formatann(repo, cs, lnum, numlen)
             let description.=repeat(' ', 31-descwidth)
         endif
         let user=substitute(a:cs.user, '\m\s*<[^>]\+>$', '', '')
-        let self[a:cs.hex]=printf('%*u %s / %s', a:numlen, a:cs.rev,
+        let self[a:cs.hex]=printf('%*s %s / %s', a:numlen, a:cs.rev,
                     \                            description, user)
     endif
     return self[a:cs.hex]

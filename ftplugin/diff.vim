@@ -30,8 +30,8 @@ endfunction
 function! s:FoldText()
     let line=getline(v:foldstart)
     if v:foldlevel==1
-        if line =~# '\v^diff\ a\/(.{-})\ b\/\1'
-            return matchlist(line, '\v^diff\ a\/(.{-})\ b\/\1')[1]
+        if line =~# '\v^diff%(\ --git)?\ a\/(.{-})\ b\/\1'
+            return matchlist(line, '\v^diff%(\ --git)\ a\/(.{-})\ b\/\1')[1]
         elseif line =~# '\v^diff%(\ \-r\ \x+){1,2}'
             return substitute(line, '\v^diff%(\ \-r\ \x+){1,2}\ ', '', '')
         endif

@@ -1,4 +1,4 @@
-*aurum.txt* Plugin for dealing with source files under mercurial control
+*aurum.txt* Plugin for dealing with source files under various VCS control
 ==============================================================================
 CONTENTS                                                      *aurum-contents*
     1. Intro                                             |aurum-intro|
@@ -16,13 +16,14 @@ CONTENTS                                                      *aurum-contents*
         8.1. Repository                                  |aurum-repository|
         8.2. Changeset                                   |aurum-changeset|
     9. Creating your own driver                          |aurum-new-driver|
-    10. Changelog                                        |aurum-changelog|
+    10. Notes about various driver implementations       |aurum-driver-notes|
+    11. Changelog                                        |aurum-changelog|
 
 ==============================================================================
 1. Intro                                                         *aurum-intro*
 
-This plugin provides a vim <--> VCS (currently only mercurial) integration for 
-your projects. Features:
+This plugin provides a vim <--> VCS (currently mercurial and git) integration 
+for your projects. Features:
   - Partially committing changes (|:AuRecord|).
   - Viewing file state at particular revision (|aurum://file|, |:AuFile|).
   - Viewing uncommited changes in a |vimdiff|, as well as changes between 
@@ -89,7 +90,8 @@ AuAnnotate [file {file}] [rev {rev}] [repo {repo}]               *:AuAnnotate*
     of a current file (|aurum-current-file|).
 
 AuBranch[!] {branch} [repo {repo}]                                 *:AuBranch*
-    Set current branch name to {branch}.
+    Set current branch name to {branch}. Bang forces creating of the branch 
+    even if it currently exists.
 
 AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
     Commit files matching given globs (current file if no globs were given). 
@@ -229,6 +231,7 @@ AuJunk [forget] [ignore] [remove] [ignoreglobs] glob1 [...]          *:AuJunk*
     (specify “:” to act on current file). With “ignoreglobs” it will ignore 
     not matching files, but given globs. Unlike other commands you must 
     specify at least one glob (or “:”) here, without this it will fail.
+    Note: It won’t touch untracked files unless “ignore” option was specified.
 
 AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
     Open buffer with changeset log. For {diffoptions} see |aurum-diffoptions|.
@@ -428,15 +431,15 @@ AuVimDiff {opts} [rev1 [...]]                                     *:AuVimDiff*
 ------------------------------------------------------------------------------
 2.2. Functions                                               *aurum-functions*
 
-aurum#repository :: () -> repo                              *aurum#repository*
+aurum#repository :: () -> repo                            *aurum#repository()*
     Returns a repository object. Cached (update time is controlled by 
     |g:aurum_repocachetime|). See |aurum-repository|.
 
-aurum#changeset :: ([{repo}]) -> changeset                   *aurum#changeset*
+aurum#changeset :: ([{repo}]) -> changeset                 *aurum#changeset()*
     Returns a working directory changeset object. Cached (update time is 
     controlled by |g:aurum_cscachetime|). See |aurum-changeset|.
 
-aurum#status :: ([{repo}]) -> status                            *aurum#status*
+aurum#status :: ([{repo}]) -> status                          *aurum#status()*
     Returns a current file status (one of the keys of a dictionary returned by 
     |aurum-rf-status|) or zero. Cached (update time is controlled by 
     |g:aurum_statuscachetime|).
@@ -789,9 +792,9 @@ buffer-local b:aurum_option (b:aurumOptions.option) variable.
     Unsigned integer, defines time since last cache update after which cache 
     will become invalid. Time is specified in seconds.
     Type  Default  Used by ~
-    cs       3     |aurum#changeset|
-    status   5     |aurum#status|
-    repo     7     |aurum#repository|, all completion functions
+    cs       3     |aurum#changeset()|
+    status   5     |aurum#status()|
+    repo     7     |aurum#repository()|, all completion functions
 
 ignorefiles                                              *g:aurum_ignorefiles*
     List containing 0 or more strings. Determines when “files” option given to 
@@ -821,10 +824,11 @@ usestatwin                                                *g:aurum_usestatwin*
     Default: 1.
 
 remembermsg                                              *g:aurum_remembermsg*
-    Bool. Determines whether message typed in commit buffer should be saved in 
-    case of rollback. This message will appear in commit buffer if you do 
-    |:AuCommit| and tip revision hash is equal to hash of tip revision saved 
-    after previous |:AuCommit| run.
+    Bool. Determines whether message typed in commit buffer should be saved 
+    when commit is performed in case of rollback. This message will appear in 
+    commit buffer if you do |:AuCommit| and tip revision hash is equal to hash 
+    of tip revision saved after previous |:AuCommit| run.
+    Default: 1.
                                                    *g:AuPreviousCommitMessage*
                                       *g:AuPreviousTip* *g:AuPreviousRepoPath*
     Note that this option determines whether message should be saved, not 
@@ -833,6 +837,12 @@ remembermsg                                              *g:aurum_remembermsg*
          g:AuPreviousRepoPath and tip revision hash is equal to 
          g:AuPreviousTip. It does not matter who set these variables and what 
          is the value of “remembermsg” option.
+
+bufleaveremembermsg                              *g:aurum_bufleaveremembermsg*
+    Bool. Determines whether message typed in commit buffer should be saved 
+    when message buffer is left excluding the case when buffer is left after 
+    commit is done. See note under |g:AuPreviousCommitMessage|.
+    Default: 1.
 
 usewin                                                        *g:aurum_usewin*
     Bool. Determines whether |:AuVimDiff| should use existing window. Existing 
@@ -888,7 +898,7 @@ expr       Use this expression instead of default to get resulting string.
            template strings).
 synreg     Pass this regular expression to “syn match”. Useful if you override 
            output of the {word} using “expr” keyword.
-pref, suf  For some single-line statements (currently: parents, children, 
+pref, suf  For some single-line statements (currently: rev, parents, children, 
            tags, bookmarks and branch): if result of evaluating {word} is 
            non-empty (for branch: is not equal to "default") add value of the 
            argument before (pref) or after (suf) the {word}.
@@ -928,9 +938,13 @@ branch       String, branch name. Accepts one positional parameter which
              determines whether “default” branch should be shown. Any value 
              other then "keep" will tell template engine not to show the 
              branch name in this case. Default value: "keep".
-hex, user, rev
-             String with value equal to the value of corresponding changeset 
+hex, user    String with value equal to the value of corresponding changeset 
              property.
+rev          Like above, but also accepts additional argument which determines 
+             whether revision should be shown if |aurum-repo.hasrevisions| is 
+             false. Any value of this additional argument that is not equal to 
+             "keep" designates that it should be ignored in this case.
+             Default value: "ignore".
 time         String representation of the date. Accepts one positional 
              parameter: string that will be passed to |strftime()| to format 
              the time. Default value: "%d %b %Y %H:%M".
@@ -1007,6 +1021,19 @@ cdescr                                                    *aurum-style-cdescr*
       1[tip]   454ae580ce74 2011-01-01 00:00 Bob <bob@example.com>
         Guess bar is better name for baz
         And barbaz is not worse
+
+git                                                          *aurum-style-git*
+    Git-like style: >
+      commit 454ae580ce74
+      Author: Bob <bob@example.com>
+      Date:   Sun Jan 01 00:00:00 2011
+
+          Guess bar is better name for baz
+          And barbaz is not worse
+
+gitoneline                                            *aurum-style-gitoneline*
+    Git --pretty=oneline-like style: >
+      454ae580ce74 Guess bar is better name for baz
 
 Note that in all styles handling of “stat” and “patch” |:AuLog| options is the 
      same: required info is added to the end of the block, “stat” goes first.
@@ -1097,9 +1124,10 @@ Repository is a dictionary containing at least the following keys:
 
 cslist :: [ cs ]                                           *aurum-repo.cslist*
     List of |aurum-changeset| objects. If it is not empty, then for each 
-    changeset in repository cs is repo.cslist[cs.rev]. It is empty by default 
-    and populated only when you call |aurum-rf-getchangesets|. See also 
-    |aurum-cs.rev|.
+    changeset in repository cs is repo.cslist[cs.rev] unless cs.rev is not 
+    String. It is empty by default and may be populated only when you call 
+    |aurum-rf-getchangesets|. See also |aurum-cs.rev|.
+    Obsolete, use |aurum-rf-revrange|.
 changesets :: {hex : cs}                               *aurum-repo.changesets*
     Dictionary containing all |aurum-changeset| objects that are associated 
     with the repository. For each changeset cs is repo.changesets[cs.hex].
@@ -1139,13 +1167,28 @@ hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
 labeltypes :: [ String ]                               *aurum-repo.labeltypes*
     List of label types supported by |aurum-rf-label|. First type will be 
     default used by |:AuName|.
+requires_sort :: Bool                               *aurum-repo.requires_sort*
+    Determines whether it is necessary to run sort_in_topological_order 
+    function on commit list returned by |aurum-rf-revrange| when it is about 
+    to be displayed in |aurum://log| buffer. If it is false, then this list 
+    will only be reversed (|reverse()|).
+    This key is optional, default value: true.
+has_octopus_merges :: Bool                     *aurum-repo.has_octopus_merges*
+    Determines whether repository has merges containing more then two parents. 
+    In this case slower, but more universal algorithm will be used.
+    This key is optional, default value: true.
+hasrevisions :: Bool                                 *aurum-repo.hasrevisions*
+    Determines whether |aurum-cs.rev| contains something different from 
+    abbreviated hash. If this option is false, then in log produced by 
+    |aurum://log| revisions will be ignored.
+    This key is optional, default value: true.
 functions :: {String : FRef}                            *aurum-repo.functions*
     Dictionary that contains all driver-specific functions. All functions 
     except |aurum-rf-repo|, |aurum-rf-checkdir| and |aurum-rf-checkremote| 
     accept repository object as its first argument, so it is not mentioned in 
     function descriptions. Here is the list:
                                                              *aurum-rf-commit*
-  commit :: message[, [ file ][, user[, date[, closebranch[, force]]]]] -> _
+  commit :: message[, [ file ][, user[, date[, closebranch]]]] -> _
     Commit changes made to specified files (default depends on VCS, normally 
     it is “commit changes made to all tracked files (including additions and 
     removes))”. “closebranch” and “force” arguments have Bool type, “user” and 
@@ -1205,6 +1248,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     headers (normally lines starting with ^diff) and obtaining file names from 
     them. Is used by a number of command for obtaining current file name while 
     in diff buffer and also by |aurum-rf-getstats| function.
+  diffname :: line, regex, diffopts -> fname               *aurum-rf-diffname*
+    Given {line} that matches {regex} returned by |aurum-rf-diffre|, return 
+    a filename.
   getstats :: diff, diffopts -> stats                      *aurum-rf-getstats*
     Returns a dictionary describing summary of changes described in {diff} (it 
     is what |aurum-rf-diff| returns). Dictionary will contain the following 
@@ -1231,7 +1277,12 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Pull all changesets contained in repository into |aurum-repo.changesets| 
     dictionary. If this function is not called, then |aurum-repo.changesets| 
     dictionary contains only changesets that were used at least ones. Returns 
-    list of changesets as contained in |aurum-repo.cslist|.
+    list of changesets as contained in |aurum-repo.cslist|. Return value is 
+    ignored (|aurum-rf-revrange| function is now used instead).
+  revrange :: hex, hex -> [ cs ]                           *aurum-rf-revrange*
+    Get revision range (inclusive). Numbers are to be treated specially, like 
+    it is done by |list-index|, but it is up to driver what it thinks is “last 
+    revision” (-1) or “first revision” (0).
   getcs :: hex -> cs                                          *aurum-rf-getcs*
     Returns |aurum-changeset| object which has given hash. See also 
     |aurum-cs.hex|.
@@ -1241,6 +1292,10 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     described in |aurum-changeset| section, but it should be normally used for 
     pulling properties that are not obtained by |aurum-rf-getcs| by default: 
     “files”, “changes”, “renames”, “copies”, “allfiles”, “chidlren”.
+  setcsprop :: cs, propname -> _                          *aurum-rf-setcsprop*
+    Function that adds requested property to given changeset. Is used by 
+    default |aurum-rf-getcsprop| if changeset dictionary does not contain 
+    property with given name.
   getrevhex :: csdescr -> hex                             *aurum-rf-getrevhex*
     Given some changeset description (it may be tag, bookmark, branch name, 
     revision number, ... - whatever VCS supports) get changeset hash.
@@ -1257,9 +1312,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
   getwork :: () -> cs                                       *aurum-rf-getwork*
     Get changeset object for the working directory revision.
   updatechangesets :: () -> _                      *aurum-rf-updatechangesets*
-    Updates data stored in repository. Is called automatically when you get 
-    the repository object unless this object is obtained from cash used by 
-    |aurum#repository|.
+    Updates data stored in repository. Is called automatically if 
+    |aurum-repo.cslist| is not empty when you get the repository object unless 
+    this object is obtained from cash used by |aurum#repository()|.
   reltorepo :: path -> path                               *aurum-rf-reltorepo*
     Turn absolute or relative to current directory path into relative to 
     repository root one.
@@ -1309,8 +1364,9 @@ tags         List of tags associated with the changeset        *aurum-cs.tags*
 bookmarks    List of bookmarks associated with the cs     *aurum-cs.bookmarks*
 allfiles     List of all files present in the revision     *aurum-cs.allfiles*
 files        List of files present in cs that were modified   *aurum-cs.files*
+removes      List of files that were deleted in cs          *aurum-cs.removes*
 changes      List of files that were modified in cs         *aurum-cs.changes*
-             (unlike |aurum-cs.files| contains removed files)
+             (|aurum-cs.files| + |aurum-cs.removes|)
 renames      Dictionary {newname : oldname}                 *aurum-cs.renames*
 copies       Dictionary {copyname : originname}              *aurum-cs.copies*
 
@@ -1331,9 +1387,21 @@ Optional functions:
                          (properties "parents" or "children")
   |aurum-rf-getcsprop|     Checks whether requested key is present in the 
                          changeset object. If yes returns its value, otherwise 
-                         throws an exception.
+                         calls |aurum-rf-setcsprop|.
   |aurum-rf-reltorepo|     Uses |aurum-repo.path| to get requested path.
+  |aurum-rf-revrange|      Gets sublist of cslist (uses |aurum-repo.cslist| or 
+                         |aurum-rf-getchangesets| if repo.cslist is empty), 
+                         using values of |aurum-cs.rev| as indexes.
   |aurum-rf-difftobuffer|  Wrapper around |aurum-rf-diff|.
+  |aurum-rf-diffname|      Uses value of first capturing group of given 
+                         regular expression.
+  |aurum-rf-getstats|      Parses git-like unified diff, depends on 
+                         |aurum-rf-diffre| and |aurum-rf-diffname|.
+  |aurum-rf-copy|          Copies file to destination (using command-line “cp” 
+                         (cp -- source target), “copy” (copy source target) or 
+                         |readfile()| + |writefile()| (in last case 
+                         permissions are not copied)), then uses 
+                         |aurum-rf-add| to make destination tracked.
   |aurum-rf-move|          Uses |aurum-rf-copy| and |aurum-rf-remove| to 
                          emulate renaming command.
   |aurum-rf-remove|        Uses |aurum-rf-forget| to untrack file and then 
@@ -1343,12 +1411,70 @@ Other functions, mentioned in |aurum-repo.functions|, but not mentioned here,
 throw an "nimp" exception.
 
 ==============================================================================
-10. Changelog                                                *aurum-changelog*
+10. Notes about various driver implementations            *aurum-driver-notes*
+
+Mercurial:
+
+|aurum-rf-label|:
+    Supported labels: tag (non-local/local), bookmark (non-local).
+
+|aurum-repo.hypsites|:
+    1. When processing various git repositories checked out using hg-git 
+       (http://hg-git.github.com/) it is assumed that |aurum-cs.hex| can be 
+       replaced with first bookmark or first tag that starts with "default/" 
+       with "default/" part removed.
+    2. Svn revisions are not supported at all, |aurum-cs.hex| in driver is 
+       replaced with static string "HEAD".
+|aurum-rf-status|: For non-python driver this function does not support names 
+    containing newlines.
+|aurum-rf-grep|: For non-python driver filenames that look like 
+    {smth}:{num>=0}:{num>0} are not supported and will lead to invalid 
+    results.
+Python driver was not tested under windows (wine) at all.
+
+Git:
+
+|aurum-rf-label|: Supported labels: tag, branch (both non-local).
+
+|aurum-cs.branch| always contains string "default".
+|aurum-cs.tags| contains list of all references pointing to given commit, not 
+    just tags.
+|aurum-cs.rev| contains truncated hash (for use in |aurum://annotate|).
+|aurum-repo.cslist| is always empty
+|aurum-rf-status|: If two first optional arguments are given and are non-zero, 
+    then unknown and deleted files won’t be shown (if any).
+|aurum-rf-gettiphex|: Same as |aurum-rf-getworkhex|.
+|aurum-rf-diff|: Options "git", "iblanks", "showfunc", "dates" are not 
+    supported.
+|aurum-rf-checkdir| does not support bare repositories.
+|aurum-rf-setcsprop|: is not able to get real renames, copies, changes, files 
+    and removes for merge changesets (“real” here means “generated by merge 
+    conflicts”: if file A was modified in both parents, then it is to be 
+    listed in merge_cs.changes only if git was unable to merge changes and had 
+    to ask user to do this).
+|aurum-rf-getchangesets| is not modifying |aurum-repo.cslist|.
+|aurum-rf-grep| will either search working directory (if no revisions were 
+    given) or given revisions (mercurial driver is searching all revisions if 
+    no revisions are given). Unlike mercurial where matching line will be 
+    shown only if they were found in first revision in range or in line that 
+    was added/modified in given revision, with this function you will see all 
+    matches in all revisions.
+    Note: This function always uses extended regular expressions.
+|aurum-rf-annotate| won’t output annotation of file in working directory, it 
+    is always returning annotation of file at given revision.
+
+==============================================================================
+11. Changelog                                                *aurum-changelog*
 
 @aurum/repo:
     1.0: Instead of depending on drivers, make drivers depend on @aurum/repo
     1.1: Added repo.branch and repo.label
+    1.2: Added setlines function, default implementations of |aurum-rf-copy|, 
+         |aurum-rf-getstats|, |aurum-rf-getcsprop| and |aurum-rf-diffname|.
+    1.3: Added default implementation of |aurum-rf-revrange|.
 @aurum:
     0.1: Added :AuBranch and :AuName
+@aurum/edit:
+    1.0: Removed setlines function (moved it to @aurum/repo)
 
 vim: ft=help:tw=78

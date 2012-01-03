@@ -3,8 +3,8 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
-                \                '@aurum/repo': '1.0',
-                \                '@aurum/edit': '0.0',
+                \                '@aurum/repo': '1.2',
+                \                '@aurum/edit': '1.0',
                 \               '@aurum/cache': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
     finish
@@ -30,11 +30,12 @@ function s:F.getdifffile(bvar)
         return a:bvar.files[0]
     endif
     let diffre=a:bvar.repo.functions.diffre(a:bvar.repo, a:bvar.opts)
-    let lnum=search(diffre, 'bcnW')
-    if !lnum
+    let lnr=search(diffre, 'bcnW')
+    if !lnr
         return 0
     endif
-    return get(matchlist(getline(lnum), diffre), 1, 0)
+    return a:bvar.repo.functions.diffname(a:bvar.repo, getline(lnr), diffre,
+                \                         a:bvar.opts)
 endfunction
 "▶1 getfile :: [path] → path
 function s:F.getfile(files)

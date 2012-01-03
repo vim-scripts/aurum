@@ -15,7 +15,7 @@ execute frawor#Setup('0.0', {'@aurum/repo': '1.0',
             \             '@aurum/bufvars': '0.0',
             \             '@aurum/vimdiff': '0.0',
             \            '@aurum/annotate': '0.0',
-            \                '@aurum/edit': '0.0',
+            \                '@aurum/edit': '1.0',
             \                 '@/mappings': '0.0',
             \                       '@/os': '0.0',})
 let s:_messages={

@@ -1,8 +1,8 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3828
 
 
-This plugin provides a vim <--> VCS (currently only mercurial) integration for 
-your projects. Features:
+This plugin provides a vim <--> VCS (currently mercurial and git) integration 
+for your projects. Features:
   • Partially committing changes (:AuRecord).
   • Viewing file state at particular revision (aurum://file, :AuFile).
   • Viewing uncommited changes in a vimdiff, as well as changes between 

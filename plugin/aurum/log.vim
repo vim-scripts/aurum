@@ -4,9 +4,9 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/table': '0.1',
                 \        '@aurum/cmdutils': '0.0',
                 \         '@aurum/bufvars': '0.0',
-                \            '@aurum/edit': '0.0',
+                \            '@aurum/edit': '1.0',
                 \                  '@/fwc': '0.3',
-                \            '@aurum/repo': '1.0',
+                \            '@aurum/repo': '1.3',
                 \             '@/commands': '0.0',
                 \            '@/functions': '0.0',
                 \              '@/options': '0.0',}, 0)
@@ -21,6 +21,7 @@ elseif s:_pluginloaded
     finish
 endif
 let s:F.glog={}
+let s:F.graph={}
 let s:F.temp={}
 let s:_options={
             \'ignorefiles': {'default': [],
@@ -31,6 +32,348 @@ let s:_messages={
             \'2multl': 'Two multiline statements on one line',
             \'argmis': 'Missing argument #%u for keyword %s',
         \}
+"▶1 graph
+"▶2 graph.update_state :: graph, gstate → + graph
+function s:F.graph.update_state(s)
+    let self.prev_state=self.state
+    let self.state=a:s
+endfunction
+"▶2 graph.ensure_capacity :: graph, num_columns → + graph
+function s:F.graph.ensure_capacity(num_columns)
+    let mdiff=(a:num_columns*2)-len(self.mapping)
+    if mdiff>0
+        let plist=repeat([-1], mdiff)
+        let self.mapping+=plist
+        let self.new_mapping+=plist
+    endif
+endfunction
+"▶2 graph.insert_into_new_columns :: graph, cs, mapindex → mapindex + graph
+function s:F.graph.insert_into_new_columns(cs, mapindex)
+    let i=0
+    for hex in self.new_columns
+        if hex is# a:cs.hex
+            let self.mapping[a:mapindex]=i
+            return a:mapindex+2
+        endif
+        let i+=1
+    endfor
+    let self.mapping[a:mapindex]=len(self.new_columns)
+    call add(self.new_columns, a:cs.hex)
+    return a:mapindex+2
+endfunction
+"▶2 graph.update_columns :: graph → + graph
+function s:F.graph.update_columns()
+    let self.columns=self.new_columns
+    let self.new_columns=[]
+    let max_new_columns=len(self.columns)+self.num_parents
+    call self.ensure_capacity(max_new_columns)
+    let self.mapping_size=2*max_new_columns
+    if !empty(self.mapping)
+        call remove(self.mapping, 0, self.mapping_size-1)
+    endif
+    call extend(self.mapping, repeat([-1], self.mapping_size), 0)
+    let seen=0
+    let midx=0
+    let is_cs_in_columns=1
+    let num_columns=len(self.columns)
+    for i in range(num_columns+1)
+        if i==num_columns
+            if seen
+                break
+            endif
+            let is_cs_in_columns=0
+            let ccshex=self.cs.hex
+        else
+            let ccshex=self.columns[i]
+        endif
+        if ccshex is# self.cs.hex
+            let oldmidx=midx
+            let seen=1
+            let self.commit_index=i
+            for parent in self.interesting_parents
+                let midx=self.insert_into_new_columns(
+                            \                self.repo.changesets[parent], midx)
+            endfor
+            if midx==oldmidx
+                let midx+=2
+            endif
+        else
+            let midx=self.insert_into_new_columns(self.repo.changesets[ccshex],
+                        \                         midx)
+        endif
+    endfor
+    while self.mapping_size>1 && self.mapping[self.mapping_size-1]==-1
+        let self.mapping_size-=1
+    endwhile
+    let self.width=(len(self.columns)+self.num_parents+(self.num_parents<1)
+                \  -(is_cs_in_columns))*2
+endfunction
+"▶2 graph.update :: graph, cs → + graph
+function s:F.graph.update(cs)
+    let self.cs=a:cs
+    let self.interesting_parents=filter(copy(a:cs.parents),
+                \                       'has_key(self.addchangesets, v:val)')
+    let self.num_parents=len(self.interesting_parents)
+    let self.prev_commit_index=self.commit_index
+    call self.update_columns()
+    let self.expansion_row=0
+    if self.state isnot# 'padding'
+        let self.state='skip'
+    elseif self.num_parents>2 &&
+                \self.commit_index<(len(self.columns)-1)
+        let self.state='precommit'
+    else
+        let self.state='commit'
+    endif
+endfunction
+"▶2 graph.is_mapping_correct :: graph → Bool
+function s:F.graph.is_mapping_correct()
+    return empty(filter(self.mapping[:(self.mapping_size-1)],
+                \       '!(v:val==-1 || v:val==v:key/2)'))
+endfunction
+"▶2 graph.pad_horizontally :: graph, chars_written → String
+" XXX Replace somehow?
+function s:F.graph.pad_horizontally(chars_written)
+    if a:chars_written>=self.width
+        return ''
+    endif
+    return repeat(' ', self.width-a:chars_written)
+endfunction
+"▶2 graph.output_padding_line :: graph → String
+function s:F.graph.output_padding_line()
+    let lnc=len(self.new_columns)
+    return repeat('| ', lnc).self.pad_horizontally(lnc*2)
+endfunction
+"▶2 graph.output_skip_line :: graph → String
+function s:F.graph.output_skip_line()
+    call self.update_state(((self.num_parents>2 &&
+                \            self.commit_index<(len(self.columns)-1))?
+                \               ('precommit'):
+                \               ('commit')))
+    return '...'.self.pad_horizontally(3)
+endfunction
+"▶2 graph.output_pre_commit_line :: graph → String
+function s:F.graph.output_pre_commit_line()
+    let num_expansion_rows=(self.num_parents-2)*2
+    let seen=0
+    let r=''
+    let i=-1
+    for hex in self.columns
+        let i+=1
+        if hex is# self.cs.hex
+            let seen=1
+            let r.='|'.repeat(' ', self.expansion_row)
+        elseif seen && self.expansion_row==0
+            let r.='|\'[self.prev_state is# 'postmerge' &&
+                        \self.prev_commit_index<i]
+        elseif seen && self.expansion_row>0
+            let r.='\'
+        else
+            let r.='|'
+        endif
+        let r.=' '
+    endfor
+    let r.=self.pad_horizontally(len(r))
+    let self.expansion_row+=1
+    if self.expansion_row>num_expansion_rows
+        call self.update_state('commit')
+    endif
+    return r
+endfunction
+"▶2 graph.output_commit_char :: graph → String
+function s:F.graph.output_commit_char()
+    return '@o'[index(self.workcss, self.cs.hex)==-1]
+endfunction
+"▶2 graph.draw_octopus_merge :: graph → String
+function s:F.graph.draw_octopus_merge()
+    let r=''
+    for i in range(((self.num_parents-2)*2)-1)
+        let r.='-'
+    endfor
+    let r.='.'
+    return r
+endfunction
+"▶2 graph.output_commit_line :: graph → String
+function s:F.graph.output_commit_line()
+    let seen=0
+    let r=''
+    let lcolumns=len(self.columns)
+    for i in range(lcolumns+1)
+        if i==lcolumns
+            if seen
+                break
+            endif
+            let ccshex=self.cs.hex
+        else
+            let ccshex=self.columns[i]
+        endif
+        if ccshex is# self.cs.hex
+            let seen=1
+            let r.=self.output_commit_char()
+            if self.num_parents>2
+                let r.=self.draw_octopus_merge()
+            endif
+        elseif seen && self.num_parents>2
+            let r.='\'
+        elseif seen && self.num_parents==2
+            let r.='|\'[self.prev_state is# 'postmerge' &&
+                        \self.prev_commit_index<i]
+        else
+            let r.='|'
+        endif
+        let r.=' '
+    endfor
+    let r.=self.pad_horizontally(len(r))
+    call self.update_state(((self.num_parents>1)?
+                \             ('postmerge'):
+                \          ((self.is_mapping_correct())?
+                \             ('padding')
+                \          :
+                \             ('collapsing'))))
+    return r
+endfunction
+"▶2 graph.output_post_merge_line :: graph → String
+function s:F.graph.output_post_merge_line()
+    let seen=0
+    let r=''
+    let lcolumns=len(self.columns)
+    for i in range(lcolumns+1)
+        if i==lcolumns
+            if seen
+                break
+            endif
+            let ccshex=self.cs.hex
+        else
+            let ccshex=self.columns[i]
+        endif
+        if ccshex is# self.cs.hex
+            let seen=1
+            let r.='|'.repeat('\ ', self.num_parents-1)
+        else
+            let r.='|\'[seen].' '
+        endif
+    endfor
+    let r.=self.pad_horizontally(len(r))
+    call self.update_state(((self.is_mapping_correct())?
+                \               ('padding'):
+                \               ('collapsing')))
+    return r
+endfunction
+"▶2 graph.output_collapsing_line :: graph → String
+function s:F.graph.output_collapsing_line()
+    let used_horizontal=0
+    let horizontal_edge=-1
+    let horizontal_edge_target=-1
+    let self.new_mapping=repeat([-1], self.mapping_size)
+    for [i, target] in map(self.mapping[:(self.mapping_size-1)],
+                \          '[v:key, v:val]')
+        if target==-1
+            continue
+        elseif i==target*2
+            let self.new_mapping[i]=target
+        elseif self.new_mapping[i-1]==-1
+            let self.new_mapping[i-1]=target
+            if horizontal_edge==-1
+                let horizontal_edge=i
+                let horizontal_edge_target=target
+                let j=(target*2)+3
+                while j<i-2
+                    let self.new_mapping[j]=target
+                    let j+=2
+                endwhile
+            endif
+        elseif self.new_mapping[i-1]==target
+        else
+            let self.new_mapping[i-2]=target
+            if horizontal_edge==-1
+                let horizontal_edge=1
+            endif
+        endif
+    endfor
+    if self.mapping[self.mapping_size-1]==-1
+        let self.mapping_size-=1
+    endif
+    let r=''
+    for [i, target] in map(self.new_mapping[:(self.mapping_size-1)],
+                \          '[v:key, v:val]')
+        if target==-1
+            let r.=' '
+        elseif target*2==i
+            let r.='|'
+        elseif target==horizontal_edge_target && i!=horizontal_edge-1
+            if i!=(target*2)+3
+                let self.new_mapping[i]=-1
+            endif
+            let used_horizontal=1
+            let r.='_'
+        else
+            if used_horizontal && i<horizontal_edge
+                let self.new_mapping[i]=-1
+            endif
+            let r.='/'
+        endif
+    endfor
+    let r.=self.pad_horizontally(len(r))
+    let [self.mapping, self.new_mapping]=
+                \[self.new_mapping, self.mapping]
+    if self.is_mapping_correct()
+        call self.update_state('padding')
+    endif
+    return r
+endfunction
+"▶2 graph.next_line :: graph → String
+let s:gstatesfmap={
+            \'padding':    s:F.graph.output_padding_line,
+            \'skip':       s:F.graph.output_skip_line,
+            \'precommit':  s:F.graph.output_pre_commit_line,
+            \'commit':     s:F.graph.output_commit_line,
+            \'postmerge':  s:F.graph.output_post_merge_line,
+            \'collapsing': s:F.graph.output_collapsing_line,
+        \}
+function s:F.graph.next_line()
+    return call(s:gstatesfmap[self.state], [], self)
+endfunction
+"▶2 graph.padding_line :: graph → String
+function s:F.graph.padding_line()
+    if self.state isnot# 'commit'
+        return self.next_line()
+    endif
+    if self.num_parents<3
+        let r.=repeat('| ', len(self.columns))
+    else
+        let r.=join(map(copy(self.columns),
+                    \   '"|".((v:val is# "'.self.cs.hex.'")?'.
+                    \           'repeat(" ", (self.num_parents-2)*2):'.
+                    \           '" ")'), '')
+    endif
+    let r.=self.pad_horizontally(len(r))
+    let self.prev_state='padding'
+    return r
+endfunction
+"▶2 graph.show_commit :: graph → [String]
+function s:F.graph.show_commit()
+    let r=[]
+    while 1
+        try
+            if self.state is# 'commit'
+                break
+            endif
+        finally
+            " XXX We need at least one iteration. :finally makes sure it will be 
+            " done
+            let r+=[self.next_line()]
+        endtry
+    endwhile
+    return r
+endfunction
+"▶2 graph.show_remainder :: graph → [String]
+function s:F.graph.show_remainder()
+    let r=[]
+    while self.state isnot# 'padding'
+        let r+=[self.next_line()]
+    endwhile
+    return r
+endfunction
 "▶1 glog
 "▶2 glog.utfedges
 function s:F.glog.utfedges(seen, hex, parents)
@@ -188,7 +531,7 @@ function s:F.glog.utf(state, type, char, text, coldata)
     let indentation_level=2*max([ncols, ncols+coldiff])
     let a:state[0]=coldiff
     let a:state[1]=idx
-    call map(lines, 'printf("%-*s ", indentation_level, join(v:val, ""))')
+    call map(lines, 'printf("%-*s ", indentation_level, join(v:val, ""))')
     let curspecial=a:text.special
     let shiftlen=len(lines[0])
     call s:F.glog.addcols(a:text.special, shiftlen)
@@ -232,16 +575,135 @@ function s:F.glog.generate(css, showparents, opts)
     endfor
     return r
 endfunction
+"▶2 glog.graph_init :: repo, [cs] → graph
+let s:defgraph={
+            \'cs':                0,
+            \'num_parents':       0,
+            \'expansion_row':     0,
+            \'state':             'padding',
+            \'prev_state':        'padding',
+            \'commit_index':      0,
+            \'prev_commit_index': 0,
+            \'columns':           [],
+            \'new_columns':       [],
+            \'mapping':           [],
+            \'new_mapping':       [],
+            \'mapping_size':      0,
+            \'addchangesets':     {},
+        \}
+function s:F.glog.graph_init(css, showparents, opts)
+    let graph=deepcopy(s:defgraph)
+    let graph.repo=a:opts.repo
+    let graph.workcss=a:showparents
+    call map(copy(a:css),
+                \'((has_key(a:opts.skipchangesets, v:val.hex))?(0):'.
+                \   '(extend(graph.addchangesets, {v:val.hex : v:val})))')
+    call extend(graph, s:F.graph)
+    return graph
+endfunction
+"▶2 glog.show_log :: graph, cs, Text → Text
+function s:F.glog.show_log(graph, cs, text)
+    let lines=((a:graph.cs is 0)?([]):(a:graph.show_remainder()))
+    call a:graph.update(a:cs)
+    let lines+=a:graph.show_commit()
+    let collen=len(lines[-1])
+    let a:text.block_r[0][1]+=collen
+    let a:text.block_r[1][1]+=collen
+    let lines[-1]=lines[-1][:-2].' '.get(a:text.text, 0, '')
+    let cchar=a:graph.output_commit_char()
+    let bidx=stridx(lines[-1], cchar)
+    if bidx!=-1
+        let a:text.special.bullet=[0, bidx, cchar]
+    endif
+    for line in a:text.text[1:]
+        let lines+=[a:graph.next_line()[:-2].' '.line]
+    endfor
+    let a:text.text=lines
+    return a:text
+endfunction
+"▶2 glog.log_show_all :: [cs], showparents, opts → Log
+function s:F.glog.log_show_all(css, showparents, opts)
+    let graph=s:F.glog.graph_init(a:css, a:showparents, a:opts)
+    let show_header=1
+    let r={'text': [], 'specials': {}, 'rectangles': [], 'csstarts': {}}
+    for cs in filter(copy(a:css), 'has_key(graph.addchangesets, v:val.hex)')
+        let text=a:opts.templatefunc(cs, a:opts)
+        let text.block_r=[[0, 0],
+                    \     [len(text.text)-1,
+                    \      max(map(copy(text.text), 'len(v:val)'))]]
+        let text=s:F.glog.show_log(graph, cs, text)
+        let r.text+=text.text
+        let text.block_r[0][0]+=len(r.text)
+        let text.block_r[1][0]+=len(r.text)
+        let r.specials[cs.hex]=text.special
+        let r.rectangles+=[text.block_r+[cs.hex]]
+        let r.csstarts[cs.hex]=text.block_r[0][0]
+    endfor
+    return r
+endfunction
+"▶2 s:DateCmp :: cs, cs → -1|0|1
+function s:DateCmp(a, b)
+    let a=a:a.time
+    let b=a:b.time
+    return ((a==b)?(0):((a>b)?(-1):(1)))
+endfunction
+let s:_functions+=['s:DateCmp']
+"▶2 glog.sort_in_topological_order :: [cs] → [cs]
+function s:F.glog.sort_in_topological_order(repo, css)
+    call map(copy(a:css), 'extend(v:val, {"indegree": 1})')
+    for parents in map(copy(a:css), 'v:val.parents')
+        for parent in filter(map(filter(copy(parents),
+                    \                   'has_key(a:repo.changesets, v:val)'),
+                    \            'a:repo.changesets[v:val]'),
+                    \        'get(v:val, "indegree", 0)')
+            let parent.indegree+=1
+        endfor
+    endfor
+    let work=[]
+    call map(copy(a:css), 'v:val.indegree==1 && add(work, v:val) is 0')
+    call sort(work, 's:DateCmp')
+    let r=[]
+    while !empty(work)
+        let cs=remove(work, 0)
+        for parent in filter(map(filter(copy(cs.parents),
+                    \                   'has_key(a:repo.changesets, v:val)'),
+                    \            'a:repo.changesets[v:val]'),
+                    \        'get(v:val, "indegree", 0)')
+            let parent.indegree-=1
+            if parent.indegree==1
+                let j=0
+                let lwork=len(work)
+                while j<lwork && work[j].time<parent.time
+                    let j+=1
+                endwhile
+                call insert(work, parent, j)
+            endif
+        endfor
+        let cs.indegree=0
+        call add(r, cs)
+    endwhile
+    call map(copy(a:css), 'remove(v:val, "indegree")')
+    return r
+endfunction
 "▶2 glog.graphlog
 function s:F.glog.graphlog(repo, opts, css)
-    let css=reverse(copy(a:css))
-    let a:opts.repo=a:repo
-    return s:F.glog.generate(css, [a:repo.functions.getworkhex(a:repo)], a:opts)
+    if get(a:repo, 'requires_sort', 1)
+        let css=s:F.glog.sort_in_topological_order(a:repo, a:css)
+    else
+        let css=reverse(copy(a:css))
+    endif
+    let d={}
+    if get(a:repo, 'has_octopus_merges', 1)
+        let d.func=s:F.glog.log_show_all
+    else
+        let d.func=s:F.glog.generate
+    endif
+    return d.func(css, [a:repo.functions.getworkhex(a:repo)], a:opts)
 endfunction
 "▶1 temp
 "▶2 s:templates
 let s:templates={
-            \'default': "Changeset $rev:$hex$branch#hide,pref: (branch ,suf:)#\n".
+            \'default': "Changeset $rev#suf:\:#$hex$branch#hide,pref: (branch ,suf:)#\n".
             \           "Commited $time by $user\n".
             \           "Tags: $tags\n".
             \           "Bookmarks: $bookmarks\n".
@@ -252,7 +714,7 @@ let s:templates={
             \           "$hide#$#$stat\n".
             \           "$hide#:#$patch\n".
             \           "$empty",
-            \'hgdef':   "changeset:   $rev:$hex\n".
+            \'hgdef':   "changeset:   $rev#suf:\:#$hex\n".
             \           "branch:      $branch\n".
             \           "tags:        $tags\n".
             \           "bookmarks:   $bookmarks\n".
@@ -263,7 +725,7 @@ let s:templates={
             \           "$hide#$#$stat\n".
             \           "$hide#:#$patch\n".
             \           "$empty",
-            \'hgdescr': "changeset:   $rev:$hex\n".
+            \'hgdescr': "changeset:   $rev#suf:\:#$hex\n".
             \           "branch:      $branch\n".
             \           "tags:        $tags\n".
             \           "bookmarks:   $bookmarks\n".
@@ -285,6 +747,17 @@ let s:templates={
             \           "$hide#$# $stat\n".
             \           "$hide#:#$patch\n".
             \           "$empty",
+            \'git':     "commit $hex\n".
+            \           "Author: $user\n".
+            \           "Date:   $time#%a %b %d %T %Y#\n".
+            \           "$empty\n".
+            \           "    $description\n".
+            \           "$empty\n".
+            \           "$hide#$# $stat\n".
+            \           "$hide#:#$patch",
+            \'gitoneline': "$hex $summary\n".
+            \              "$hide#$# $stat\n".
+            \              "$hide#:#$patch",
         \}
 "▶2 s:kwexpr
 " TODO Add bisection status
@@ -294,7 +767,7 @@ let s:kwexpr.empty       = [0, '@@@']
 let s:kwexpr.hex         = [0, '@@@']
 let s:kwexpr.branch      = [0, '@@@', 'keep']
 let s:kwexpr.user        = [0, '@@@']
-let s:kwexpr.rev         = [0, 'string(@@@)']
+let s:kwexpr.rev         = [0, '@@@', 'ignore']
 let s:kwexpr.time        = [0, 'strftime(@0@, @@@)', '%d %b %Y %H:%M']
 let s:kwexpr.parents     = [0, 'join(@@@)']
 let s:kwexpr.children    = [0, 'join(@@@)']
@@ -507,6 +980,7 @@ function s:F.temp.compile(template, opts)
     if hasfiles
         let func+=['let files=a:opts.csfiles[a:cs.hex]']
     endif
+    let hasrevisions=get(a:opts.repo, 'hasrevisions', 1)
     if get(a:opts, 'patch', 0) || get(a:opts, 'stat', 0)
         let filesarg=((hasfiles && !has_key(a:opts.ignorefiles, 'patch'))?
                     \   ('files'):
@@ -528,41 +1002,47 @@ function s:F.temp.compile(template, opts)
         let lmeta=len(meta)
         if lmeta
             let kw=meta[0][0]
+            let lkw=meta[-1][0]
         endif
         "▶3 Skip line under certain conditions
-        if lmeta==1 && !s:kwexpr[meta[0][0]][0]
+        if !lmeta
+        elseif lmeta==1 && !s:kwexpr[meta[0][0]][0]
             if index(s:kwpempt, kw)!=-1
                 let addedif=1
                 let func+=['if !empty(a:cs.'.kw.')']
             elseif kw is# 'branch'
                 let addedif=1
                 let func+=['if a:cs.branch isnot# "default"']
+            elseif kw is# 'rev' && !hasrevisions
+                continue
             endif
             let func+=['let special.'.meta[0][0].'_l=[len(text), 0]']
-        elseif !lmeta
-        elseif kw is# 'patch' || kw is# 'stat'
+        elseif lkw is# 'patch' || lkw is# 'stat'
             let addedif=1
             let func+=['if exists("diff")']
-        elseif kw is# 'files' || kw is# 'changes'
+        elseif lkw is# 'files' || lkw is# 'changes'
             let addedif=1
             let func+=['if !empty(a:cs.'.kw.')']
         endif
         "▲3
         let func+=['let text+=[""]']
-        let i=0
+        let i=-1
         for str in lit
+            let i+=1
             if !empty(str)
                 let func+=['let text[-1].='.string(str)]
             endif
             if lmeta>i
+                "▶3 Define variables
                 let [kw, arg]=meta[i]
                 let ke=s:kwexpr[kw]
+                "▶3 Get expression
                 if has_key(arg, 'expr')
                     let expr=arg.expr
                 else
                     let expr=ke[1]
                 endif
-                "▶3 Determine what should be used as {word} argument
+                "▶4 Determine what should be used as {word} argument
                 if has_key(s:kwmarg, kw)
                     let marg=s:kwmarg[kw]
                 elseif hasfiles && (kw is# 'files' || kw is# 'changes') &&
@@ -575,7 +1055,7 @@ function s:F.temp.compile(template, opts)
                 else
                     let marg='a:cs.'.kw
                 endif
-                "▲3
+                "▲4
                 let expr=substitute(expr, '@@@', marg, 'g')
                 "▶3 Get positional parameters if required
                 let j=0
@@ -589,8 +1069,24 @@ function s:F.temp.compile(template, opts)
                                 \       escape(string(s), '&~\'), 'g')
                     let j+=1
                 endfor
+                "▶3 Skip meta if required
+                if kw is# 'rev' && !hasrevisions && arg.0 isnot# 'keep'
+                    continue
+                endif
                 "▶3 Add complex multiline statement
+                let addedif2=0
                 if ke[0]==2
+                    "▶4 Add missing if’s
+                    if !addedif
+                        if kw is# 'stat'
+                            let addedif2=1
+                            let func+=['if exists("diff")']
+                        elseif kw is# 'files' || kw is# 'changes'
+                            let addedif2=1
+                            let func+=['if !empty(a:cs.'.kw.')']
+                        endif
+                    endif
+                    "▲4
                     let expr=substitute(expr, '@<@', 'lstr', 'g')
                     let func+=['let lstr=remove(text, -1)',
                                 \'let [ntext, sp]='.expr]+
@@ -603,6 +1099,12 @@ function s:F.temp.compile(template, opts)
                                 \'call extend(special, sp)']
                 "▶3 Add simple multiline statement
                 elseif ke[0]
+                    "▶4 Add missing if’s
+                    if !addedif && kw is# 'patch'
+                        let addedif2=1
+                        let func+=['if exists("diff")']
+                    endif
+                    "▲4
                     let func+=['let ntext='.expr,
                                 \'call map(ntext, '.
                                 \         'string(remove(text, -1)).".v:val")']+
@@ -624,9 +1126,13 @@ function s:F.temp.compile(template, opts)
                         let condition='!empty(estr)'
                     elseif kw is# 'branch'
                         let condition='estr isnot# "default"'
+                    elseif kw is# 'rev'
+                        let condition=0
                     endif
                     if exists('condition')
-                        let addif=(has_key(arg, 'pref') || has_key(arg, 'suf'))
+                        let addif=(condition isnot 0) &&
+                                    \(has_key(arg, 'pref') ||
+                                    \ has_key(arg, 'suf'))
                         if addif
                             let func+=['if '.condition]
                         endif
@@ -650,8 +1156,10 @@ function s:F.temp.compile(template, opts)
                     endif
                 endif
                 "▲3
+                if addedif2
+                    let func+=['endif']
+                endif
             endif
-            let i+=1
         endfor
         if addedif
             let func+=['endif']
@@ -679,7 +1187,6 @@ endfunction
 "▶2 temp.syntax :: template, opts → [VimCommand] + :syn
 "▶3 Some globals
 let s:syncache={}
-let s:schs='%([|+\-/\\]\ *)'
 let s:noargtimereg='\v\d\d \S+ \d{4,} \d\d:\d\d'
 let s:ukntkws=['c', 'x', 'X', '+']
 let s:timekwregs={
@@ -732,8 +1239,9 @@ function s:F.temp.syntax(template, opts)
     "▶3 Define variables
     let r=[]
     let topgroups=[]
+    let hasrevisions=get(a:opts.repo, 'hasrevisions', 1)
     "▲3
-    let r+=['syn match auLogFirstLineStart =\v^'.s:schs.'*[@o]\ *'.s:schs.'*= '.
+    let r+=['syn match auLogFirstLineStart =\v^[^ ]*[@o][^ ]* = '.
                 \'skipwhite nextgroup=']
     let i=0
     let nlgroups=[]
@@ -767,7 +1275,8 @@ function s:F.temp.syntax(template, opts)
                 if s:kwexpr[kw][0]
                     let hasmult=1
                 endif
-                if kw is# 'empty'
+                if kw is# 'empty' || (kw is# 'rev' && !hasrevisions &&
+                            \         arg.0 isnot# 'keep')
                     let r[-1]=substitute(r[-1], '\v\w+$', '', '')
                 elseif has_key(arg, 'synreg')
                     call s:F.temp.addgroup(r, nlgroups, 'auLog_'.kw)
@@ -828,10 +1337,11 @@ function s:F.temp.syntax(template, opts)
                     let r+=['hi def link '.sname.' Ignore']
                     let r+=['syn match '.sname.' /\V'.escape(arg[0], '\/').'/ '.
                                 \'contained nextgroup=']
-                elseif (index(s:kwpempt, kw)!=-1 || kw is# 'branch') &&
+                elseif (index(s:kwpempt, kw)!=-1 || kw is# 'branch' ||
+                            \                       kw is# 'rev') &&
                             \(has_key(arg, 'pref') || has_key(arg, 'suf'))
                     if has_key(arg, 'pref')
-                        call s:F.temp.addgroup(r, nlgroups, 'auLog_'.kw.'_pref,')
+                        call s:F.temp.addgroup(r,nlgroups,'auLog_'.kw.'_pref,')
                         let r+=['syn match auLog_'.kw.'_pref '.
                                     \'/\V'.escape(arg.pref, '\/').'/ '.
                                     \'contained nextgroup=auLog_'.kw]
@@ -886,7 +1396,7 @@ function s:F.temp.syntax(template, opts)
         let i+=1
     endfor
     if !empty(nlgroups)
-        let r+=['syn match auLogNextLineStart @\v'.s:schs.'+@ skipwhite '.
+        let r+=['syn match auLogNextLineStart @\v^[^ ]+ @ skipwhite '.
                     \' nextgroup='.join(nlgroups, ',')]
     endif
     call add(r, remove(r, 0))
@@ -976,7 +1486,7 @@ endfunction
 function s:F.setup(read, repo, opts)
     let opts=a:opts
     let bvar={}
-    let cslist=a:repo.functions.getchangesets(a:repo)
+    call a:repo.functions.getchangesets(a:repo)
     "▶2 Add `ignorefiles'
     let ignorefiles=(has_key(opts, 'ignfiles')?
                 \               (opts.ignfiles):
@@ -988,19 +1498,18 @@ function s:F.setup(read, repo, opts)
     if has_key(opts, 'revrange')
         let opts.revs=map(copy(opts.revrange),
                     \'a:repo.changesets['.
-                    \   'a:repo.functions.getrevhex(a:repo, v:val)].rev')
+                    \   'a:repo.functions.getrevhex(a:repo, v:val)].hex')
     elseif get(opts, 'limit', 0)>0
-        let opts.revs=[a:repo.csnum-opts.limit-1,
-                    \       a:repo.csnum-2]
+        let opts.revs=[-opts.limit, -1]
     else
-        let opts.revs=[0, a:repo.csnum-2]
+        let opts.revs=[0, -1]
     endif
     "▶2 Process `revision' option
     if has_key(opts, 'revision')
         let hex=a:repo.functions.getrevhex(a:repo, opts.revision)
         let cs=a:repo.changesets[hex]
-        if cs.rev<opts.revs[1]
-            let opts.revs[1]=cs.rev
+        if type(cs.rev)==type(0) && cs.rev<opts.revs[1]
+            let opts.revs[1]=cs.hex
         endif
         let opts.revisions={}
         let addrevs=[cs]
@@ -1014,7 +1523,7 @@ function s:F.setup(read, repo, opts)
         endwhile
     endif
     "▲2
-    let css=cslist[opts.revs[0]:opts.revs[1]]
+    let css=a:repo.functions.revrange(a:repo, opts.revs[0], opts.revs[1])
     "▶2 Generate cs.{kw} for various options (`show{kw}'+`files')
     for key in ['renames', 'copies']
         if get(opts, 'show'.key, 0) || has_key(opts, 'files')
@@ -1025,15 +1534,15 @@ function s:F.setup(read, repo, opts)
     endfor
     "▶2 Generate cs.files for several options
     if has_key(opts, 'files') || get(opts, 'showrenames', 0) ||
-                \                     get(opts, 'showcopies',  0) ||
-                \                     get(opts, 'showfiles',   0) ||
-                \                     get(opts, 'stat',        0)
+                \                get(opts, 'showcopies',  0) ||
+                \                get(opts, 'showfiles',   0) ||
+                \                get(opts, 'stat',        0)
         for cs in css
             call a:repo.functions.getcsprop(a:repo, cs, 'files')
         endfor
     endif
     "▶2 Generate cs.changes for showfiles option
-    if get(opts, 'showfiles', 0)
+    if has_key(opts, 'files') || get(opts, 'showfiles', 0)
         for cs in css
             call a:repo.functions.getcsprop(a:repo, cs, 'changes')
         endfor
@@ -1042,8 +1551,7 @@ function s:F.setup(read, repo, opts)
     if has_key(opts, 'files')
         let opts.csfiles={}
         for cs in css
-            let changes=a:repo.functions.getcsprop(a:repo,cs, 'changes')
-            let changes=copy(changes)
+            let changes=copy(cs.changes)
             let csfiles=[]
             let opts.csfiles[cs.hex]=csfiles
             for pattern in opts.filepats
@@ -1065,13 +1573,14 @@ function s:F.setup(read, repo, opts)
     let foundfirst=0
     let lastnoskip=-1
     let i=opts.revs[0]
+    let requires_sort=get(a:repo, 'requires_sort', 1)
     for cs in css
         let skip=0
         "▶3 `branch', `merges', `search', `user', `revision'
         if (has_key(opts, 'branch') && cs.branch isnot# opts.branch)||
                     \(has_key(opts, 'merges') &&
                     \   ((opts.merges)?(len(cs.parents)<=1):
-                    \                    (len(cs.parents)>1))) ||
+                    \                  (len(cs.parents)>1))) ||
                     \(has_key(opts, 'search') &&
                     \   cs.description!~#opts.search) ||
                     \(has_key(opts, 'user') && cs.user!~#opts.user) ||
@@ -1109,16 +1618,20 @@ function s:F.setup(read, repo, opts)
             endif
         endif
         "▲3
-        if skip
+        if requires_sort
+            if skip
+                let opts.skipchangesets[cs.hex]=cs
+            endif
+        elseif skip
             if foundfirst
-                let opts.skipchangesets[cs.hex]=1
+                let opts.skipchangesets[cs.hex]=cs
             endif
         else
             if foundfirst
-                let lastnoskip=i
+                let lastnoskip=cs.hex
             else
                 let foundfirst=1
-                let firstnoskip=i
+                let firstnoskip=cs.hex
             endif
         endif
         let i+=1
@@ -1137,11 +1650,11 @@ function s:F.setup(read, repo, opts)
     else
         let template=s:templates.default
     endif
+    let opts.repo=a:repo
     let bvar.templatelist=s:F.temp.parse(template)
-    let opts.templatefunc=s:F.temp.compile(bvar.templatelist,
-                \                               opts)
+    let opts.templatefunc=s:F.temp.compile(bvar.templatelist, opts)
     "▲2
-    let css=cslist[opts.revs[0]:opts.revs[1]]
+    let css=a:repo.functions.revrange(a:repo, opts.revs[0], opts.revs[1])
     let text=s:F.glog.graphlog(a:repo, opts, css)
     let bvar.specials=text.specials
     let bvar.rectangles=text.rectangles

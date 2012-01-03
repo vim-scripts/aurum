@@ -10,6 +10,7 @@ catch /\V\^Vim(syntax):E484:/
 endtry
 
 hi def link auLogSkipBefore_hex    Comment
+hi def link auLog_rev_suf          Comment
 hi def link auLogHexEnd            Comment
 
 hi def link auLogPatchFile         diffFile
@@ -31,6 +32,5 @@ else
     hi auLogSkipBefore_rev ctermfg=DarkYellow  guifg=DarkYellow
     hi auLogHexStart       ctermfg=DarkYellow  guifg=DarkYellow
 endif
-" hi
 
 let b:current_syntax=expand('<sfile>:t:r')

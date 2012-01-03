@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.1', {'@/resources': '0.0',
+    execute frawor#Setup('1.3', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                  '@/options': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
@@ -25,22 +25,35 @@ let s:diffoptsstr=join(map(copy(s:diffoptslst),
             \               '" ?".v:val." range 0 inf" : '.
             \               '"!?".v:val'))
 let s:_messages={
-            \  'nrm': 'Failed to remove file %s from repository %s',
-            \'iname': 'Error while registering driver for plugin %s: '.
-            \         'invalid name: it must be a non-empty sting, '.
-            \         'containing only latin letters, digits and underscores',
-            \ 'nimp': 'Function %s was not implemented in driver %s',
-            \'uprop': 'Unable to obtain property %s from changeset %s '.
-            \         'in repository %s',
+            \    'nrm': 'Failed to remove file %s from repository %s',
+            \  'iname': 'Error while registering driver for plugin %s: '.
+            \           'invalid name: it must be a non-empty sting, '.
+            \           'containing only latin letters, digits and underscores',
+            \   'nimp': 'Function %s was not implemented in driver %s',
+            \  'tgtex': 'Target already exists: %s',
+            \ 'cpfail': 'Failed to copy %s to %s: %s',
+            \ 'wrfail': 'Failed to write copy of %s to %s',
         \}
 call extend(s:_messages, map({
-            \ 'dreg': 'driver was already registered by plugin %s',
-            \'fndct': 'second argument is not a dictionary',
-            \ 'fmis': 'some required functions are missing',
-            \ 'nfun': 'some of dictionary values are not '.
-            \         'callable function references',
+            \   'dreg': 'driver was already registered by plugin %s',
+            \  'fndct': 'second argument is not a dictionary',
+            \   'fmis': 'some required functions are missing',
+            \   'nfun': 'some of dictionary values are not '.
+            \           'callable function references',
         \}, '"Error while registering driver %s for plugin %s: ".v:val'))
 let s:deffuncs={}
+"▶1 setlines :: [String], read::Bool → + buffer
+function s:F.setlines(lines, read)
+    let d={'set': function((a:read)?('append'):('setline'))}
+    if len(a:lines)>1 && empty(a:lines[-1])
+        call d.set('.', a:lines[:-2])
+    else
+        if !a:read
+            setlocal binary noendofline
+        endif
+        call d.set('.', a:lines)
+    endif
+endfunction
 "▶1 dirty :: repo, file → Bool
 function s:deffuncs.dirty(repo, file)
     let status=a:repo.functions.status(a:repo, 0, 0, [a:file])
@@ -67,23 +80,50 @@ function s:deffuncs.getnthparent(repo, rev, n)
     endfor
     return r
 endfunction
-"▶1 getcsprop :: repo, cs|rev, prop → prop
-function s:deffuncs.getcsprop(repo, cs, prop)
-    if type(a:cs)!=type({})
-        let cs=a:repo.functions.getcs(a:repo, a:cs)
-    else
-        let cs=a:cs
-    endif
-    if has_key(cs, a:prop)
-        return cs[a:prop]
-    else
-        call s:_f.throw('uprop', a:prop, a:cs.hex, a:repo.path)
-    endif
-endfunction
 "▶1 reltorepo :: repo, path → rpath
 function s:deffuncs.reltorepo(repo, path)
     return join(s:_r.os.path.split(s:_r.os.path.relpath(a:path,
                 \                                       a:repo.path))[1:], '/')
+endfunction
+"▶1 getcsprop :: repo, Either cs rev, propname → a
+function s:deffuncs.getcsprop(repo, csr, propname)
+    if type(a:csr)==type({})
+        let cs=a:csr
+    else
+        let cs=a:repo.functions.getcs(a:repo, a:csr)
+    endif
+    if has_key(cs, a:propname)
+        return cs[a:propname]
+    endif
+    call a:repo.functions.setcsprop(a:repo, cs, a:propname)
+    " XXX There is much code relying on the fact that after getcsprop property 
+    " with given name is added to changeset dictionary
+    return cs[a:propname]
+endfunction
+"▶1 revrange :: repo, rev, rev → [cs]
+function s:F.getrev(repo, rev, cslist)
+    if type(a:rev)==type(0)
+        if a:rev<0
+            return len(a:cslist)+a:rev
+        else
+            return a:rev
+        endif
+    else
+        return a:repo.functions.getcs(a:repo, a:rev).rev
+    endif
+endfunction
+function s:deffuncs.revrange(repo, rev1, rev2)
+    if empty(a:repo.cslist)
+        let cslist=a:repo.functions.getchangesets(a:repo)
+    else
+        let cslist=a:repo.cslist
+    endif
+    let rev1=s:F.getrev(a:repo, a:rev1, cslist)
+    let rev2=s:F.getrev(a:repo, a:rev2, cslist)
+    if rev1>rev2
+        let [rev1, rev2]=[rev2, rev1]
+    endif
+    return cslist[(rev1):(rev2)]
 endfunction
 "▶1 difftobuffer
 function s:deffuncs.difftobuffer(repo, buf, ...)
@@ -96,6 +136,97 @@ function s:deffuncs.difftobuffer(repo, buf, ...)
     if oldbuf!=a:buf
         execute 'buffer' oldbuf
     endif
+endfunction
+"▶1 diffname :: _, line, diffre, _ → rpath
+function s:deffuncs.diffname(repo, line, diffre, opts)
+    return get(matchlist(a:line, a:diffre), 1, 0)
+endfunction
+"▶1 getstats :: _, diff, diffopts → stats
+" stats :: { ( "insertions" | "deletions" ): UInt,
+"            "files": { ( "insertions" | "deletions" ): UInt } }
+function s:deffuncs.getstats(repo, diff, opts)
+    let diffre=a:repo.functions.diffre(a:repo, a:opts)
+    let i=0
+    let llines=len(a:diff)
+    let stats={'files': {}, 'insertions': 0, 'deletions': 0}
+    let file=0
+    while i<llines
+        let line=a:diff[i]
+        if line[:3] is# 'diff'
+            let file=a:repo.functions.diffname(a:repo, line, diffre, a:opts)
+            if file isnot 0
+                let stats.files[file]={'insertions': 0, 'deletions': 0,}
+                let i+=1
+                let oldi=i
+                let pmlines=2
+                while pmlines && i<llines
+                    let lstart=a:diff[i][:2]
+                    if lstart is# '+++' || lstart is# '---'
+                        let pmlines-=1
+                    endif
+                    let i+=1
+                    if i-oldi>=4
+                        let i=oldi
+                        break
+                    endif
+                endwhile
+                continue
+            endif
+        elseif file is 0
+        elseif line[0] is# '+'
+            let stats.insertions+=1
+            let stats.files[file].insertions+=1
+        elseif line[0] is# '-'
+            let stats.deletions+=1
+            let stats.files[file].deletions+=1
+        endif
+        let i+=1
+    endwhile
+    return stats
+endfunction
+"▶1 copy
+function s:deffuncs.copy(repo, force, source, target)
+    let src=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:source))
+    let tgt=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:target))
+    if filewritable(tgt)==1
+        if a:force
+            call delete(tgt)
+        else
+            call s:_f.throw('tgtex', tgt)
+        endif
+    elseif s:_r.os.path.exists(tgt)
+        " Don’t try to delete directories and non-writable files.
+        call s:_f.throw('tgtex', tgt)
+    endif
+    let cmd=0
+    if executable('cp')
+        let cmd='cp --'
+    elseif executable('copy')
+        let cmd='copy'
+    endif
+    if cmd is 0
+        try
+            if writefile(readfile(src, 'b'), tgt, 'b')!=0
+                call s:_f.throw('wrfail', src, tgt)
+            endif
+        endtry
+    else
+        let hasnls=(stridx(src.tgt, "\n")==-1)
+        let cmd.=' '.shellescape(src, hasnls).' '.shellescape(tgt, hasnls)
+        if hasnls
+            let shout=system(cmd)
+        else
+            noautocmd tabnew
+            noautocmd setlocal buftype=nofile
+            noautocmd execute 'silent! %!'.cmd
+            let shout=join(getline(1, '$'), "\n")
+            noautocmd tabclose
+        endif
+        if v:shell_error
+            call s:_f.throw('cpfail', src, tgt, shout)
+        endif
+    endif
+    call a:repo.functions.add(a:repo, tgt)
 endfunction
 "▶1 move
 function s:deffuncs.move(repo, force, source, target)
@@ -215,11 +346,11 @@ call s:_f.postresource('repo', {'get': s:F.getrepo,
             \                'update': s:F.update,
             \           'diffoptslst': s:diffoptslst,
             \           'diffoptsstr': s:diffoptsstr,})
+call s:_f.postresource('setlines', s:F.setlines)
 "▶1 regdriver feature
 let s:requiredfuncs=['repo', 'getcs', 'checkdir']
 let s:optfuncs=['readfile', 'annotate', 'diff', 'status', 'commit', 'update',
-            \   'dirty', 'diffre', 'getstats', 'getrepoprop', 'copy', 'forget',
-            \   'branch', 'label']
+            \   'dirty', 'diffre', 'getrepoprop', 'forget', 'branch', 'label']
 "▶2 regdriver :: {f}, name, funcs → + s:drivers
 function s:F.regdriver(plugdict, fdict, name, funcs)
     "▶3 Check arguments

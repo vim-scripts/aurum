@@ -9,8 +9,8 @@ if !exists('s:_pluginloaded')
                 \                   '@/functions': '0.0',
                 \                 '@aurum/commit': '0.0',
                 \               '@aurum/cmdutils': '0.0',
-                \                   '@aurum/repo': '1.0',
-                \                   '@aurum/edit': '0.0',
+                \                   '@aurum/repo': '1.2',
+                \                   '@aurum/edit': '1.0',
                 \                     '@/options': '0.0',}, 0)
     call FraworLoad('@/commands')
     call FraworLoad('@/functions')
