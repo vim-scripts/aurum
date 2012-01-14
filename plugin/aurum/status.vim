@@ -4,7 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/resources': '0.0',
                 \            '@aurum/cmdutils': '0.0',
                 \                      '@/fwc': '0.2',
-                \                '@aurum/repo': '1.0',
+                \                '@aurum/repo': '2.0',
                 \                '@aurum/edit': '1.0',
                 \                 '@/commands': '0.0',
                 \                  '@/options': '0.0',
@@ -97,13 +97,9 @@ function s:F.setup(read, repo, opts)
     else
         call setline('.', statlines)
         setlocal readonly nomodifiable
-        augroup AuStatusNoInsert
-            autocmd InsertEnter <buffer> :call feedkeys("\e", 'n')
-        augroup END
     endif
     return bvar
 endfunction
-let s:_augroups+=['AuStatusNoInsert']
 "▶1 statfunc
 let s:defcmd='silent botright new'
 function s:statfunc.function(repopath, opts)

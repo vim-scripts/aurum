@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.3', {'@/resources': '0.0',
+    execute frawor#Setup('2.2', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                  '@/options': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
@@ -42,6 +42,121 @@ call extend(s:_messages, map({
             \           'callable function references',
         \}, '"Error while registering driver %s for plugin %s: ".v:val'))
 let s:deffuncs={}
+let s:iterfuncs={}
+"▶1 sort_in_topological_order :: [cs] → [cs]
+" TODO put sorting requirement on getchangesets and revrange functions.
+function s:F.sort_in_topological_order(repo, css)
+    try
+        call map(copy(a:css), 'extend(v:val, {"indegree": 1})')
+        for parents in map(copy(a:css), 'v:val.parents')
+            for parent in filter(map(filter(copy(parents),
+                        \                   'has_key(a:repo.changesets,v:val)'),
+                        \            'a:repo.changesets[v:val]'),
+                        \        'get(v:val, "indegree", 0)')
+                let parent.indegree+=1
+            endfor
+        endfor
+        let work=[]
+        call map(copy(a:css), 'v:val.indegree==1 ? add(work, v:val) : 0')
+        call sort(work, 's:DateCmp')
+        let r=[]
+        while !empty(work)
+            let cs=remove(work, 0)
+            for parent in filter(map(filter(copy(cs.parents),
+                        \                   'has_key(a:repo.changesets,v:val)'),
+                        \            'a:repo.changesets[v:val]'),
+                        \        'get(v:val, "indegree", 0)')
+                let parent.indegree-=1
+                if parent.indegree==1
+                    let j=0
+                    let lwork=len(work)
+                    while j<lwork && work[j].time<parent.time
+                        let j+=1
+                    endwhile
+                    call insert(work, parent, j)
+                endif
+            endfor
+            let cs.indegree=0
+            call add(r, cs)
+        endwhile
+    finally
+        call map(copy(a:css), 'remove(v:val, "indegree")')
+    endtry
+    return r
+endfunction
+"▶1 iterfuncs: cs generators
+" startfunc (here)  :: repo, opts → d
+"▶2 ancestors
+let s:iterfuncs.ancestors={}
+function s:iterfuncs.ancestors.start(repo, opts)
+    let cs=a:repo.functions.getcs(a:repo,
+                \a:repo.functions.getrevhex(a:repo, a:opts.revision))
+    let indegree={cs.hex : 1}
+    for parenthex in cs.parents
+        let indegree[parenthex]=2
+    endfor
+    return {'addrevs': [cs], 'revisions': {}, 'repo': a:repo,
+                \'hasrevisions': get(a:repo, 'hasrevisions', 1),
+                \'indegree': indegree, 'incremented': {cs.hex : 1}}
+endfunction
+function! s:RevCmp(cs1, cs2)
+    let rev1=a:cs1.rev
+    let rev2=a:cs2.rev
+    return ((rev1==rev2)?(0):((rev1<rev2)?(1):(-1)))
+endfunction
+let s:_functions+=['s:RevCmp']
+function s:iterfuncs.ancestors.next(d)
+    if empty(a:d.addrevs)
+        return 0
+    endif
+    " XXX cs variables should be kept after cycle ends
+    let i=-1
+    for cs in a:d.addrevs
+        let i+=1
+        if a:d.indegree[cs.hex]<=1
+            break
+        endif
+    endfor
+    call remove(a:d.addrevs, i)
+    let a:d.revisions[cs.hex]=cs
+    for parenthex in filter(copy(cs.parents), '!has_key(a:d.revisions, v:val)')
+        let parent=a:d.repo.functions.getcs(a:d.repo, parenthex)
+        let a:d.indegree[parenthex]=a:d.indegree[parenthex]-1
+        if !has_key(a:d.incremented, parenthex)
+            let a:d.incremented[parenthex]=1
+            for pparhex in parent.parents
+                let a:d.indegree[pparhex]=get(a:d.indegree, pparhex, 1)+1
+            endfor
+            let a:d.addrevs+=[parent]
+        endif
+    endfor
+    return cs
+endfunction
+"▶2 revrange
+let s:iterfuncs.revrange={}
+function s:iterfuncs.revrange.start(repo, opts)
+    if has_key(a:opts, 'revrange')
+        call map(a:opts.revrange, 'a:repo.functions.getrevhex(a:repo, v:val)')
+        let cslist=copy(call(a:repo.functions.revrange,
+                    \   [a:repo]+a:opts.revrange, {}))
+    else
+        let cslist=copy(a:repo.functions.getchangesets(a:repo))
+    endif
+    if get(a:repo, 'requires_sort', 1)
+        let cslist=s:F.sort_in_topological_order(a:repo, cslist)
+    else
+        call reverse(cslist)
+    endif
+    return {'cslist': cslist}
+endfunction
+function s:iterfuncs.revrange.next(d)
+    if empty(a:d.cslist)
+        return 0
+    endif
+    return remove(a:d.cslist, 0)
+endfunction
+"▶2 changesets
+let s:iterfuncs.changesets=s:iterfuncs.revrange
 "▶1 setlines :: [String], read::Bool → + buffer
 function s:F.setlines(lines, read)
     let d={'set': function((a:read)?('append'):('setline'))}
@@ -327,6 +442,15 @@ function s:F.getrepo(path)
     let repo.path=path
     let repo.functions=copy(driver.functions)
     let repo.diffopts=copy(s:_f.getoption('diffopts'))
+    if !has_key(repo, 'iterfuncs')
+        let repo.iterfuncs=deepcopy(s:iterfuncs)
+    else
+        call extend(repo.iterfuncs, s:iterfuncs, 'keep')
+    endif
+    if !has_key(repo, 'initprops')
+        let repo.initprops=['rev', 'hex', 'parents', 'tags', 'bookmarks',
+                    \       'branch', 'time', 'user', 'description']
+    endif
     lockvar! repo
     unlockvar! repo.cslist
     unlockvar! repo.changesets

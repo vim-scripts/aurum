@@ -68,13 +68,9 @@ function s:F.setup(read, repo, rev, file)
     else
         call setline('.', lines)
         setlocal readonly nomodifiable
-        augroup AuAnnotateNoInsert
-            autocmd InsertEnter <buffer> :call feedkeys("\e", 'n')
-        augroup END
     endif
     return bvar
 endfunction
-let s:_augroups+=['AuAnnotateNoInsert']
 "▶1 setannbuf
 function s:F.setannbuf(bvar, buf, annbuf)
     let a:bvar.annbuf=a:annbuf
@@ -90,6 +86,24 @@ function s:F.setannbuf(bvar, buf, annbuf)
     endif
 endfunction
 let s:_augroups+=['AuAnnotateBW']
+"▶1 foldopen
+if has('folding')
+    function s:F.foldopen()
+        if &foldenable
+            try
+                " XXX Using silent! here because I am unable to catch E490 for 
+                " unknown reason
+                silent! %foldopen!
+            catch /^Vim:(foldopen):E490:/
+                " No folds found — ignore
+            endtry
+        endif
+    endfunction
+else
+    function s:F.foldopen()
+        " Doing nothing if there is no folding support
+    endfunction
+endif
 "▶1 annfunc
 " TODO Investigate why wiping out annotate buffer causes consumption of next
 "      character under wine
@@ -111,11 +125,14 @@ function s:annfunc.function(opts)
             setlocal bufhidden=wipe
         endif
     endif
-    setlocal scrollbind
+    call s:F.foldopen()
+    setlocal scrollbind cursorbind nowrap
+    let lnr=line('.')
     let anwidth=min([42, winwidth(0)/2-1])
     call s:_r.run('silent leftabove '.anwidth.'vsplit', 'annotate', repo,
                 \ rev, file)
-    setlocal scrollbind
+    execute lnr
+    setlocal scrollbind cursorbind
     setlocal bufhidden=wipe
     let buf=bufnr('%')
     call s:F.setannbuf(s:_r.bufvars[buf], buf, annbuf)
@@ -131,12 +148,12 @@ call add(s:anncomp,
             \'\vfile\s+type\s*\V""', 'file path',          ''),
             \'\vrev\s+type\s*\V""',  'rev '.s:_r.comp.rev, ''))
 "▶1 aurum://annotate
-call s:_f.newcommand({
-            \'function': s:F.setup,
-            \ 'arguments': 2,
-            \  'filetype': 'aurumannotate',})
+call s:_f.newcommand({'function': s:F.setup,
+            \        'arguments': 2,
+            \         'filetype': 'aurumannotate',})
 "▶1 Post resource
-call s:_f.postresource('annotate', {'setannbuf': s:F.setannbuf})
+call s:_f.postresource('annotate', {'setannbuf': s:F.setannbuf,
+            \                        'foldopen': s:F.foldopen,})
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

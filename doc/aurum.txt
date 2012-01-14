@@ -1,23 +1,25 @@
 *aurum.txt* Plugin for dealing with source files under various VCS control
 ==============================================================================
 CONTENTS                                                      *aurum-contents*
-    1. Intro                                             |aurum-intro|
-    2. Functionality provided                            |aurum-functionality|
-        2.1. Commands                                    |aurum-commands|
-        2.2. Functions                                   |aurum-functions|
-        2.3. aurum:// pseudo-protocol                    |aurum://|
-        2.4. Global mappings                             |aurum-mappings|
-    4. Options                                           |aurum-options|
-    5. Globs                                             |aurum-globs|
-    6. Log templates                                     |aurum-logtemplates|
-        6.1. Built-in template styles                    |aurum-logstyles|
-    7. Record mode                                       |aurum-record|
-    8. Internal objects                                  |aurum-objects|
-        8.1. Repository                                  |aurum-repository|
-        8.2. Changeset                                   |aurum-changeset|
-    9. Creating your own driver                          |aurum-new-driver|
-    10. Notes about various driver implementations       |aurum-driver-notes|
-    11. Changelog                                        |aurum-changelog|
+    1. Intro                                         |aurum-intro|
+    2. Functionality provided                        |aurum-functionality|
+        2.1. Commands                                |aurum-commands|
+        2.2. Functions                               |aurum-functions|
+        2.3. aurum:// pseudo-protocol                |aurum://|
+        2.4. Global mappings                         |aurum-mappings|
+    4. Options                                       |aurum-options|
+    5. Globs                                         |aurum-globs|
+    6. Log templates                                 |aurum-logtemplates|
+        6.1. Built-in template styles                |aurum-logstyles|
+    7. Record mode                                   |aurum-record|
+    8. Internal objects                              |aurum-objects|
+        8.1. Repository                              |aurum-repository|
+        8.2. Changeset                               |aurum-changeset|
+    9. Creating your own driver                      |aurum-new-driver|
+    10. Notes about various driver implementations   |aurum-driver-notes|
+        10.1. Mercurial                              |aurum-driver-Mercurial|
+        10.2. Git                                    |aurum-driver-Git|
+    11. Changelog                                    |aurum-changelog|
 
 ==============================================================================
 1. Intro                                                         *aurum-intro*
@@ -287,6 +289,10 @@ AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
                 Flag. Determines whether copies should be shown.
     [no]showrenames
                 Flag. Determines whether renames should be shown.
+    [no]procinput
+                Flag. Overrides |g:aurum_procinput|: determines whether user 
+                input will be processed while generating log.
+                Note If enabled, acts like g:aurum_procinput=2.
 
                                                                      *:AuMove*
 AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
@@ -529,7 +535,7 @@ aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
 
     Note These mappings are defined for aurumannotate filetype.
 
-aurum://commit:{repo}:{user}:{date}:{files}                   *aurum://commit*
+aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
     Open buffer that prompts for a commit message. Writing this buffer will 
     record the commit and close the buffer. It is the only pseudo-protocol 
     type you can’t use this with |:read|.
@@ -804,7 +810,20 @@ ignorefiles                                              *g:aurum_ignorefiles*
 closewindow                                              *g:aurum_closewindow*
     Bool. Determines whether log window should be closed when executing 
     mappings (except mappings that add a filter and exit mapping).
-    Default:
+    Default: 1.
+
+procinput                                                  *g:aurum_procinput*
+    0, 1 or 2. If not zero, consumes and passes user input to |:normal| while 
+    generating a log thus allowing you to navigate it while it is being 
+    created. Value 1 will make logger additionally check whether there were 
+    some characters in input buffer before creation of log started. If there 
+    were characters, then processing user input will be disabled (because in 
+    other case it will possibly break mappings that do not expect such 
+    behavior from |:AuLog|).
+    Default value: 1.
+    Note: if you somehow switch buffers while log is being generated then 
+          buffer with generated log will be wiped out, log generation will 
+          stop.
 
 recheight                                                  *g:aurum_recheight*
     VimL |expression| that evaluates to unsigned integer or unsigned integer. 
@@ -862,6 +881,19 @@ hypsites                                                    *g:aurum_hypsites*
     repository information in case some repository support is not/can not be 
     added to the aurum.
     Values of this option are checked before |aurum-repo.hypsites|.
+
+The following options are driver-specific:
+
+hg_useshell                                              *g:aurum_hg_useshell*
+    List (either true list or string with values separated by anything that is 
+    not a lowercase letter) of Mercurial commands that are to be called 
+    without using Mercurial Python API.
+
+    Functions supporting this option: |rf-commit|, |rf-update|, |rf-move| 
+    (uses "rename" mercurial command), |rf-copy|, |rf-forget|, |rf-remove|, 
+    |rf-add|, |rf-branch|, |rf-label| (uses "tag" or "bookmark" Mercurial 
+    commands). Every function except |rf-move| and |rf-label| uses Mercurial 
+    command identical to its name.
 
 ==============================================================================
 5. Globs                                                         *aurum-globs*
@@ -1123,11 +1155,10 @@ Remove    R   Like Discard, but also unselect it (makes difference if file is
 Repository is a dictionary containing at least the following keys:
 
 cslist :: [ cs ]                                           *aurum-repo.cslist*
-    List of |aurum-changeset| objects. If it is not empty, then for each 
-    changeset in repository cs is repo.cslist[cs.rev] unless cs.rev is not 
-    String. It is empty by default and may be populated only when you call 
-    |aurum-rf-getchangesets|. See also |aurum-cs.rev|.
-    Obsolete, use |aurum-rf-revrange|.
+    List of |aurum-changeset| objects. It is empty by default and may be 
+    populated only when you call |aurum-rf-getchangesets|. See also 
+    |aurum-cs.rev|.
+    Obsolete, use |aurum-rf-getchangesets|.
 changesets :: {hex : cs}                               *aurum-repo.changesets*
     Dictionary containing all |aurum-changeset| objects that are associated 
     with the repository. For each changeset cs is repo.changesets[cs.hex].
@@ -1169,9 +1200,12 @@ labeltypes :: [ String ]                               *aurum-repo.labeltypes*
     default used by |:AuName|.
 requires_sort :: Bool                               *aurum-repo.requires_sort*
     Determines whether it is necessary to run sort_in_topological_order 
-    function on commit list returned by |aurum-rf-revrange| when it is about 
-    to be displayed in |aurum://log| buffer. If it is false, then this list 
-    will only be reversed (|reverse()|).
+    function on commit lists returned by |aurum-rf-revrange| and 
+    |aurum-rf-getchangesets| when it is about to be displayed in |aurum://log| 
+    buffer. If it is false, then this list will only be reversed 
+    (|reverse()|).
+    See |aurum-rf-getchangesets| for the description of what “topological 
+    order” is.
     This key is optional, default value: true.
 has_octopus_merges :: Bool                     *aurum-repo.has_octopus_merges*
     Determines whether repository has merges containing more then two parents. 
@@ -1182,6 +1216,38 @@ hasrevisions :: Bool                                 *aurum-repo.hasrevisions*
     abbreviated hash. If this option is false, then in log produced by 
     |aurum://log| revisions will be ignored.
     This key is optional, default value: true.
+initprops :: [ propname ]                               *aurum-repo.initprops*
+    Contains list of properties that are always set by |aurum-rf-getcs|.
+    This key is optional, default value: ["rev", "hex", "parents", "tags", 
+    "bookmarks", "branch", "time", "user", "description"]
+                                                        *aurum-repo.iterfuncs*
+iterfuncs :: {String : {"start": startfunc, "next": nextfunc}}
+        startfunc :: repo, opts -> d
+         nextfunc :: d -> cs
+    Dictionary containing keys "ancestors", "revrange" and "changesets" (all 
+    are optional). Each key’s value should in turn contain dictionary 
+    containing two keys: "start" and "next", both corresponding values have to 
+    be function references:
+    1. "start" function must accept |aurum-repo| dictionary and |:AuLog| 
+       options dictionary and return something that will be saved (for 
+       example, |Dictionary| containing a counter).
+       Note due to |E704| error returned value must not be a function 
+            reference.
+       Note 2: try to omit processsing options dictionary more then it is 
+               required to do the job (see below). It will be done in any case 
+               by log generator function.
+    2. "next" function must accept value returned by "start" function and 
+       return |aurum-cs| object. Returned objects must be sorted in 
+       topological order like described under |aurum-rf-getchangesets|.
+
+    Value of "changesets" key will be used to view full repository history.
+    Value of "revrange" key will be used to view history between specified 
+    revisions (they will be contained in opts.revrange).
+    Value of "ancestors" key will be used to view specific changesets 
+    ancestors (it will be contained in opts.revision).
+
+    This key is optional, see |aurum-new-driver|. If some of keys inside 
+    iterfuncs dictionary are missing they will also be added.
 functions :: {String : FRef}                            *aurum-repo.functions*
     Dictionary that contains all driver-specific functions. All functions 
     except |aurum-rf-repo|, |aurum-rf-checkdir| and |aurum-rf-checkremote| 
@@ -1277,12 +1343,11 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Pull all changesets contained in repository into |aurum-repo.changesets| 
     dictionary. If this function is not called, then |aurum-repo.changesets| 
     dictionary contains only changesets that were used at least ones. Returns 
-    list of changesets as contained in |aurum-repo.cslist|. Return value is 
-    ignored (|aurum-rf-revrange| function is now used instead).
+    list of pulled changesets. This list should be sorted in topological order 
+    (thus meaning that every changeset appears before every its parent) or 
+    |aurum-repo.requires_sort| should be set to true.
   revrange :: hex, hex -> [ cs ]                           *aurum-rf-revrange*
-    Get revision range (inclusive). Numbers are to be treated specially, like 
-    it is done by |list-index|, but it is up to driver what it thinks is “last 
-    revision” (-1) or “first revision” (0).
+    Get revision range (inclusive).
   getcs :: hex -> cs                                          *aurum-rf-getcs*
     Returns |aurum-changeset| object which has given hash. See also 
     |aurum-cs.hex|.
@@ -1407,13 +1472,19 @@ Optional functions:
   |aurum-rf-remove|        Uses |aurum-rf-forget| to untrack file and then 
                          |delete()|s it.
   |aurum-rf-checkremote|   Returns 0.
+  |aurum-repo.iterfuncs|   "changeset": Uses |aurum-rf-getchangesets|
+                         "revrange": Uses |aurum-rf-revrange|
+                         "ancestors": Iterates recursively over 
+                                      |aurum-cs.parents|, parents of the 
+                                      parents and so on.
 Other functions, mentioned in |aurum-repo.functions|, but not mentioned here, 
 throw an "nimp" exception.
 
 ==============================================================================
 10. Notes about various driver implementations            *aurum-driver-notes*
 
-Mercurial:
+------------------------------------------------------------------------------
+10.1. Mercurial                                       *aurum-driver-Mercurial*
 
 |aurum-rf-label|:
     Supported labels: tag (non-local/local), bookmark (non-local).
@@ -1432,7 +1503,8 @@ Mercurial:
     results.
 Python driver was not tested under windows (wine) at all.
 
-Git:
+------------------------------------------------------------------------------
+10.2. Git                                                   *aurum-driver-Git*
 
 |aurum-rf-label|: Supported labels: tag, branch (both non-local).
 
@@ -1466,15 +1538,27 @@ Git:
 ==============================================================================
 11. Changelog                                                *aurum-changelog*
 
-@aurum/repo:
+@aurum/repo (reflects all drivers’ API changes):
     1.0: Instead of depending on drivers, make drivers depend on @aurum/repo
     1.1: Added repo.branch and repo.label
     1.2: Added setlines function, default implementations of |aurum-rf-copy|, 
          |aurum-rf-getstats|, |aurum-rf-getcsprop| and |aurum-rf-diffname|.
     1.3: Added default implementation of |aurum-rf-revrange|.
+    2.0: Purged support of numeric ranges out of |aurum-rf-revrange|, returned 
+         value of |aurum-rf-getchangesets| is not stated as ignored.
+    2.1: Added |aurum-repo.iterfuncs| support.
+    2.2: Added |aurum-repo.initprops|.
 @aurum:
     0.1: Added :AuBranch and :AuName
 @aurum/edit:
     1.0: Removed setlines function (moved it to @aurum/repo)
+    1.1: Added “requiresbvar” _f.newcommand option
+@aurum/vimdiff:
+    0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
+@aurum/log:
+    0.1: Added |aurum-style-git| and |aurum-style-gitoneline| log styles, 
+         added skipping of $rev if |aurum-repo.hasrevisions| is false, made it 
+         separate graph from content using non-breaking spaces
+    0.2: Added |:AuLog| procinput option
 
 vim: ft=help:tw=78

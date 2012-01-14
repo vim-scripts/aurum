@@ -1,5 +1,5 @@
 "▶1 
-execute frawor#Setup('0.0', {'@aurum/repo': '1.0',
+execute frawor#Setup('0.0', {'@aurum/repo': '2.0',
             \               '@aurum/cache': '0.0',})
 "▶1 aurum#repository
 function aurum#repository()

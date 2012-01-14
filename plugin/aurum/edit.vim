@@ -1,20 +1,20 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/autocommands': '0.0',
+    execute frawor#Setup('1.1', {'@/autocommands': '0.0',
                 \                   '@/functions': '0.0',
                 \                   '@/resources': '0.0',
-                \                   '@aurum/repo': '1.2',
+                \                   '@aurum/repo': '2.0',
                 \                '@aurum/bufvars': '0.0',}, 0)
     call FraworLoad('@/autocommands')
     call FraworLoad('@/functions')
     let s:auefunc={}
     call s:_f.augroup.add('Aurum',
-                \[['BufReadCmd',   'aurum://*', 0, [s:auefunc,  0]],
-                \ ['FileReadCmd',  'aurum://*', 0, [s:auefunc,  1]],
-                \ ['SourceCmd',    'aurum://*', 0, [s:auefunc,  2]],
-                \ ['BufWriteCmd',  'aurum://*', 0, [s:auefunc, -1]],
-                \ ['FileWriteCmd', 'aurum://*', 0, [s:auefunc, -2]],
+                \[['BufReadCmd',   'aurum://*', 1, [s:auefunc,  0]],
+                \ ['FileReadCmd',  'aurum://*', 1, [s:auefunc,  1]],
+                \ ['SourceCmd',    'aurum://*', 1, [s:auefunc,  2]],
+                \ ['BufWriteCmd',  'aurum://*', 1, [s:auefunc, -1]],
+                \ ['FileWriteCmd', 'aurum://*', 1, [s:auefunc, -2]],
                 \])
     finish
 elseif s:_pluginloaded
@@ -233,30 +233,61 @@ function s:F.repotupleoptssplit(str, num)
     endfor
     return [repo]+strings+[opts]
 endfunction
-"▶1 runcmd
-function s:F.runcmd(cdescr, amatch, args)
-    let bvar=call(a:cdescr.function, a:args, {})
-    let buf=bufnr('%')
-    if has_key(s:_r.bufvars, buf) &&
-                \has_key(s:_r.bufvars[buf], 'prevbuf')
-        let bvar.prevbuf=s:_r.bufvars[buf].prevbuf
+"▶1 patchbvar
+function s:F.patchbvar(cdescr, amatch, args, bvar, buf)
+    if has_key(s:_r.bufvars, a:buf) &&
+                \has_key(s:_r.bufvars[a:buf], 'prevbuf')
+        let a:bvar.prevbuf=s:_r.bufvars[a:buf].prevbuf
     endif
-    if !get(a:cdescr, 'modifiable', 0)
-        setlocal buftype=nofile nomodifiable readonly
-    endif
-    let bvar.amatch=a:amatch
-    let bvar.command=a:cdescr.id
-    let bvar.repo=a:args[1]
+    let a:bvar.amatch=a:amatch
+    let a:bvar.command=a:cdescr.id
+    let a:bvar.repo=a:args[1]
     if has_key(a:cdescr, 'options')
-        let bvar.opts=a:args[-1]
+        let a:bvar.opts=a:args[-1]
     endif
-    let s:_r.bufvars[buf]=bvar
+    return a:bvar
+endfunction
+"▶1 setfiletype
+function s:F.setfiletype(cdescr)
     if has_key(a:cdescr, 'filetype')
         let &l:filetype=a:cdescr.filetype
         execute 'runtime! ftplugin/'.a:cdescr.filetype.'.vim'
     endif
+endfunction
+"▶1 runcmd
+function s:F.runcmd(cdescr, amatch, args)
+    let buf=bufnr('%')
+    if has_key(a:cdescr, 'write')
+        setlocal buftype=acwrite
+    else
+        setlocal buftype=nofile
+    endif
+    if get(a:cdescr, 'requiresbvar', 0)
+        let bvar=s:F.patchbvar(a:cdescr, a:amatch, a:args, {}, buf)
+        let args=a:args+[bvar]
+        let s:_r.bufvars[buf]=bvar
+        call s:F.setfiletype(a:cdescr)
+        call call(a:cdescr.function, args, {})
+    else
+        let bvar=call(a:cdescr.function, a:args, {})
+        call s:F.patchbvar(a:cdescr, a:amatch, a:args, bvar, buf)
+        let s:_r.bufvars[buf]=bvar
+        call s:F.setfiletype(a:cdescr)
+    endif
+    if bufnr('%')!=buf
+        return
+    endif
+    if !get(a:cdescr, 'modifiable', 0)
+        setlocal nomodifiable readonly
+        augroup AurumNoInsert
+            autocmd! InsertEnter <buffer> : if !&modifiable
+                        \                 |     call feedkeys("\e", 'n')
+                        \                 | endif
+        augroup END
+    endif
     file
 endfunction
+let s:_augroups+=['AurumNoInsert']
 "▶1 checkcmd :: command → _ + :throw?
 function s:F.checkcmd(command)
     if !has_key(s:commands, a:command)
@@ -344,7 +375,7 @@ function s:auefunc.function(rw)
     if a:rw<0
         call call(cdescr.write, [call('getline', ((a:rw==-1)?([ 1,   '$' ]):
                     \                                        (["'[", "']"])))]+
-                    \                            args)
+                    \                            args, {})
     else
         let args=[a:rw]+args
         if a:rw==0
@@ -375,8 +406,8 @@ function s:F.newcommand(plugdict, fdict, cdescr)
         endif
         let cdescr[key]=a:cdescr[key]
     endfor
-    "▶2 Boolean keys: modifiable, sourceable
-    for key in ['modifiable', 'sourceable']
+    "▶2 Boolean keys: modifiable, sourceable, requiresbvar
+    for key in ['modifiable', 'sourceable', 'requiresbvar']
         if has_key(a:cdescr, key)
             if type(a:cdescr[key])!=type(0)
                 call s:_f.throw('nbl')

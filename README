@@ -1,24 +1,24 @@
 This is a mirror of http://www.vim.org/scripts/script.php?script_id=3828
 
 
-This plugin provides a vim <--> VCS (currently mercurial and git) integration 
-for your projects. Features:
-  • Partially committing changes (:AuRecord).
-  • Viewing file state at particular revision (aurum://file, :AuFile).
+This plugin provides a vim <--> VCS (currently mercurial, git and subversion) 
+integration for your projects. Features:
+  • Partially committing changes (:AuRecord [1]).
+  • Viewing file state at particular revision (aurum://file [2], :AuFile [3]).
   • Viewing uncommited changes in a vimdiff, as well as changes between 
-    specific revisions (:AuVimDiff). It is also possible to open multiple 
+    specific revisions (:AuVimDiff [4]). It is also possible to open multiple 
     tabs with all changes to all files viewed as side-by-side diffs.
-  • Viewing revisions log (:AuLog). Output is highly customizable.
-  • Viewing working directory status (:AuStatus).
-  • Commiting changes (:AuCommit), commit messages are remembered in case of 
-    rollback (g:aurum_remembermsg).
+  • Viewing revisions log (:AuLog [5]). Output is highly customizable.
+  • Viewing working directory status (:AuStatus [6]).
+  • Commiting changes (:AuCommit [7]), commit messages are remembered in case of 
+    rollback (g:aurum_remembermsg [8]).
   • Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
-    attached: useful for sharing) (:AuHyperlink).
-  • aurum#changeset(), aurum#repository() and aurum#status() functions 
+    attached: useful for sharing) (:AuHyperlink [9]).
+  • aurum#changeset() [10], aurum#repository() [11] and aurum#status() [12] functions 
     that are to be used from modeline.
   • Frontends for various other VCS commands.
-Most commands can be reached with a set of mappings (see aurum-mappings), 
+Most commands can be reached with a set of mappings (see aurum-mappings [13]), 
 all mappings are customizable.
 
 Plugin’s mercurial driver is able to use mercurial python API as well as its 
@@ -37,4 +37,18 @@ Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It
 
 Project page: https://bitbucket.org/ZyX_I/aurum
 Documentation: http://vimpluginloader.sourceforge.net/doc/aurum.txt.html
+
+[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line359-0 (:AuRecord)
+[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line601-0 (aurum://file)
+[3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line158-0 (:AuFile)
+[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line402-0 (:AuVimDiff)
+[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line239-0 (:AuLog)
+[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line363-0 (:AuStatus)
+[7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line99-0 (:AuCommit)
+[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line883-0 (g:aurum_remembermsg)
+[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line189-0 (:AuHyperlink)
+[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line450-0 (aurum#changeset())
+[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line446-0 (aurum#repository())
+[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line454-0 (aurum#status())
+[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line756-0 (aurum-mappings)
 

@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/os': '0.0',
+    execute frawor#Setup('0.1', {'@/os': '0.0',
                 \     '@aurum/cmdutils': '0.0',
                 \         '@aurum/edit': '1.0',
                 \               '@/fwc': '0.0',

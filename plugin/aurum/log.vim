@@ -1,12 +1,12 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/table': '0.1',
+    execute frawor#Setup('0.2', {'@/table': '0.1',
                 \        '@aurum/cmdutils': '0.0',
                 \         '@aurum/bufvars': '0.0',
-                \            '@aurum/edit': '1.0',
+                \            '@aurum/edit': '1.1',
                 \                  '@/fwc': '0.3',
-                \            '@aurum/repo': '1.3',
+                \            '@aurum/repo': '2.2',
                 \             '@/commands': '0.0',
                 \            '@/functions': '0.0',
                 \              '@/options': '0.0',}, 0)
@@ -27,11 +27,16 @@ let s:_options={
             \'ignorefiles': {'default': [],
             \                'checker': 'list in [patch renames copies files]'},
             \'closewindow': {'default': 1, 'filter': 'bool'},
+            \'procinput':   {'default': 1, 'checker': 'range 0 2'},
         \}
 let s:_messages={
             \'2multl': 'Two multiline statements on one line',
             \'argmis': 'Missing argument #%u for keyword %s',
+            \  'ebuf': 'Switched to another buffer: exiting',
         \}
+" iterfuncs :: {fname: { "start": startfunc, "next": nextfunc }}
+" startfunc (always) :: repo, opts, * → d
+let s:iterfuncs={}
 "▶1 graph
 "▶2 graph.update_state :: graph, gstate → + graph
 function s:F.graph.update_state(s)
@@ -47,18 +52,18 @@ function s:F.graph.ensure_capacity(num_columns)
         let self.new_mapping+=plist
     endif
 endfunction
-"▶2 graph.insert_into_new_columns :: graph, cs, mapindex → mapindex + graph
-function s:F.graph.insert_into_new_columns(cs, mapindex)
+"▶2 graph.insert_into_new_columns :: graph, hex, mapindex → mapindex + graph
+function s:F.graph.insert_into_new_columns(hex, mapindex)
     let i=0
     for hex in self.new_columns
-        if hex is# a:cs.hex
+        if hex is# a:hex
             let self.mapping[a:mapindex]=i
             return a:mapindex+2
         endif
         let i+=1
     endfor
     let self.mapping[a:mapindex]=len(self.new_columns)
-    call add(self.new_columns, a:cs.hex)
+    call add(self.new_columns, a:hex)
     return a:mapindex+2
 endfunction
 "▶2 graph.update_columns :: graph → + graph
@@ -91,15 +96,13 @@ function s:F.graph.update_columns()
             let seen=1
             let self.commit_index=i
             for parent in self.interesting_parents
-                let midx=self.insert_into_new_columns(
-                            \                self.repo.changesets[parent], midx)
+                let midx=self.insert_into_new_columns(parent, midx)
             endfor
             if midx==oldmidx
                 let midx+=2
             endif
         else
-            let midx=self.insert_into_new_columns(self.repo.changesets[ccshex],
-                        \                         midx)
+            let midx=self.insert_into_new_columns(ccshex, midx)
         endif
     endfor
     while self.mapping_size>1 && self.mapping[self.mapping_size-1]==-1
@@ -112,7 +115,7 @@ endfunction
 function s:F.graph.update(cs)
     let self.cs=a:cs
     let self.interesting_parents=filter(copy(a:cs.parents),
-                \                       'has_key(self.addchangesets, v:val)')
+                \                       '!has_key(self.skipchangesets, v:val)')
     let self.num_parents=len(self.interesting_parents)
     let self.prev_commit_index=self.commit_index
     call self.update_columns()
@@ -542,39 +545,6 @@ function s:F.glog.utf(state, type, char, text, coldata)
     call map(a:text.text, 'lines[v:key].v:val')
     return a:text
 endfunction
-"▶2 glog.generate
-function s:F.glog.generate(css, showparents, opts)
-    let seen=[]
-    let state=[0, 0]
-    let r=      {'text': [],
-                \'specials': {},
-                \'rectangles': [],
-                \'csstarts': {},}
-    for cs in a:css
-        let char=((index(a:showparents, cs.hex)==-1)?('o'):('@'))
-        if has_key(a:opts.skipchangesets, cs.hex)
-            let text={'skip': 1}
-            let skip=1
-        else
-            let text=a:opts.templatefunc(cs, a:opts)
-            let skip=0
-        endif
-        call s:F.glog.utf(state, 'C', char, text,
-                    \     s:F.glog.utfedges(seen, cs.hex, cs.parents))
-        if !has_key(text, 'text') || empty(text.text)
-            continue
-        endif
-        if !skip
-            let text.block_r[0][0]+=len(r.text)
-            let text.block_r[1][0]+=len(r.text)
-            let r.specials[cs.hex]=text.special
-            let r.rectangles+=[text.block_r+[cs.hex]]
-            let r.csstarts[cs.hex]=text.block_r[0][0]
-        endif
-        let r.text+=text.text
-    endfor
-    return r
-endfunction
 "▶2 glog.graph_init :: repo, [cs] → graph
 let s:defgraph={
             \'cs':                0,
@@ -589,15 +559,13 @@ let s:defgraph={
             \'mapping':           [],
             \'new_mapping':       [],
             \'mapping_size':      0,
-            \'addchangesets':     {},
+            \'skipchangesets':    {},
         \}
-function s:F.glog.graph_init(css, showparents, opts)
+function s:F.glog.graph_init(showparents, opts, repo)
     let graph=deepcopy(s:defgraph)
-    let graph.repo=a:opts.repo
+    let graph.repo=a:repo
     let graph.workcss=a:showparents
-    call map(copy(a:css),
-                \'((has_key(a:opts.skipchangesets, v:val.hex))?(0):'.
-                \   '(extend(graph.addchangesets, {v:val.hex : v:val})))')
+    let graph.skipchangesets=a:opts.skipchangesets
     call extend(graph, s:F.graph)
     return graph
 endfunction
@@ -609,6 +577,7 @@ function s:F.glog.show_log(graph, cs, text)
     let collen=len(lines[-1])
     let a:text.block_r[0][1]+=collen
     let a:text.block_r[1][1]+=collen
+    call s:F.glog.addcols(a:text.special, collen)
     let lines[-1]=lines[-1][:-2].' '.get(a:text.text, 0, '')
     let cchar=a:graph.output_commit_char()
     let bidx=stridx(lines[-1], cchar)
@@ -621,26 +590,6 @@ function s:F.glog.show_log(graph, cs, text)
     let a:text.text=lines
     return a:text
 endfunction
-"▶2 glog.log_show_all :: [cs], showparents, opts → Log
-function s:F.glog.log_show_all(css, showparents, opts)
-    let graph=s:F.glog.graph_init(a:css, a:showparents, a:opts)
-    let show_header=1
-    let r={'text': [], 'specials': {}, 'rectangles': [], 'csstarts': {}}
-    for cs in filter(copy(a:css), 'has_key(graph.addchangesets, v:val.hex)')
-        let text=a:opts.templatefunc(cs, a:opts)
-        let text.block_r=[[0, 0],
-                    \     [len(text.text)-1,
-                    \      max(map(copy(text.text), 'len(v:val)'))]]
-        let text=s:F.glog.show_log(graph, cs, text)
-        let r.text+=text.text
-        let text.block_r[0][0]+=len(r.text)
-        let text.block_r[1][0]+=len(r.text)
-        let r.specials[cs.hex]=text.special
-        let r.rectangles+=[text.block_r+[cs.hex]]
-        let r.csstarts[cs.hex]=text.block_r[0][0]
-    endfor
-    return r
-endfunction
 "▶2 s:DateCmp :: cs, cs → -1|0|1
 function s:DateCmp(a, b)
     let a=a:a.time
@@ -648,57 +597,182 @@ function s:DateCmp(a, b)
     return ((a==b)?(0):((a>b)?(-1):(1)))
 endfunction
 let s:_functions+=['s:DateCmp']
-"▶2 glog.sort_in_topological_order :: [cs] → [cs]
-function s:F.glog.sort_in_topological_order(repo, css)
-    call map(copy(a:css), 'extend(v:val, {"indegree": 1})')
-    for parents in map(copy(a:css), 'v:val.parents')
-        for parent in filter(map(filter(copy(parents),
-                    \                   'has_key(a:repo.changesets, v:val)'),
-                    \            'a:repo.changesets[v:val]'),
-                    \        'get(v:val, "indegree", 0)')
-            let parent.indegree+=1
-        endfor
-    endfor
-    let work=[]
-    call map(copy(a:css), 'v:val.indegree==1 && add(work, v:val) is 0')
-    call sort(work, 's:DateCmp')
+"▶2 glog.graphlog
+function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
+    "▶3 Get grapher
+    if get(a:repo, 'has_octopus_merges', 1)
+        let literfuncs=s:iterfuncs.git
+    else
+        let literfuncs=s:iterfuncs.hg
+    endif
+    "▶3 Initialize variables
+    let haslimit=(has_key(a:opts, 'limit') && a:opts.limit)
+    if haslimit
+        let limit=a:opts.limit
+    endif
+    let foundfirst=0
+    let csbuf=[]
+    let reqprops=keys(a:opts.reqs)
+    call filter(reqprops, 'index(a:repo.initprops, v:val)==-1')
+    let a:opts.skipchangesets={}
+    let skipchangesets=a:opts.skipchangesets
+    let firstcs=1
+    let lastline=0
     let r=[]
-    while !empty(work)
-        let cs=remove(work, 0)
-        for parent in filter(map(filter(copy(cs.parents),
-                    \                   'has_key(a:repo.changesets, v:val)'),
-                    \            'a:repo.changesets[v:val]'),
-                    \        'get(v:val, "indegree", 0)')
-            let parent.indegree-=1
-            if parent.indegree==1
-                let j=0
-                let lwork=len(work)
-                while j<lwork && work[j].time<parent.time
-                    let j+=1
-                endwhile
-                call insert(work, parent, j)
+    "▶3 Initialize variables not required for reading
+    if !a:read
+        let specials={}
+        let rectangles=[]
+        let csstarts={}
+        let a:bvar.rectangles=rectangles
+        let a:bvar.specials=specials
+        let a:bvar.csstarts=csstarts
+        let didredraw=0
+        let procinput=a:bvar.procinput
+        let lastw0line=-1
+        let buf=bufnr('%')
+    endif
+    "▶3 Initialize iterator functions
+    let ld=literfuncs.start(a:repo,a:opts,[a:repo.functions.getworkhex(a:repo)])
+    let csd=a:csiterfuncs.start(a:repo, a:opts)
+    let checkd=s:iterfuncs.check.start(a:repo, a:opts)
+    "▲3
+    while 1 && (!haslimit || limit)
+        let cs=a:csiterfuncs.next(csd)
+        if cs is 0 "▶3
+            return r
+        endif "▲3
+        let skip=!s:iterfuncs.check.check(checkd, cs)
+        "▶3 Add cs to skipchangesets or get its properties
+        if skip
+            let a:opts.skipchangesets[cs.hex]=cs
+        else
+            call map(copy(reqprops),
+                        \'a:repo.functions.getcsprop(a:repo, cs, v:val)')
+            let foundfirst=1
+            if haslimit
+                let limit-=1
             endif
-        endfor
-        let cs.indegree=0
-        call add(r, cs)
+        endif
+        "▲3
+        if foundfirst
+            let csbuf+=[cs]
+            if !skip
+                for cs in csbuf
+                    let [lines, rectangle, special]=literfuncs.proccs(ld, cs)
+                    "▶3 Add various information to bvar
+                    if !a:read && rectangle isnot 0
+                        let rectangle[0][0]=lastline
+                        let lastline+=len(lines)
+                        let rectangle[1][0]=lastline-1
+                        let rectangle+=[cs.hex]
+                        call add(rectangles, rectangle)
+                        let csstarts[cs.hex]=rectangle[0][0]
+                        if special isnot 0
+                            let specials[cs.hex]=special
+                        endif
+                    endif
+                    "▶3 Add lines to returned list if reading
+                    if a:read
+                        let r+=lines
+                    "▶3 Add lines to buffer if not, process user input
+                    else
+                        "▶4 Add lines to buffer
+                        if firstcs
+                            call setline(1, lines)
+                            let firstcs=0
+                        else
+                            call append('$', lines)
+                        endif
+                        "▶4 Process user input
+                        if didredraw
+                            if procinput && getchar(1)
+                                let input=''
+                                while getchar(1)
+                                    let char=getchar()
+                                    if type(char)==type(0)
+                                        let input.=nr2char(char)
+                                    else
+                                        let input.=char
+                                    endif
+                                endwhile
+                                execute 'normal' input
+                                if bufnr('%')!=buf
+                                    if bufexists(buf)
+                                        execute 'silent bwipeout!' buf
+                                    endif
+                                    call s:_f.warn('ebuf')
+                                    return []
+                                endif
+                                let lw0=line('w0')
+                                if lw0!=lastw0line
+                                    redraw
+                                    let didredraw=(line('$')>=lw0+winheight(0))
+                                    let lastw0line=lw0
+                                endif
+                            endif
+                        "▶4 Redraw if necessary
+                        elseif line('$')>=line('w0')+winheight(0)
+                            redraw
+                            let didredraw=1
+                            let lastw0line=line('w0')
+                        endif
+                        "▲4
+                    endif
+                    "▲3
+                    unlet rectangle special
+                endfor
+                call remove(csbuf, 0, -1)
+            endif
+        endif
+        unlet cs
     endwhile
-    call map(copy(a:css), 'remove(v:val, "indegree")')
     return r
 endfunction
-"▶2 glog.graphlog
-function s:F.glog.graphlog(repo, opts, css)
-    if get(a:repo, 'requires_sort', 1)
-        let css=s:F.glog.sort_in_topological_order(a:repo, a:css)
-    else
-        let css=reverse(copy(a:css))
+"▶1 iterfuncs: loggers
+"▶2 iterfuncs.git
+" TODO Fix skipping changesets if possible
+let s:iterfuncs.git={}
+function s:iterfuncs.git.start(repo, opts, ...)
+    let graph=s:F.glog.graph_init(get(a:000, 0, []), a:opts, a:repo)
+    return {'graph': graph, 'opts': a:opts, 'repo': a:repo}
+endfunction
+function s:iterfuncs.git.proccs(d, cs)
+    if has_key(a:d.opts.skipchangesets, a:cs.hex)
+        return [[], 0, 0]
     endif
-    let d={}
-    if get(a:repo, 'has_octopus_merges', 1)
-        let d.func=s:F.glog.log_show_all
+    let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
+    let text.block_r=[[0, 0],
+                \     [len(text.text)-1,
+                \      max(map(copy(text.text), 'len(v:val)'))]]
+    let text=s:F.glog.show_log(a:d.graph, a:cs, text)
+    return [text.text, text.block_r, text.special]
+endfunction
+"▶2 iterfuncs.hg
+let s:iterfuncs.hg={}
+function s:iterfuncs.hg.start(repo, opts, ...)
+    return {'seen': [], 'state': [0, 0], 'opts': a:opts,
+                \'showparents': get(a:000, 0, []), 'repo': a:repo}
+endfunction
+function s:iterfuncs.hg.proccs(d, cs)
+    let char=((index(a:d.showparents, a:cs.hex)==-1)?('o'):('@'))
+    if has_key(a:d.opts.skipchangesets, a:cs.hex)
+        let text={'skip': 1}
+        let skip=1
     else
-        let d.func=s:F.glog.generate
+        let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
+        let skip=0
     endif
-    return d.func(css, [a:repo.functions.getworkhex(a:repo)], a:opts)
+    call s:F.glog.utf(a:d.state, 'C', char, text,
+                \     s:F.glog.utfedges(a:d.seen, a:cs.hex, a:cs.parents))
+    if !has_key(text, 'text') || empty(text.text)
+        return [[], 0, 0]
+    endif
+    if !skip
+        return [text.text, text.block_r, text.special]
+    else
+        return [text.text, 0, 0]
+    endif
 endfunction
 "▶1 temp
 "▶2 s:templates
@@ -790,7 +864,7 @@ let s:kwexpr.copies      = [2, 's:F.temp.renames(@@@, a:cs.files, '.
             \                                   '@<@, @0@)', ' to ']
 let s:kwmarg={}
 let s:kwmarg.summary='matchstr(a:cs.description, "\\\\v^[^\\n]*")'
-let s:kwmarg.stat='a:opts.repo.functions.getstats(a:opts.repo, diff, a:opts)'
+let s:kwmarg.stat='a:repo.functions.getstats(a:repo, diff, a:opts)'
 let s:kwmarg.patch='diff'
 let s:kwmarg.empty=''''''
 let s:kwpempt=['parents', 'children', 'tags', 'bookmarks']
@@ -799,6 +873,14 @@ let s:kwreg={
             \'parents': '\v\x{12,}( \x{12,})?',
             \'children': '\v\x{12,}( \x{12,})*',
         \}
+let s:kwreqseqkw=['hex', 'branch', 'user', 'rev', 'time', 'parents', 'children',
+            \     'tags', 'bookmarks', 'description', 'files', 'changes']
+let s:kwreqs = {'stat': {'files': 1},
+            \'renames': {'files': 1, 'renames': 1},
+            \ 'copies': {'files': 1, 'copies': 1},
+            \}
+call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : {v:val : 1}})')
+unlet s:kwreqseqkw
 "▶2 temp.stat :: stats, idxlist, linebeg → ([String], sp)
 function s:F.temp.stat(stats, idxlist, linebeg)
     let sitems=map(sort(keys(a:stats.files)),
@@ -935,6 +1017,15 @@ function s:F.temp.parse(str)
         endif
         let astr=matchstr(s, '\v^\#(\\.|[^#])+\#')
         let arg=s:F.temp.parsearg(astr[1:-2])
+        let j=0
+        for a in s:kwexpr[kw][2:]
+            let a=get(arg, j, a)
+            if a is 0
+                call s:_f.throw('argmis', j, kw)
+            endif
+            let arg[j]=a
+            let j+=1
+        endfor
         if s:kwexpr[kw][0] && !empty(filter(lr[1:], 's:kwexpr[v:val[0]][0]'))
             call s:_f.throw('2multl')
         endif
@@ -958,21 +1049,26 @@ function s:F.temp.skip(meta, opts)
     endfor
     return 0
 endfunction
+"▶2 temp.getcid
+function s:F.temp.getcid(template, opts)
+    let r=''
+    for o in ['patch', 'stat', 'showfiles', 'showrenames', 'showcopies']
+        let r.=get(a:opts, o, 0)
+    endfor
+    let r.=has_key(a:opts, 'files')
+    let r.=string(a:template)[2:-3]
+    return r
+endfunction
 "▶2 temp.compile :: template, opts → Fref
 let s:compilecache={}
-function s:F.temp.compile(template, opts)
+function s:F.temp.compile(template, opts, repo)
     "▶3 Cache
-    let cid=''
-    for o in ['patch', 'stat', 'showfiles', 'showrenames', 'showcopies']
-        let cid.=get(a:opts, o, 0)
-    endfor
-    let cid.=has_key(a:opts, 'files')
-    let cid.=string(a:template)[2:-3]
+    let cid=s:F.temp.getcid(a:template, a:opts)
     if has_key(s:compilecache, cid)
         return s:compilecache[cid]
     endif
     "▶3 Define variables
-    let func=['function d.template(cs, opts)',
+    let func=['function d.template(cs, opts, repo)',
                 \'let r={"text": [], "special": {}}',
                 \'let text=r.text',
                 \'let special=r.special',]
@@ -980,19 +1076,20 @@ function s:F.temp.compile(template, opts)
     if hasfiles
         let func+=['let files=a:opts.csfiles[a:cs.hex]']
     endif
-    let hasrevisions=get(a:opts.repo, 'hasrevisions', 1)
+    let hasrevisions=get(a:repo, 'hasrevisions', 1)
     if get(a:opts, 'patch', 0) || get(a:opts, 'stat', 0)
         let filesarg=((hasfiles && !has_key(a:opts.ignorefiles, 'patch'))?
                     \   ('files'):
                     \   ('[]'))
         let func+=['if !empty(a:cs.parents)',
-                    \'let diff=a:opts.repo.functions.diff(a:opts.repo, '.
-                    \                                    'a:cs.hex, '.
-                    \                                    'a:cs.parents[0], '.
-                    \                                     filesarg.', '.
-                    \                                    'a:opts)',
+                    \'let diff=a:repo.functions.diff(a:repo, '.
+                    \                               'a:cs.hex, '.
+                    \                               'a:cs.parents[0], '.
+                    \                                filesarg.', '.
+                    \                               'a:opts)',
                     \'endif']
     endif
+    let reqs={}
     "▲3
     for [lit; meta] in a:template
         if s:F.temp.skip(meta, a:opts)
@@ -1057,21 +1154,18 @@ function s:F.temp.compile(template, opts)
                 endif
                 "▲4
                 let expr=substitute(expr, '@@@', marg, 'g')
-                "▶3 Get positional parameters if required
-                let j=0
-                for a in ke[2:]
-                    let s=get(arg, j, a)
-                    let arg[j]=s
-                    if s is 0
-                        call s:_f.throw('argmis', j, kw)
-                    endif
+                "▶3 Process positional parameters
+                for j in range(len(ke)-2)
                     let expr=substitute(expr, '@'.j.'@',
-                                \       escape(string(s), '&~\'), 'g')
-                    let j+=1
+                                \       escape(string(arg[j]), '&~\'), 'g')
                 endfor
                 "▶3 Skip meta if required
                 if kw is# 'rev' && !hasrevisions && arg.0 isnot# 'keep'
                     continue
+                endif
+                "▶3 Add requirements information
+                if has_key(s:kwreqs, kw)
+                    call extend(reqs, s:kwreqs[kw])
                 endif
                 "▶3 Add complex multiline statement
                 let addedif2=0
@@ -1169,8 +1263,9 @@ function s:F.temp.compile(template, opts)
                 \'endfunction']
     let d={}
     execute join(func, "\n")
-    let s:compilecache[cid]=d.template
-    return d.template
+    let r=[reqs, d.template]
+    let s:compilecache[cid]=r
+    return r
 endfunction
 "▶2 temp.addgroup
 function s:F.temp.addgroup(r, nlgroups, group)
@@ -1230,16 +1325,16 @@ let s:timekwregs={
             \'%': '%',
         \}
 "▲3
-function s:F.temp.syntax(template, opts)
+function s:F.temp.syntax(template, opts, repo)
     "▶3 Cache
-    let cid=string(a:opts.templatefunc)[10:-3]
+    let cid=s:F.temp.getcid(a:template, a:opts)
     if has_key(s:syncache, cid)
         return s:syncache[cid]
     endif
     "▶3 Define variables
     let r=[]
     let topgroups=[]
-    let hasrevisions=get(a:opts.repo, 'hasrevisions', 1)
+    let hasrevisions=get(a:repo, 'hasrevisions', 1)
     "▲3
     let r+=['syn match auLogFirstLineStart =\v^[^ ]*[@o][^ ]* = '.
                 \'skipwhite nextgroup=']
@@ -1410,24 +1505,11 @@ endfunction
 let s:datechars='YmdHM'
 function s:F.comparedates(datesel, time)
     let j=0
-    for selnum in split(a:datesel, '\v[^0-9*.]+')
+    for selnum in a:datesel
         if selnum isnot# '*'
             let spec='%'.s:datechars[j]
             if selnum is# '.'
                 let selnum=str2nr(strftime(spec))
-            else
-                if j==0 && len(selnum)==2
-                    let y=str2nr(selnum)
-                    let cy=str2nr(strftime('%y'))
-                    let c=str2nr(strftime('%Y')[:-3])
-                    if y<=cy
-                        let selnum=((c*100)+y)
-                    else
-                        let selnum=(((c-1)*100)+y)
-                    endif
-                else
-                    let selnum=str2nr(selnum)
-                endif
             endif
             let actnum=str2nr(strftime(spec, a:time))
             if actnum!=selnum
@@ -1442,35 +1524,158 @@ function s:F.comparedates(datesel, time)
     endfor
     return 0
 endfunction
-"▶1 setup
-"▶2 trackfile :: repo, cs, file, csfiles → + csfiles
-function s:F.trackfile(repo, cs, file, csfiles)
-    let tocheck=[[a:file, a:cs]]
-    while !empty(tocheck)
-        let [file, cs]=remove(tocheck, 0)
-        if !has_key(a:csfiles, cs.hex)
-            continue
+"▶1 iterfuncs.check
+" startfunc (here)  :: repo, opts → d
+let s:fcheckpropslist=['renames', 'copies', 'changes', 'files']
+let s:iterfuncs.check={}
+"▶2 iterfuncs.check.start
+"▶3 addcentury
+function s:F.addcentury(year)
+    if type(a:year)==type(0) && a:year<100
+        let curyear=str2nr(strftime('%y'))
+        let century=str2nr(strftime('%Y')[:-3])
+        if a:year<=curyear
+            let r=((century*100)+a:year)
+        else
+            let r=(((century-1)*100)+a:year)
         endif
-        let rename=get(cs.renames, file, 0)
-        if type(rename)!=type('')
-            let rename=file
-        endif
-        let copy=get(cs.copies, file, 0)
-        if type(copy)==type('')
-            if index(cs.changes, file)!=-1 && index(a:csfiles[cs.hex], file)==-1
-                let a:csfiles[cs.hex]+=[copy]
-            endif
-            let tocheck+=map(copy(cs.parents),'[copy,a:repo.changesets[v:val]]')
-        endif
-        if index(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'), file)==-1
-            continue
-        endif
-        if index(cs.changes, file)!=-1 && index(a:csfiles[cs.hex], file)==-1
-            let a:csfiles[cs.hex]+=[file]
-        endif
-        let tocheck+=map(copy(cs.parents), '[rename, a:repo.changesets[v:val]]')
-    endwhile
+        return r
+    endif
+    return a:year
 endfunction
+"▶3 redate
+function s:F.redate(datespec)
+    let date=map(split(a:datespec, '\v[^0-9*.]+'),
+                \'v:val=~#"\\d" ? str2nr(v:val) : v:val')
+    let date[0]=s:F.addcentury(date[0])
+    return date
+endfunction
+"▲3
+let s:keytoexpr={
+            \'branch': '"a:cs.branch isnot# ".string(v:val)',
+            \'merges': '(v:val)?("len(a:cs.parents)<=1"):'.
+            \                  '("len(a:cs.parents)>1")',
+            \'search': '"a:cs.description!~#".string(v:val)',
+            \  'user':        '"a:cs.user!~#".string(v:val)',
+        \}
+function s:iterfuncs.check.start(repo, opts)
+    let r={'repo': a:repo, 'hasfiles': 0, 'hasdaterange': 0, 'hasdate': 0}
+    "▶3 Define variables for files filtering
+    if has_key(a:opts, 'files')
+        let r.hasfiles=1
+        let r.csfiles={}
+        let r.filepats=a:opts.filepats
+        let r.tocheck={}
+        let a:opts.csfiles=r.csfiles
+    endif
+    "▶3 Define variables for date filtering
+    if has_key(a:opts, 'date')
+        let idx=match(a:opts.date, '\V<=\?>')
+        if idx==-1
+            let r.hasdate=1
+            let r.selector=(stridx('<>', a:opts.date[0])==-1)?(''):
+                        \                                     (a:opts.date[0])
+            let r.acceptexact=(empty(r.selector) || a:opts.date[1] is# '=')
+            let r.date=s:F.redate(a:opts.date[empty(r.selector)?(0):
+                        \                     (len(r.selector)+r.acceptexact):])
+        else
+            let r.hasdaterange=1
+            let r.date1=s:F.redate(a:opts.date[:(idx-1)])
+            let r.acceptexact=(a:opts.date[idx+1] is# '=')
+            let r.date2=s:F.redate(a:opts.date[(idx+2+r.acceptexact):])
+        endif
+    endif
+    "▶3 Determine other filters
+    let r.expr=join(values(map(filter(copy(a:opts),
+                \                     'has_key(s:keytoexpr, v:key)'),
+                \              'eval(s:keytoexpr[v:key])')), '||')
+    "▲3
+    return r
+endfunction
+"▶2 iterfuncs.check.check
+function s:iterfuncs.check.check(d, cs)
+    "▶3 Check simple cases
+    if !empty(a:d.expr) && eval(a:d.expr)
+        return 0
+    endif
+    "▶3 Check files
+    if a:d.hasfiles
+        let copies =a:d.repo.functions.getcsprop(a:d.repo, a:cs, 'copies' )
+        let renames=a:d.repo.functions.getcsprop(a:d.repo, a:cs, 'renames')
+        let changes=a:d.repo.functions.getcsprop(a:d.repo, a:cs, 'changes')[:]
+        let csfiles=[]
+        let tcfiles=[]
+        let a:d.csfiles[a:cs.hex]=csfiles
+        if has_key(a:d.tocheck,a:cs.hex)
+            let tc=a:d.tocheck[a:cs.hex]
+            call filter(changes, '(index(tc, v:val)==-1)?(1):'.
+                        \           '([0, add(csfiles, v:val)][0])')
+            call filter(tc, 'index(csfiles, v:val)==-1')
+            if !empty(tc)
+                let allfiles=a:d.repo.functions.getcsprop(a:d.repo, a:cs,
+                            \                             'allfiles')
+                let tcfiles+=filter(copy(allfiles), 'index(tc, v:val)!=-1')
+            endif
+        endif
+        for pattern in a:d.filepats
+            let newchanges=[]
+            call map(copy(changes), 'add(((v:val=~#'.string(pattern).')?'.
+                        \                   '(csfiles):'.
+                        \                   '(newchanges)), v:val)')
+            if empty(newchanges)
+                break
+            endif
+            let changes=newchanges
+        endfor
+        for file in csfiles
+            let tcfiles+=map(filter(['renames', 'copies'],
+                        \           'has_key({v:val}, file) && '.
+                        \           '{v:val}[file] isnot 0'),
+                        \    '{v:val}[file]')
+        endfor
+        if !empty(tcfiles)
+            call map(copy(a:cs.parents), 'extend(a:d.tocheck, '.
+                        \'{v:val : get(a:d.tocheck, v:val, [])+tcfiles})')
+        endif
+        if empty(csfiles)
+            return 0
+        endif
+    endif
+    "▶3 Check date
+    if a:d.hasdate
+        let cmpresult=s:F.comparedates(a:d.date, a:cs.time)
+        if !((a:d.acceptexact && cmpresult==0) ||
+                    \(a:d.selector is# '<' && cmpresult==-1) ||
+                    \(a:d.selector is# '>' && cmpresult==1))
+            return 0
+        endif
+    elseif a:d.hasdaterange
+        let cmp1result=s:F.comparedates(a:d.date1, a:cs.time)
+        let cmp2result=s:F.comparedates(a:d.date2, a:cs.time)
+        if !((cmp1result==1 && cmp2result==-1) ||
+                    \(a:d.acceptexact && (cmp1result==0 ||
+                    \                     cmp2result==0)))
+            return 0
+        endif
+    endif
+    "▲3
+    return 1
+endfunction
+"▶1 gettemplate :: bvar → + bvar
+function s:F.gettemplatelist(bvar)
+    if has_key(a:bvar, 'templatelist')
+        return
+    endif
+    if has_key(a:bvar.opts, 'template')
+        let template=eval(a:bvar.opts.template)
+    elseif has_key(a:bvar.opts, 'style')
+        let template=s:templates[a:bvar.opts.style]
+    else
+        let template=s:templates.default
+    endif
+    let a:bvar.templatelist=s:F.temp.parse(template)
+endfunction
+"▶1 setup
 "▶2 getkwreg
 function s:F.getkwreg(kw, nextlit)
     if has_key(s:kwreg, a:kw)
@@ -1483,10 +1688,9 @@ function s:F.getkwreg(kw, nextlit)
     endif
 endfunction
 "▲2
-function s:F.setup(read, repo, opts)
+function s:F.setup(read, repo, opts, ...)
     let opts=a:opts
-    let bvar={}
-    call a:repo.functions.getchangesets(a:repo)
+    let bvar=get(a:000, 0, {'opts': opts})
     "▶2 Add `ignorefiles'
     let ignorefiles=(has_key(opts, 'ignfiles')?
                 \               (opts.ignfiles):
@@ -1494,185 +1698,37 @@ function s:F.setup(read, repo, opts)
     let opts.ignorefiles={}
     call map(copy(ignorefiles), 'extend(opts.ignorefiles, {v:val : 1})')
     unlet ignorefiles
-    "▶2 Get revision range
-    if has_key(opts, 'revrange')
-        let opts.revs=map(copy(opts.revrange),
-                    \'a:repo.changesets['.
-                    \   'a:repo.functions.getrevhex(a:repo, v:val)].hex')
-    elseif get(opts, 'limit', 0)>0
-        let opts.revs=[-opts.limit, -1]
-    else
-        let opts.revs=[0, -1]
-    endif
-    "▶2 Process `revision' option
-    if has_key(opts, 'revision')
-        let hex=a:repo.functions.getrevhex(a:repo, opts.revision)
-        let cs=a:repo.changesets[hex]
-        if type(cs.rev)==type(0) && cs.rev<opts.revs[1]
-            let opts.revs[1]=cs.hex
-        endif
-        let opts.revisions={}
-        let addrevs=[cs]
-        while !empty(addrevs)
-            let cs=remove(addrevs, 0)
-            if has_key(opts.revisions, cs.hex)
-                continue
-            endif
-            let opts.revisions[cs.hex]=1
-            let addrevs+=map(copy(cs.parents), 'a:repo.changesets[v:val]')
-        endwhile
-    endif
-    "▲2
-    let css=a:repo.functions.revrange(a:repo, opts.revs[0], opts.revs[1])
-    "▶2 Generate cs.{kw} for various options (`show{kw}'+`files')
-    for key in ['renames', 'copies']
-        if get(opts, 'show'.key, 0) || has_key(opts, 'files')
-            for cs in css
-                call a:repo.functions.getcsprop(a:repo, cs, key)
-            endfor
-        endif
-    endfor
-    "▶2 Generate cs.files for several options
-    if has_key(opts, 'files') || get(opts, 'showrenames', 0) ||
-                \                get(opts, 'showcopies',  0) ||
-                \                get(opts, 'showfiles',   0) ||
-                \                get(opts, 'stat',        0)
-        for cs in css
-            call a:repo.functions.getcsprop(a:repo, cs, 'files')
-        endfor
-    endif
-    "▶2 Generate cs.changes for showfiles option
-    if has_key(opts, 'files') || get(opts, 'showfiles', 0)
-        for cs in css
-            call a:repo.functions.getcsprop(a:repo, cs, 'changes')
-        endfor
-    endif
-    "▶2 Generate file lists for `files' option
-    if has_key(opts, 'files')
-        let opts.csfiles={}
-        for cs in css
-            let changes=copy(cs.changes)
-            let csfiles=[]
-            let opts.csfiles[cs.hex]=csfiles
-            for pattern in opts.filepats
-                let newfiles=filter(copy(changes), 'v:val=~#pattern')
-                call filter(changes, 'index(newfiles, v:val)==-1')
-                let csfiles+=newfiles
-                if empty(changes)
-                    break
-                endif
-            endfor
-            call map(copy(csfiles), 's:F.trackfile(a:repo, cs, v:val, '.
-                        \                         'opts.csfiles)')
-        endfor
-        let opts.totrack={}
-    endif
-    "▶2 Narrow changeset range
-    let opts.skipchangesets={}
-    let firstnoskip=-1
-    let foundfirst=0
-    let lastnoskip=-1
-    let i=opts.revs[0]
-    let requires_sort=get(a:repo, 'requires_sort', 1)
-    for cs in css
-        let skip=0
-        "▶3 `branch', `merges', `search', `user', `revision'
-        if (has_key(opts, 'branch') && cs.branch isnot# opts.branch)||
-                    \(has_key(opts, 'merges') &&
-                    \   ((opts.merges)?(len(cs.parents)<=1):
-                    \                  (len(cs.parents)>1))) ||
-                    \(has_key(opts, 'search') &&
-                    \   cs.description!~#opts.search) ||
-                    \(has_key(opts, 'user') && cs.user!~#opts.user) ||
-                    \(has_key(opts, 'revision') &&
-                    \   !has_key(opts.revisions, cs.hex))
-            let skip=1
-        "▶3 `date'
-        elseif has_key(opts, 'date')
-            if match(opts.date, '\V<=\?>')!=-1
-                let [date1, date2]=split(opts.date, '\V<=\?>')
-                let acceptexact=(stridx(opts.date, '<=>', len(date1))!=-1)
-                let cmp1result=s:F.comparedates(date1, cs.time)
-                let cmp2result=s:F.comparedates(date2, cs.time)
-                if !((cmp1result==1 && cmp2result==-1) ||
-                            \(acceptexact && (cmp1result==0 ||
-                            \                 cmp2result==0)))
-                    let skip=1
-                endif
-            else
-                let selector=opts.date[0]
-                let acceptexact=(stridx('<>', selector)==-1 || opts.date[1] is# '=')
-                let cmpresult=s:F.comparedates(opts.date, cs.time)
-                if !((acceptexact && cmpresult==0) ||
-                            \(selector is# '<' && cmpresult==-1) ||
-                            \(selector is# '>' && cmpresult==1))
-                    let skip=1
-                endif
-            endif
-        endif
-        "▶3 `files'
-        if !skip && has_key(opts, 'files')
-            let files=opts.csfiles[cs.hex]
-            if empty(files)
-                let skip=1
-            endif
-        endif
-        "▲3
-        if requires_sort
-            if skip
-                let opts.skipchangesets[cs.hex]=cs
-            endif
-        elseif skip
-            if foundfirst
-                let opts.skipchangesets[cs.hex]=cs
-            endif
-        else
-            if foundfirst
-                let lastnoskip=cs.hex
-            else
-                let foundfirst=1
-                let firstnoskip=cs.hex
-            endif
-        endif
-        let i+=1
-    endfor
-    if firstnoskip!=-1
-        let opts.revs[0]=firstnoskip
-    endif
-    if lastnoskip!=-1
-        let opts.revs[1]=lastnoskip
-    endif
+    "▶2 Get cslist
+    let csiterfuncsname=((has_key(opts, 'revision'))?
+                \          ('ancestors'):
+                \       ((has_key(opts, 'revrange'))?
+                \          ('revrange')
+                \       :
+                \          ('changesets')))
+    let csiterfuncs=a:repo.iterfuncs[csiterfuncsname]
     "▶2 Get template
-    if has_key(opts, 'template')
-        let template=eval(opts.template)
-    elseif has_key(opts, 'style')
-        let template=s:templates[opts.style]
-    else
-        let template=s:templates.default
-    endif
-    let opts.repo=a:repo
-    let bvar.templatelist=s:F.temp.parse(template)
-    let opts.templatefunc=s:F.temp.compile(bvar.templatelist, opts)
+    call s:F.gettemplatelist(bvar)
+    let [opts.reqs, opts.templatefunc]=s:F.temp.compile(bvar.templatelist, opts,
+                \                                       a:repo)
     "▲2
-    let css=a:repo.functions.revrange(a:repo, opts.revs[0], opts.revs[1])
-    let text=s:F.glog.graphlog(a:repo, opts, css)
-    let bvar.specials=text.specials
-    let bvar.rectangles=text.rectangles
-    let bvar.csstarts=text.csstarts
-    let bvar.cw=s:_f.getoption('closewindow')
     if !a:read
-        setlocal noreadonly modifiable
+        let buf=bufnr('%')
+        let bvar.procinput=(has_key(a:opts, 'procinput')?
+                    \           (2*a:opts.procinput):
+                    \           s:_f.getoption('procinput'))
+        if bvar.procinput==1 && getchar(1)
+            let bvar.procinput=0
+        endif
     endif
-    call s:_r.setlines(text.text, a:read)
-    if !a:read
-        setlocal readonly nomodifiable buftype=nofile
-        augroup AuLogNoInsert
-            autocmd InsertEnter <buffer> :call feedkeys("\e", "n")
-        augroup END
+    let bvar.cw=s:_f.getoption('closewindow')
+    let text=s:F.glog.graphlog(a:repo, opts, csiterfuncs, bvar, a:read)
+    if a:read
+        call s:_r.setlines(text, a:read)
+    elseif bufnr('%')==buf
+        setlocal readonly nomodifiable
     endif
     return bvar
 endfunction
-let s:_augroups+=['AuLogNoInsert']
 "▶1 syndef
 function s:F.syndef()
     let buf=+expand('<abuf>')
@@ -1680,15 +1736,16 @@ function s:F.syndef()
         return
     endif
     let bvar=s:_r.bufvars[buf]
-    let bvar.templatesyn=s:F.temp.syntax(bvar.templatelist, bvar.opts)
+    call s:F.gettemplatelist(bvar)
+    let bvar.templatesyn=s:F.temp.syntax(bvar.templatelist,bvar.opts,bvar.repo)
     for line in bvar.templatesyn
         execute line
     endfor
 endfunction
-augroup auLogSyntax
+augroup AuLogSyntax
     autocmd Syntax aurumlog :call s:F.syndef()
 augroup END
-let s:_augroups+=['auLogSyntax']
+let s:_augroups+=['AuLogSyntax']
 "▶1 logfunc
 function s:logfunc.function(repopath, opts)
     let opts=copy(a:opts)
@@ -1746,6 +1803,7 @@ let s:logfunc['@FWC']=['-onlystrings '.
             \          '  !?showfiles'.
             \          '  !?showrenames'.
             \          '  !?showcopies'.
+            \          '  !?procinput'.
             \          s:_r.repo.diffoptsstr.
             \          '   ?cmd      type ""'.
             \          '}', 'filter']
@@ -1759,12 +1817,12 @@ call add(s:logcomp, substitute(substitute(
             \'\vrevrange\s+\Vtype "" type ""',
             \                         'revrange '.s:_r.comp.rev.' '.
             \                                     s:_r.comp.rev,            ''))
-"▶1 Post resource
+"▶1 Create aurum://log
 call s:_f.newcommand({
             \'function': s:F.setup,
             \ 'options': {'list': ['files', 'revrange', 'ignfiles'],
             \             'bool': ['merges', 'patch', 'stat', 'showfiles',
-            \                      'showrenames', 'showcopies'],
+            \                      'showrenames', 'showcopies', 'procinput'],
             \              'num': ['limit']+s:_r.repo.diffoptslst,
             \              'str': ['date', 'search', 'user', 'branch',
             \                      'revision', 'style', 'template',
@@ -1772,6 +1830,7 @@ call s:_f.newcommand({
             \             'pats': ['files'],
             \            },
             \'filetype': 'aurumlog',
+            \'requiresbvar': 1,
             \})
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded,compilecache,parsecache,syncache')

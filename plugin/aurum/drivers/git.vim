@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {   '@aurum/repo': '1.0',
+    execute frawor#Setup('0.1', {   '@aurum/repo': '2.0',
                 \                          '@/os': '0.0',
                 \   '@aurum/drivers/common/utils': '0.0',
                 \'@aurum/drivers/common/hypsites': '0.0',}, 0)
@@ -59,10 +59,9 @@ function s:F.refile(fname)
 endfunction
 "▶1 gitcmd :: repo, cmd, args, kwargs, esc → String
 function s:F.gitcmd(repo, ...)
-    let cmd = 'git --git-dir='.  shellescape(a:repo.path.'/.git', a:4).
+    return 'git --git-dir='.  shellescape(a:repo.path.'/.git', a:4).
                 \' --work-tree='.shellescape(a:repo.path,         a:4).
                 \' '.call(s:_r.utils.getcmd, a:000, {})
-    return cmd
 endfunction
 "▶1 git :: repo, cmd, args, kwargs, has0[, msgid[, marg1[, …]]] → [String] + ?
 function s:F.git(repo, cmd, args, kwargs, hasnulls, ...)
@@ -89,7 +88,7 @@ endfunction
 " author email
 " 1-indented commit message
 let s:logformat='%h-%H-%P-%at%n%an%n%ae%n%d%n%w(0,1,1)%B'
-let s:logkwargs={'format': s:logformat, 'encoding': 'utf-8'}
+let s:logkwargs={'format': s:logformat, 'encoding': 'utf-8', 'date-order': 1}
 function s:F.parsecs(csdata, lstart)
     let line=a:lstart
     let cs={'branch': 'default'}
@@ -118,35 +117,12 @@ function s:F.parsecs(csdata, lstart)
     return [cs, line]
 endfunction
 "▶1 git.getchangesets :: repo → []
-"▶2 rerev :: Either rev num → rev
-function s:F.rerev(rev)
-    if type(a:rev)==type(0)
-        if a:rev is 0
-            " XXX Ranges like ..HEAD are not working, though it is unlikely that
-            "     revrange will receive ranges like ?..0 or 0..? except 0..-1, 
-            "     thus 0..? is always taken as 0..-1
-            return ''
-        elseif a:rev is -1
-            return 'HEAD'
-        elseif a:rev
-            return 'HEAD~'.(-1-a:rev)
-        endif
-    else
-        return a:rev
-    endif
-endfunction
-"▲2
 function s:git.getchangesets(repo, ...)
     "▶2 Prepare s:F.git arguments
     let args=[]
     let kwargs=copy(s:logkwargs)
     if a:0
-        if a:1 is 0
-        elseif a:1<0 && a:2 is -1
-            let args+=['-n'.(-a:1), 'HEAD']
-        else
-            let args+=[s:F.rerev(a:1).'^..'.s:F.rerev(a:2)]
-        endif
+        let args+=[a:1.'^..'.a:2]
     else
         let kwargs.all=1
         let kwargs['full-history']=1
@@ -177,7 +153,7 @@ function s:git.getchangesets(repo, ...)
         let [cs, i]=s:F.parsecs(log, i)
         let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex, {}),
                     \                        cs)
-        let cslist+=[a:repo.changesets[cs.hex]]
+        call insert(cslist, a:repo.changesets[cs.hex])
     endwhile
     "▲2
     return cslist
@@ -646,7 +622,7 @@ function s:git.repo(path)
     let repo={'path': a:path, 'changesets': {}, 'cslist': [],
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': ['tag', 'branch'],
-                \'hasrevisions': 0}
+                \'hasrevisions': 0, 'requires_sort': 0}
     return repo
 endfunction
 "▶1 git.checkdir :: dir → Bool

@@ -344,24 +344,6 @@ def get_status(path, rev1=None, rev2=None, files=None):
     except AurumError:
         pass
 
-def commit(path, text, user=None, date=None, files=None, close_branch=False):
-    try:
-        repo=g_repo(path)
-        if not hasattr(repo, 'commit'):
-            vim_throw('comuns', repo.path)
-        args=[PrintUI(), repo]
-        kwargs={'close_branch': close_branch, 'message': text}
-        if files:
-            args.extend(files)
-            kwargs['addremove']=True
-        if date:
-            kwargs['date']=date
-        if user:
-            kwargs['user']=user
-        run_in_dir(repo.root, commands.commit, *args, **kwargs)
-    except AurumError:
-        pass
-
 def update(path, rev='tip', force=False):
     try:
         repo=g_repo(path)

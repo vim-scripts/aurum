@@ -3,7 +3,7 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
-                \                '@aurum/repo': '1.2',
+                \                '@aurum/repo': '2.0',
                 \                '@aurum/edit': '1.0',
                 \               '@aurum/cache': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
@@ -54,6 +54,115 @@ function s:F.getfile(files)
     endif
     return file
 endfunction
+"▶1 rrf buffer functions :: bvar, opts, ann, failmsg → scope
+let s:rrf={}
+"▶2 rrf.file : bvar → (repo, rev, file)
+function s:rrf.file(bvar, opts, ann, failmsg)
+    return {'hasbuf': 1,
+           \  'repo': a:bvar.repo,
+           \   'rev': a:bvar.rev,
+           \  'file': a:bvar.file,}
+endfunction
+"▶2 rrf.copy : bvar → (file), file → (repo), 0 → (rev)
+function s:rrf.copy(bvar, opts, ann, failmsg)
+    let r={}
+    if a:ann==-1
+        let r.file=a:bvar.file
+    else
+        let r.repo=s:_r.repo.get(s:_r.os.path.dirname(a:bvar.file))
+        let r.file=r.repo.functions.reltorepo(r.repo, a:bvar.file)
+    endif
+    let r.rev=0
+    let r.hasbuf=1
+    return r
+endfunction
+"▶2 rrf.status : bvar → (repo, rev), . → (file)
+function s:rrf.status(bvar, opts, ann, failmsg)
+    let r={}
+    let r.repo=a:bvar.repo
+    let  r.rev=get(a:bvar.opts, 'rev1', 0)
+    if empty(a:bvar.files)
+        if a:failmsg isnot 0
+            call s:_f.throw(a:failmsg)
+        endif
+    else
+        let r.file=a:bvar.files[line('.')-1]
+    endif
+    if a:ann>=0
+        topleft new
+    endif
+    return r
+endfunction
+"▶2 rrf.diff : bvar → (repo, rev, file(s))
+function s:rrf.diff(bvar, opts, ann, failmsg)
+    let r={}
+    let r.repo=a:bvar.repo
+    let  r.rev=empty(a:bvar.rev2) ? a:bvar.rev1 : a:bvar.rev2
+    " XXX Maybe it should pull in all filenames instead when ann=-2?
+    let r.file=s:F.getdifffile(a:bvar)
+    if r.file is 0 && a:failmsg isnot 0
+        return 0
+    endif
+    if a:ann>=0
+        leftabove vnew
+    endif
+    return r
+endfunction
+"▶2 rrf.commit : bvar → (repo, file(s))
+function s:rrf.commit(bvar, opts, ann, failmsg)
+    let r={}
+    let r.repo=a:bvar.repo
+    if a:ann==-2
+        let r.files=a:bvar.files
+    else
+        let r.file=s:F.getfile(a:bvar.files)
+        if r.file is 0 && a:failmsg isnot 0
+            return 0
+        endif
+        if a:ann>=0
+            topleft new
+        endif
+    endif
+    return r
+endfunction
+"▶2 rrf.annotate : bvar → (repo), . → (rev, file)
+function s:rrf.annotate(bvar, opts, ann, failmsg)
+    let r={}
+    let r.repo=a:bvar.repo
+    if a:ann==-2
+        let r.file=a:bvar.file
+    else
+        let r.file=a:bvar.files[line('.')-1]
+        if !has_key(a:opts, 'rev')
+            let r.rev=a:bvar.revisions[line('.')-1]
+            if r.rev is# r.repo.functions.getrevhex(r.repo, a:bvar.rev)
+                if a:ann!=1
+                    " Don't do the following if we are not annotating
+                elseif has_key(a:bvar, 'annbuf') &&
+                            \bufwinnr(a:bvar.annbuf)!=-1
+                    execute bufwinnr(a:bvar.annbuf).'wincmd w'
+                else
+                    setlocal scrollbind
+                    call s:_r.run('silent rightbelow vsplit',
+                                \ 'file', r.repo, r.rev, r.file)
+                    let a:bvar.annbuf=bufnr('%')
+                    setlocal scrollbind
+                endif
+                return 0
+            endif
+        endif
+        if a:ann>=0
+            if winnr('$')>1
+                wincmd c
+            endif
+            if has_key(a:bvar, 'annbuf') && bufwinnr(a:bvar.annbuf)!=-1
+                execute bufwinnr(a:bvar.annbuf).'wincmd w'
+            endif
+        endif
+    endif
+    return r
+endfunction
+"▲2
 "▶1 getrrf :: opts, failmsg, ann + buf → (hasbuf, repo, rev, file)
 let s:rrffailresult=[0, 0, 0, 0]
 function s:F.getrrf(opts, failmsg, ann)
@@ -88,103 +197,20 @@ function s:F.getrrf(opts, failmsg, ann)
         else
             let repo=s:_r.repo.get(a:opts.files[0])
         endif
-    "▲2
+    "▶2 aurum:// buffers
     elseif has_key(s:_r.bufvars, bufnr('%')) &&
                 \has_key(s:_r.bufvars[bufnr('%')], 'command')
         let bvar=s:_r.bufvars[bufnr('%')]
-        "▶2 +aurum://file bvar → (repo, rev, file)
-        if bvar.command is# 'file'
-            let repo=bvar.repo
-            let  rev=bvar.rev
-            let file=bvar.file
-            let hasbuf=1
-        "▶2 +aurum://copy bvar → (file), file → (repo), (rev=0)
-        elseif bvar.command is# 'copy'
-            if a:ann==-1
-                let file=bvar.file
+        if has_key(s:rrf, bvar.command)
+            let res=call(s:rrf[bvar.command], [bvar,a:opts,a:ann,a:failmsg], {})
+            if res is 0
+                return s:rrffailresult
             else
-                let repo=s:_r.repo.get(s:_r.os.path.dirname(bvar.file))
-                let file=repo.functions.reltorepo(repo, bvar.file)
+                for [var, val] in items(res)
+                    let {var}=val
+                    unlet val
+                endfor
             endif
-            let  rev=0
-            let hasbuf=1
-        "▶2 *aurum://status bvar → (repo, rev), "." → (file)
-        elseif bvar.command is# 'status'
-            let repo=bvar.repo
-            let  rev=get(bvar.opts, 'rev1', 0)
-            if empty(bvar.files)
-                if a:failmsg isnot 0
-                    call s:_f.throw(a:failmsg)
-                endif
-            else
-                let file=bvar.files[line('.')-1]
-            endif
-            if a:ann>=0
-                topleft new
-            endif
-        "▶2 |aurum://diff bvar → (repo, rev, file?)
-        elseif bvar.command is# 'diff'
-            let repo=bvar.repo
-            let  rev=empty(bvar.rev2) ? bvar.rev1 : bvar.rev2
-            if a:ann==-2
-                let files=bvar.files
-            else
-                let file=s:F.getdifffile(bvar)
-                if file is 0 && a:failmsg isnot 0
-                    return s:rrffailresult
-                endif
-                if a:ann>=0
-                    leftabove vnew
-                endif
-            endif
-        "▶2 *aurum://commit bvar → (repo, file?)
-        elseif bvar.command is# 'commit'
-            let repo=bvar.repo
-            if a:ann==-2
-                let files=bvar.files
-            else
-                let file=s:F.getfile(bvar.files)
-                if file is 0 && a:failmsg isnot 0
-                    return s:rrffailresult
-                endif
-                if a:ann>=0
-                    topleft new
-                endif
-            endif
-        "▶2 -aurum://annotate bvar → (repo), "." → (rev, file)
-        elseif bvar.command is# 'annotate'
-            let repo=bvar.repo
-            let file=bvar.files[line('.')-1]
-            if a:ann!=-2
-                if !has_key(a:opts, 'rev')
-                    let rev=bvar.revisions[line('.')-1]
-                    let annrev=repo.functions.getrevhex(repo, bvar.rev)
-                    if rev is# annrev
-                        if a:ann!=1
-                            " Don't do the following if we are not annotating
-                        elseif has_key(bvar, 'annbuf') &&
-                                    \bufwinnr(bvar.annbuf)!=-1
-                            execute bufwinnr(bvar.annbuf).'wincmd w'
-                        else
-                            setlocal scrollbind
-                            call s:_r.run('silent rightbelow vsplit',
-                                        \ 'file', repo, rev, file)
-                            let bvar.annbuf=bufnr('%')
-                            setlocal scrollbind
-                        endif
-                        return s:rrffailresult
-                    endif
-                endif
-                if a:ann>=0
-                    if winnr('$')>1
-                        wincmd c
-                    endif
-                    if has_key(bvar, 'annbuf') && bufwinnr(bvar.annbuf)!=-1
-                        execute bufwinnr(bvar.annbuf).'wincmd w'
-                    endif
-                endif
-            endif
-        "▶2 Unknown command
         elseif a:failmsg isnot 0
             call s:_f.throw(a:failmsg)
         endif

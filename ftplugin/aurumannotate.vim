@@ -11,7 +11,7 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/repo': '1.0',
+execute frawor#Setup('0.0', {'@aurum/repo': '2.0',
             \             '@aurum/bufvars': '0.0',
             \             '@aurum/vimdiff': '0.0',
             \            '@aurum/annotate': '0.0',
@@ -116,19 +116,24 @@ function s:F.runmap(action, ...)
             endif
         endif
         if hasannbuf
+            let lnr=bvar.linenumbers[line('.')-1]
             call s:_r.run('silent edit', 'annotate', bvar.repo, hex, file)
-            setlocal scrollbind
+            execute lnr
+            setlocal scrollbind cursorbind
             let abuf=bufnr('%')
             let newbvar=s:_r.bufvars[abuf]
             execute bufwinnr(bvar.annbuf).'wincmd w'
         endif
         let existed=s:_r.run('silent edit', 'file', bvar.repo, hex, file)
-        setlocal scrollbind
-        if hasannbuf
-            call s:_r.annotate.setannbuf(newbvar, abuf, bufnr('%'))
-        endif
         if exists('lnr')
             execute lnr
+        endif
+        if hasannbuf
+            if exists('lnr')
+                call s:_r.annotate.foldopen()
+                setlocal scrollbind cursorbind nowrap
+            endif
+            call s:_r.annotate.setannbuf(newbvar, abuf, bufnr('%'))
         endif
     "▶2 `update' action
     elseif a:action is# 'update'

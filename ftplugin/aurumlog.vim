@@ -13,7 +13,7 @@ setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
             \                 '@aurum/bufvars': '0.0',
-            \                    '@aurum/repo': '1.0',
+            \                    '@aurum/repo': '2.0',
             \                    '@aurum/edit': '1.0',
             \                           '@/os': '0.0',
             \                     '@/mappings': '0.0',})
@@ -275,19 +275,45 @@ function s:F.vimdiff(...)
     endif
     return ''
 endfunction
+"▶1 findfirstvisible :: n → hex
+function s:F.findfirstvisible(n)
+    let bvar=s:_r.bufvars[bufnr('%')]
+    let repo=bvar.repo
+    let [blockstart, blockend, hex]=s:F.getblock(bvar)
+    let n=abs(a:n)
+    let direction=((a:n>0)?('parents'):('children'))
+    let tocheck=[]
+    let checked={}
+    let lastfoundhex=hex
+    while n>0
+        let tocheck+=repo.functions.getcsprop(repo, hex, direction)
+        let prevn=n
+        while !empty(tocheck)
+            let hex=remove(tocheck, 0)
+            let checked[hex]=1
+            if has_key(bvar.csstarts, hex)
+                let tocheck=[]
+                let lastfoundhex=hex
+                let n-=1
+            else
+                let tocheck+=filter(copy(
+                            \repo.functions.getcsprop(repo, hex, direction)),
+                            \'!has_key(checked, v:val)')
+            endif
+        endwhile
+        if n==prevn
+            break
+        endif
+    endwhile
+    return "\<C-\>\<C-n>".(bvar.csstarts[lastfoundhex]+1).'gg'
+endfunction
 "▶1 next
 function s:F.next()
-    let bvar=s:_r.bufvars[bufnr('%')]
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
-    let hex=bvar.repo.functions.getnthparent(bvar.repo, hex, -v:count1).hex
-    return "\<C-\>\<C-n>".(bvar.csstarts[hex]+1).'gg'
+    return s:F.findfirstvisible(-v:count1)
 endfunction
 "▶1 prev
 function s:F.prev()
-    let bvar=s:_r.bufvars[bufnr('%')]
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
-    let hex=bvar.repo.functions.getnthparent(bvar.repo, hex, v:count1).hex
-    return "\<C-\>\<C-n>".(bvar.csstarts[hex]+1).'gg'
+    return s:F.findfirstvisible(v:count1)
 endfunction
 "▶1 filehistory
 function s:F.filehistory()
