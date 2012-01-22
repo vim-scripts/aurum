@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {'@/os': '0.0',
+    execute frawor#Setup('0.2', {'@/os': '0.0',
                 \     '@aurum/cmdutils': '0.0',
                 \         '@aurum/edit': '1.0',
                 \               '@/fwc': '0.0',
@@ -25,6 +25,7 @@ let s:_options={
         \}
 let s:_messages={
             \'nodfile': 'Failed to deduce which file to diff with',
+            \ 'cndiff': 'Can’t show diff for file %s',
             \ 'nodrev': 'Unsure what revision should be diffed with',
         \}
 let s:lastfullid=0
@@ -384,11 +385,75 @@ function s:F.opentab(repo, revs, file, fdescr)
     1 wincmd w
     "▲2
 endfunction
+"▶1 fullvimdiff
+function s:F.fullvimdiff(repo, revs, mt, files, areglobs, ...)
+    let statuses=map(a:revs[1:],
+                \    'a:repo.functions.status(a:repo, v:val, a:revs[0])')
+    let files={}
+    let i=1
+    let stypes=['modified']
+    "▶2 Get accepted statuses list
+    if a:mt
+        let stypes+=['added', 'removed']
+        if a:mt==2
+            let stypes+=['deleted', 'unknown']
+        endif
+    endif
+    "▶2 Get file statuses
+    for status in statuses
+        for [k, fs] in filter(items(status), 'index(stypes, v:val[0])!=-1')
+            for f in fs
+                if !has_key(files, f)
+                    let files[f]={}
+                endif
+                let files[f][i]=k
+            endfor
+        endfor
+        let i+=1
+    endfor
+    "▶2 Filter out requested files
+    if !empty(a:files)
+        let files2={}
+        if a:areglobs
+            let filepats=map(filter(copy(a:files), 'v:val isnot# ":"'),
+                        \    's:_r.globtopat(v:val)')
+            "▶3 Current file
+            if a:0 && !empty(a:1)
+                for f in a:1
+                    if has_key(files, f)
+                        let files2[f]=remove(files, f)
+                    else
+                        call s:_f.throw('cndiff', f)
+                    endif
+                endfor
+            endif
+            "▲3
+            for pattern in filepats
+                call map(filter(keys(files), 'v:val=~#pattern'),
+                            \'extend(files2, {v:val : remove(files, v:val)})')
+            endfor
+        else
+            for f in filter(copy(a:files), 'has_key(files, v:val)')
+                let files2[f]=remove(files, f)
+            endfor
+        endif
+        let files=files2
+    endif
+    "▶2 Open tabs
+    let s:lastfullid+=1
+    for [f, d] in items(files)
+        call s:F.opentab(a:repo, a:revs, f, d)
+    endfor
+    "▲2
+endfunction
 "▶1 vimdfunc
 " TODO exclude binary files from full diff
 function s:vimdfunc.function(opts, ...)
     "▶2 repo and revisions
-    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 0, 0)
+    let full=get(a:opts, 'full', 0)
+    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 0,
+                \                                      ((full)?('getfiles'):
+                \                                              ('open')))
     call s:_r.cmdutils.checkrepo(repo)
     let revs=[]
     if rev isnot 0
@@ -416,54 +481,27 @@ function s:vimdfunc.function(opts, ...)
     endif
     "▲2
     if get(a:opts, 'full', 0)
-        let statuses=map(revs[1:], 'repo.functions.status(repo,v:val,revs[0])')
-        let files={}
-        let i=1
-        "▶2 Get accepted statuses list
-        let stypes=['modified']
-        if get(a:opts, 'untracked', 0)
-            let stypes+=['added', 'removed', 'deleted', 'unknown']
-        elseif !get(a:opts, 'onlymodified', 1)
-            let stypes+=['added', 'removed']
-        endif
-        "▶2 Get file statuses
-        for status in statuses
-            for [k, fs] in filter(items(status), 'index(stypes, v:val[0])!=-1')
-                for f in fs
-                    if !has_key(files, f)
-                        let files[f]={}
-                    endif
-                    let files[f][i]=k
-                endfor
-            endfor
-            let i+=1
-        endfor
-        "▶2 Filter out only requested files
+        let args=[repo, revs,
+                    \((get(a:opts, 'untracked', 0))?
+                    \   (2):
+                    \   (!get(a:opts, 'onlymodified', 1)))]
         if has_key(a:opts, 'files')
-            let filepats=map(filter(copy(a:opts.files), 'v:val isnot# ":"'),
-                        \    's:_r.globtopat(repo.functions.reltorepo(repo, '.
-                        \                                            'v:val))')
-            let files2={}
-            "▶3 Current file
-            if len(filepats)!=len(a:opts.files)
-                if file isnot# 0 && has_key(files, file)
-                    let files2[file]=remove(files, file)
-                else
+            let files=map(filter(copy(a:opts.files), 'v:val isnot# ":"'),
+                        \        'repo.functions.reltorepo(repo, v:val)')
+            let args+=[files, 1]
+            if len(files)!=len(a:opts.files)
+                if empty(file)
                     call s:_f.throw('nodfile')
+                else
+                    let args+=[file]
                 endif
             endif
-            "▲3
-            for pattern in filepats
-                call map(filter(keys(files), 'v:val=~#pattern'),
-                            \'extend(files2, {v:val : remove(files, v:val)})')
-            endfor
-            let files=files2
+        elseif empty(file)
+            let args+=[[], 0]
+        else
+            let args+=[file, 0]
         endif
-        "▲2
-        let s:lastfullid+=1
-        for [f, d] in items(files)
-            call s:F.opentab(repo, revs, f, d)
-        endfor
+        return call(s:F.fullvimdiff, args, {})
     else
         if file is 0
             call s:_f.throw('nodfile')
@@ -492,7 +530,8 @@ call add(s:vimdcomp,
             \'\vfile\s+type\s*\V""', 'file path',        ''),
             \'\V+ type ""',          '+ '.s:_r.comp.rev, ''))
 "▶1 Post resource
-call s:_f.postresource('vimdiff', {'split': s:F.diffsplit,})
+call s:_f.postresource('vimdiff', {'split': s:F.diffsplit,
+            \                       'full': s:F.fullvimdiff,})
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded,lastfullid')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

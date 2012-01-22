@@ -108,7 +108,8 @@ endif
 " TODO Investigate why wiping out annotate buffer causes consumption of next
 "      character under wine
 function s:annfunc.function(opts)
-    let [hasannbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'noafile', 1)
+    let [hasannbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'noafile',
+                \                                         'annotate')
     if repo is 0
         return
     endif

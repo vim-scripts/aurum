@@ -3,6 +3,7 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
                 \                 '@aurum/bufvars': '0.0',
+                \                 '@aurum/vimdiff': '0.2',
                 \                    '@aurum/repo': '2.0',
                 \                    '@aurum/edit': '1.0',
                 \                           '@/os': '0.0',
@@ -65,7 +66,7 @@ function s:difffunc.function(opts, ...)
                     \                       'index(filelist, v:val)==-1')
     endfor
     if hascur
-        let curfile=s:_r.cmdutils.getrrf({'repo': ':'}, 'nocurf', -1)[3]
+        let curfile=s:_r.cmdutils.getrrf({'repo': ':'}, 'nocurf', 'getfile')[3]
         let curfile=repo.functions.reltorepo(repo, curfile)
         if index(csfiles, curfile)!=-1 && index(filelist, curfile)==-1
             let filelist+=[curfile]
@@ -106,6 +107,7 @@ call add(s:diffcomp,
 "▶1 aurum://diff mappings
 let s:mmgroup=':call <SNR>'.s:_sid.'_Eval("s:_f.mapgroup.map(''AuDiff'', '.
             \                                               "bufnr('%'))\")\n"
+"▶2 rundiffmap
 function s:F.rundiffmap(action)
     let buf=bufnr('%')
     let bvar=s:_r.bufvars[buf]
@@ -168,13 +170,30 @@ function s:F.rundiffmap(action)
     endif
     return cmd
 endfunction
+"▶2 fvdiff
+function s:F.fvdiff()
+    let bvar=s:_r.bufvars[bufnr('%')]
+    let args=[bvar.repo]
+    if empty(bvar.rev1)
+        let args+=[[0, bvar.rev2]]
+    elseif empty(bvar.rev2)
+        let args+=[[0, bvar.rev1]]
+    else
+        let args+=[[bvar.rev1, bvar.rev2]]
+    endif
+    let args+=[1, bvar.files, 0]
+    return call(s:_r.vimdiff.full, args, {})
+endfunction
+"▲2
 call s:_f.mapgroup.add('AuDiff', {
-            \  'Next': {'lhs': 'K', 'rhs': ['next'    ]},
-            \  'Prev': {'lhs': 'J', 'rhs': ['previous']},
-            \'Update': {'lhs': 'U', 'rhs': ['update'  ]},
-            \  'Exit': {'lhs': 'X', 'rhs': ['exit'    ]},
-            \  'Open': {'lhs': 'o', 'rhs': ['open'    ]},
-            \ 'Vdiff': {'lhs': 'D', 'rhs': ['vimdiff' ]},
+            \  'Next': {'lhs':  'K', 'rhs': ['next'       ]},
+            \  'Prev': {'lhs':  'J', 'rhs': ['previous'   ]},
+            \'Update': {'lhs':  'U', 'rhs': ['update'     ]},
+            \  'Exit': {'lhs':  'X', 'rhs': ['exit'       ]},
+            \  'Open': {'lhs':  'o', 'rhs': ['open'       ]},
+            \ 'Vdiff': {'lhs':  'D', 'rhs': ['vimdiff'    ]},
+            \'FVdiff': {'lhs': 'gD', 'rhs': ':call <SNR>'.s:_sid.'_Eval('.
+            \                                            '"s:F.fvdiff()")<CR>'},
         \}, {'func': s:F.rundiffmap, 'silent': 1, 'mode': 'n', 'dontmap': 1,})
 "▶1 diff resource
 let s:diff= {'arguments': 2,

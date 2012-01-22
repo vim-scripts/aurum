@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',
+    execute frawor#Setup('1.1', {'@/resources': '0.0',
                 \            '@aurum/cmdutils': '0.0',
                 \                      '@/fwc': '0.2',
                 \                '@aurum/repo': '2.0',
@@ -46,12 +46,12 @@ endfunction
 "▶1 setup
 function s:F.setup(read, repo, opts)
     let opts=a:opts
-    for key in filter(['rev1', 'rev2'], 'has_key(opts, v:val)')
+    for key in filter(['rev', 'wdrev'], 'has_key(opts, v:val)')
         let opts[key]=a:repo.functions.getrevhex(a:repo, opts[key])
     endfor
     let bvar={}
-    let status=a:repo.functions.status(a:repo, get(opts, 'rev1', 0),
-                \                              get(opts, 'rev2', 0))
+    let status=a:repo.functions.status(a:repo, get(opts, 'rev',   0),
+                \                              get(opts, 'wdrev', 0))
     let bvar.status=status
     let bvar.types=[]
     let bvar.chars=[]
@@ -109,26 +109,34 @@ function s:statfunc.function(repopath, opts)
         let repo=s:_r.repo.get(a:repopath)
     endif
     call s:_r.cmdutils.checkrepo(repo)
-    let opts=[]
-    if has_key(a:opts, 'files')
-        call map(a:opts.files, 'repo.functions.reltorepo(repo, v:val)')
+    let opts=copy(a:opts)
+    if has_key(opts, 'changes')
+        let cs=repo.functions.getcs(repo, opts.changes)
+        let opts.rev=cs.hex
+        if empty(cs.parents)
+            return
+        endif
+        let opts.wdrev=cs.parents[0]
     endif
-    if has_key(a:opts, 'cmd')
-        call s:_r.run(a:opts.cmd, 'status', repo, a:opts)
+    if has_key(opts, 'files')
+        call map(opts.files, 'repo.functions.reltorepo(repo, v:val)')
+    endif
+    if has_key(opts, 'cmd')
+        call s:_r.run(opts.cmd, 'status', repo, opts)
     elseif s:_f.getoption('usestatwin') &&
                 \!empty(filter(tabpagebuflist(),
                 \              'bufname(v:val)=~#''\v^aurum:(.)\1status'''))
-        let statf=s:_r.fname('status', repo, a:opts)
+        let statf=s:_r.fname('status', repo, opts)
         if bufexists(statf) && bufwinnr(statf)!=-1
             execute bufwinnr(statf).'wincmd w'
             silent edit
         else
-            call s:_r.run(s:defcmd, 'status', repo, a:opts)
+            call s:_r.run(s:defcmd, 'status', repo, opts)
         endif
     else
-        call s:_r.run(s:defcmd, 'status', repo, a:opts)
+        call s:_r.run(s:defcmd, 'status', repo, opts)
     endif
-    if !has_key(a:opts, 'cmd')
+    if !has_key(opts, 'cmd')
         let lnum=line('$')
         if winnr('$')>1 && ((winheight(0)>lnum) ||
                     \       (winheight(0)!=lnum && lnum<(&lines/3)))
@@ -140,8 +148,9 @@ endfunction
 let s:statfunc['@FWC']=['-onlystrings '.
             \           '['.s:_r.cmdutils.nogetrepoarg.']'.
             \           '{ *?files     (type "")'.
-            \           '   ?rev1      (type "")'.
-            \           '   ?rev2      (type "")'.
+            \           '   ?rev       (type "")'.
+            \           '   ?wdrev     (type "")'.
+            \           '   ?changes   (type "")'.
             \           '  *?show      (either (in [modified added removed '.
             \                                      'deleted unknown ignored '.
             \                                      'clean all] ~start, '.
@@ -150,16 +159,16 @@ let s:statfunc['@FWC']=['-onlystrings '.
             \           '}', 'filter']
 call add(s:statcomp,
             \substitute(substitute(substitute(substitute(s:statfunc['@FWC'][0],
-            \'\V|*_r.repo.get',             '',                    ''),
-            \'\vfiles\s+\([^)]*\)',       'files path',            ''),
-            \'\Vcmd\s\+(type "")',        'cmd '.  s:_r.comp.cmd,  ''),
-            \'\vrev([12])\s+\V(type "")', 'rev\1 '.s:_r.comp.rev,  'g'))
+            \'\V|*_r.repo.get',                     '',                   ''),
+            \'\vfiles\s+\([^)]*\)',                 'files path',         ''),
+            \'\Vcmd\s\+(type "")',                  'cmd '.s:_r.comp.cmd, ''),
+            \'\v(%(wd)?rev|changes)\s+\V(type "")', '\1 '.s:_r.comp.rev,  'g'))
 "▶1 aurum://status
 call s:_f.newcommand({
             \'function': s:F.setup,
             \ 'options': {'list': ['files', 'show'],
             \             'bool': ['record'],
-            \              'str': ['rev1', 'rev2'],
+            \              'str': ['rev', 'wdrev'],
             \             'pats': ['files'],},
             \'filetype': 'aurumstatus',
             \})

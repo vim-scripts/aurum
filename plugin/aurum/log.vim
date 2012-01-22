@@ -114,8 +114,7 @@ endfunction
 "▶2 graph.update :: graph, cs → + graph
 function s:F.graph.update(cs)
     let self.cs=a:cs
-    let self.interesting_parents=filter(copy(a:cs.parents),
-                \                       '!has_key(self.skipchangesets, v:val)')
+    let self.interesting_parents=copy(a:cs.parents)
     let self.num_parents=len(self.interesting_parents)
     let self.prev_commit_index=self.commit_index
     call self.update_columns()
@@ -185,6 +184,9 @@ function s:F.graph.output_pre_commit_line()
 endfunction
 "▶2 graph.output_commit_char :: graph → String
 function s:F.graph.output_commit_char()
+    if has_key(self.skipchangesets, self.cs.hex)
+        return '*'
+    endif
     return '@o'[index(self.workcss, self.cs.hex)==-1]
 endfunction
 "▶2 graph.draw_octopus_merge :: graph → String
@@ -512,12 +514,13 @@ function s:F.glog.utf(state, type, char, text, coldata)
     endif
     if has_key(a:text, 'skip')
         let joined_sil=join(shift_interline, '')
-        let joined_nl=substitute(join(nodeline, ''), '\V'.a:char, '|', '')
+        let joined_nl=join(nodeline, '')
         let a:text.text=[]
-        if joined_nl!~#'\v^[o| ]+$'
-            let a:text.text+=[substitute(joined_nl,'\v\-@<=\||\|\-@=','+','')]
+        if joined_nl!~#'\v^[*| ]+$'
+            let a:text.text+=[joined_nl]
         endif
-        if joined_sil!~#'\v^[| ]+$' && joined_sil isnot# joined_nl
+        if joined_sil!~#'\v^[| ]+$' &&
+                    \joined_sil isnot# tr(joined_nl, a:char, '|')
             let a:text.text+=[joined_sil]
         endif
         return a:text
@@ -574,6 +577,10 @@ function s:F.glog.show_log(graph, cs, text)
     let lines=((a:graph.cs is 0)?([]):(a:graph.show_remainder()))
     call a:graph.update(a:cs)
     let lines+=a:graph.show_commit()
+    let skip=has_key(a:text, 'skip')
+    if skip && len(lines)==1 && lines[0]!~#'[^|* ]'
+        return a:text
+    endif
     let collen=len(lines[-1])
     let a:text.block_r[0][1]+=collen
     let a:text.block_r[1][1]+=collen
@@ -739,9 +746,10 @@ function s:iterfuncs.git.start(repo, opts, ...)
 endfunction
 function s:iterfuncs.git.proccs(d, cs)
     if has_key(a:d.opts.skipchangesets, a:cs.hex)
-        return [[], 0, 0]
+        let text={'skip': 1, 'text': [], 'special': {}}
+    else
+        let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
     endif
-    let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
     let text.block_r=[[0, 0],
                 \     [len(text.text)-1,
                 \      max(map(copy(text.text), 'len(v:val)'))]]
@@ -755,11 +763,12 @@ function s:iterfuncs.hg.start(repo, opts, ...)
                 \'showparents': get(a:000, 0, []), 'repo': a:repo}
 endfunction
 function s:iterfuncs.hg.proccs(d, cs)
-    let char=((index(a:d.showparents, a:cs.hex)==-1)?('o'):('@'))
     if has_key(a:d.opts.skipchangesets, a:cs.hex)
+        let char='*'
         let text={'skip': 1}
         let skip=1
     else
+        let char=((index(a:d.showparents, a:cs.hex)==-1)?('o'):('@'))
         let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
         let skip=0
     endif
@@ -1675,6 +1684,51 @@ function s:F.gettemplatelist(bvar)
     endif
     let a:bvar.templatelist=s:F.temp.parse(template)
 endfunction
+"▶1 getblock :: bvar + cursor, bvar → block
+"▶2 bisect :: [a], function + self → a
+function s:F.bisect(list, function)
+    let llist=len(a:list)
+    let lborder=0
+    let rborder=llist-1
+    let lres=call(a:function, [a:list[lborder]], self)
+    if lres<=0
+        return a:list[lborder]
+    endif
+    let rres=call(a:function, [a:list[rborder]], self)
+    if rres>=0
+        return a:list[rborder]
+    endif
+    let totest='r'
+    let cur=(((rborder+1)/2)-1)
+    while lborder!=rborder
+        let res=call(a:function, [a:list[cur]], self)
+        if res==0
+            return a:list[cur]
+        else
+            let shift=((rborder-lborder)/2)
+            if shift==0
+                let shift=1
+            endif
+            let {(res>0)?('l'):('r')}border=cur
+            let cur=lborder+shift
+        endif
+    endwhile
+    return a:list[lborder]
+endfunction
+"▶2 checkinblock :: block → -1|0|1
+function s:F.checkinblock(block)
+    let curline=line('.')-1
+    return       ((curline<a:block[0][0])?(-1):
+                \((curline>a:block[1][0])?( 1):
+                \                         ( 0)))
+endfunction
+"▲2
+function s:F.getblock(bvar)
+    if empty(a:bvar.rectangles)
+        call s:_f.throw('nocontents')
+    endif
+    return s:F.bisect(a:bvar.rectangles, s:F.checkinblock)
+endfunction
 "▶1 setup
 "▶2 getkwreg
 function s:F.getkwreg(kw, nextlit)
@@ -1691,6 +1745,7 @@ endfunction
 function s:F.setup(read, repo, opts, ...)
     let opts=a:opts
     let bvar=get(a:000, 0, {'opts': opts})
+    let bvar.getblock=s:F.getblock
     "▶2 Add `ignorefiles'
     let ignorefiles=(has_key(opts, 'ignfiles')?
                 \               (opts.ignfiles):
@@ -1751,7 +1806,7 @@ function s:logfunc.function(repopath, opts)
     let opts=copy(a:opts)
     if has_key(opts, 'files')
         if opts.files[0] is# ':'
-            let curfile=s:_r.cmdutils.getrrf(opts, 'nocurf', -1)[3]
+            let curfile=s:_r.cmdutils.getrrf(opts, 'nocurf', 'getfile')[3]
             if curfile is 0
                 call remove(opts.files, 0)
             else

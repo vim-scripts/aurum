@@ -34,7 +34,7 @@ function s:filefunc.function(rev, file, opts)
     if a:file isnot 0 && a:file isnot# ':'
         let opts.file=a:file
     endif
-    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(opts, 'noffile', 0)
+    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(opts, 'noffile', 'open')
     if repo is 0
         return
     endif

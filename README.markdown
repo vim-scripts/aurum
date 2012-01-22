@@ -4,7 +4,7 @@ for your projects. Features:
 
   - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line356-0)).
 
-  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line587-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line157-0)).
+  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line595-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line157-0)).
 
   - Viewing uncommited changes in a vimdiff, as well as changes between 
     specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line396-0)). It is also possible to open multiple 
@@ -15,7 +15,7 @@ for your projects. Features:
   - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line360-0)).
 
   - Commiting changes ([:AuCommit](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line98-0)), commit messages are remembered in case of 
-    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line845-0)).
+    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line866-0)).
 
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
@@ -26,7 +26,7 @@ for your projects. Features:
 
   - Frontends for various other VCS commands.
 
-Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line729-0)), 
+Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line750-0)), 
 all mappings are customizable.
 
 

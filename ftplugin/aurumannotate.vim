@@ -13,7 +13,7 @@ setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/repo': '2.0',
             \             '@aurum/bufvars': '0.0',
-            \             '@aurum/vimdiff': '0.0',
+            \             '@aurum/vimdiff': '0.2',
             \            '@aurum/annotate': '0.0',
             \                '@aurum/edit': '1.0',
             \                 '@/mappings': '0.0',
@@ -53,7 +53,11 @@ function s:F.runmap(action, ...)
     "▶2 Various *diff actions
     if a:action[-4:] is# 'diff'
         if a:action[:2] is# 'rev'
-            let rev1=get(bvar.repo.functions.getcs(bvar.repo, hex).parents,0,'')
+            let cs1=bvar.repo.functions.getcs(bvar.repo, hex)
+            if empty(cs1.parents)
+                return
+            endif
+            let rev1=cs1.parents[0]
         elseif bvar.rev isnot# bvar.repo.functions.getworkhex(bvar.repo)
             let rev1=bvar.rev
         else
@@ -66,29 +70,36 @@ function s:F.runmap(action, ...)
             setlocal noscrollbind
         endif
         if a:action[-7:-5] is# 'vim'
-            if empty(rev1)
-                let file1=s:_r.os.path.join(bvar.repo.path, bvar.file)
-                let existed=bufexists(file1)
-                if filereadable(file1)
-                    execute 'silent edit' fnameescape(file1)
-                else
-                    call s:_f.throw('norfile', file1)
-                endif
+            if a:0 && a:1
+                return s:_r.vimdiff.full(bvar.repo,
+                            \            [(empty(rev1)?(0):(rev1)), rev2],
+                            \            0, [], 0)
             else
-                try
-                    let existed=s:_r.run('silent edit', 'file', bvar.repo, rev1,
-                                \        file)
-                catch /\V\^Frawor:\[^:]\+:nofile:/
-                    call s:_f.throw('nofile', file, rev1)
-                endtry
-            endif
-            if existed
-                setlocal bufhidden=wipe
-                unlet existed
-            endif
-            call s:_r.vimdiff.split(s:_r.fname('file',bvar.repo,rev2,file), -1)
-            if empty(rev1)
-                wincmd p
+                if empty(rev1)
+                    let file1=s:_r.os.path.join(bvar.repo.path, bvar.file)
+                    let existed=bufexists(file1)
+                    if filereadable(file1)
+                        execute 'silent edit' fnameescape(file1)
+                    else
+                        call s:_f.throw('norfile', file1)
+                    endif
+                else
+                    try
+                        let existed=s:_r.run('silent edit', 'file', bvar.repo,
+                                    \        rev1, file)
+                    catch /\V\^Frawor:\[^:]\+:nofile:/
+                        call s:_f.throw('nofile', file, rev1)
+                    endtry
+                endif
+                if existed
+                    setlocal bufhidden=wipe
+                    unlet existed
+                endif
+                call s:_r.vimdiff.split(s:_r.fname('file',bvar.repo,rev2,file),
+                            \           -1)
+                if empty(rev1)
+                    wincmd p
+                endif
             endif
         else
             if empty(rev1)
@@ -175,6 +186,8 @@ endfunction
 "▲2
 call s:_f.mapgroup.add('AuAnnotate', {
             \    'Enter': {'lhs': '<CR>', 'rhs': s:F.getrhs(   'vimdiff'   )},
+            \   'FVdiff': {'lhs': 'gD',   'rhs': s:F.getrhs(   'vimdiff', 1)},
+            \  'RFVdiff': {'lhs': 'gC',   'rhs': s:F.getrhs('revvimdiff', 1)},
             \    'Fdiff': {'lhs': 'gd',   'rhs': s:F.getrhs(      'diff', 1)},
             \   'RFdiff': {'lhs': 'gc',   'rhs': s:F.getrhs('rev'.'diff', 1)},
             \     'Diff': {'lhs':  'd',   'rhs': s:F.getrhs(      'diff'   )},

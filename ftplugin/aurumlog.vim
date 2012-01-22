@@ -21,50 +21,6 @@ let s:_messages={
             \'nocontents': 'Log is empty',
         \}
 let s:ignkeys=['crrestrict', 'filepats', 'revs', 'cmd', 'repo']
-"▶1 bisect :: [a], function + self → a
-function s:F.bisect(list, function)
-    let llist=len(a:list)
-    let lborder=0
-    let rborder=llist-1
-    let lres=call(a:function, [a:list[lborder]], self)
-    if lres<=0
-        return a:list[lborder]
-    endif
-    let rres=call(a:function, [a:list[rborder]], self)
-    if rres>=0
-        return a:list[rborder]
-    endif
-    let totest='r'
-    let cur=(((rborder+1)/2)-1)
-    while lborder!=rborder
-        let res=call(a:function, [a:list[cur]], self)
-        if res==0
-            return a:list[cur]
-        else
-            let shift=((rborder-lborder)/2)
-            if shift==0
-                let shift=1
-            endif
-            let {(res>0)?('l'):('r')}border=cur
-            let cur=lborder+shift
-        endif
-    endwhile
-    return a:list[lborder]
-endfunction
-"▶1 checkinblock :: block → -1|0|1
-function s:F.checkinblock(block)
-    let curline=line('.')-1
-    return       ((curline<a:block[0][0])?(-1):
-                \((curline>a:block[1][0])?( 1):
-                \                         ( 0)))
-endfunction
-"▶1 getblock :: bvar + cursor, bvar → block
-function s:F.getblock(bvar)
-    if empty(a:bvar.rectangles)
-        call s:_f.throw('nocontents')
-    endif
-    return s:F.bisect(a:bvar.rectangles, s:F.checkinblock)
-endfunction
 "▶1 findCurSpecial :: bvar, hex, blockstart + cursor → special
 "▶2 s:spSort :: special, special → -1|0|1
 let s:sufweights={'-': 3, 'r': 2, 'l': 1, 'R': 0,}
@@ -124,7 +80,7 @@ endfunction
 function s:F.cr(...)
     "▶2 Get changeset, current special, encode options
     let bvar=s:_r.bufvars[bufnr('%')]
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
+    let [blockstart, blockend, hex]=bvar.getblock(bvar)
     if a:0
         let spname=a:1
     else
@@ -184,10 +140,25 @@ function s:F.cr(...)
     "▲3
     return s:F.cwin(bvar).":silent ".cmd."\n"
 endfunction
+"▶1 fvdiff
+function s:F.fvdiff(...)
+    let bvar=s:_r.bufvars[bufnr('%')]
+    let hex=bvar.getblock(bvar)[2]
+    let cmd=':AuVimDiff full noonlymodified '
+    if !a:0
+        return cmd.'curfile '.hex."\n"
+    else
+        let cs=bvar.repo.changesets[hex]
+        if !empty(cs.parents)
+            return cmd.hex.' '.cs.parents[0]."\n"
+        endif
+    endif
+    return ''
+endfunction
 "▶1 gethexfile
 function s:F.gethexfile()
     let bvar=s:_r.bufvars[bufnr('%')]
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
+    let [blockstart, blockend, hex]=bvar.getblock(bvar)
     let spname=s:F.findCurSpecial(bvar, hex, blockstart[0])
     let cs=bvar.repo.changesets[hex]
     let file=0
@@ -279,7 +250,7 @@ endfunction
 function s:F.findfirstvisible(n)
     let bvar=s:_r.bufvars[bufnr('%')]
     let repo=bvar.repo
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
+    let hex=bvar.getblock(bvar)[2]
     let n=abs(a:n)
     let direction=((a:n>0)?('parents'):('children'))
     let tocheck=[]
@@ -333,7 +304,7 @@ endfunction
 "▶1 update
 function s:F.update()
     let bvar=s:_r.bufvars[bufnr('%')]
-    let [blockstart, blockend, hex]=s:F.getblock(bvar)
+    let hex=bvar.getblock(bvar)[2]
     call s:_r.repo.update(bvar.repo, hex, v:count)
     return "\<C-\>\<C-n>:silent edit\n"
 endfunction
@@ -342,9 +313,11 @@ call s:_f.mapgroup.add('AuLog', {
             \   'Enter': {'lhs': "\n", 'rhs': [],                             },
             \    'File': {'lhs': 'gF', 'rhs': s:F.filehistory                 },
             \    'User': {'lhs': 'gu', 'rhs': ['user']                        },
-            \    'Date': {'lhs': 'gD', 'rhs': ['time']                        },
+            \    'Date': {'lhs': 'gM', 'rhs': ['time']                        },
             \  'Branch': {'lhs': 'gb', 'rhs': ['branch']                      },
             \     'Rev': {'lhs': 'gr', 'rhs': ['rev']                         },
+            \  'FVdiff': {'lhs': 'gD', 'rhs': s:F.fvdiff                      },
+            \ 'RFVdiff': {'lhs': 'gC', 'rhs': [1],         'func': s:F.fvdiff },
             \   'Fdiff': {'lhs': 'gd', 'rhs': ['curdiff']                     },
             \  'RFdiff': {'lhs': 'gc', 'rhs': ['revdiff']                     },
             \    'Diff': {'lhs':  'd', 'rhs': [1],         'func': s:F.diff   },

@@ -362,12 +362,15 @@ AuStatus [{repo}] {opts}                                           *:AuStatus*
     Option  Description ~
     files   Glob. If given, only status of files that match given glob will be 
             displayed. May be specified more then once.
-    rev1    Revision. If given :AuStatus will display status not relative to 
-            working revision, but to the given one. If “rev2” is specified, 
-            then it will display status as if {rev2} was working directory 
+    rev     Revision. If given :AuStatus will display status not relative to 
+            working revision, but to the given one. If “wdrev” is specified, 
+            then it will display status as if {wdrev} was working directory 
             state and current working directory was revision from repository.
-    rev2    Revision. If given :AuStatus will display status as if {rev2} was 
+    wdrev   Revision. If given :AuStatus will display status as if {wdrev} was 
             working directory state.
+    changes Revision. Works like specifying {changes} as “rev” option and its 
+            first parent as “wdrev” option. Overrides “rev” and “wdrev” 
+            options.
     show    Either one of modified/added/removed/deleted/unknown/ignored/clean 
             or string containing capitalized first letters of mentined status 
             names (additionally “?” for unknown and “!” for deleted). May be 
@@ -500,20 +503,26 @@ aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
     Local mappings (mgid=AuAnnotate, without leader by default) (current 
     revision=revision under cursor):                  *g:frawormap_AuAnnotate*
              *g:frawormap_AuAnnotate_Enter*  *g:frawormap_AuAnnotate_Fdiff*
-             *g:frawormap_AuAnnotate_RFdiff* *g:frawormap_AuAnnotate_Diff*
+             *g:frawormap_AuAnnotate_RFdiff* *g:frawormap_AuAnnotate_FVdiff*
+             *g:frawormap_AuAnnotate_Diff*   *g:frawormap_AuAnnotate_RFVdiff*
              *g:frawormap_AuAnnotate_Rdiff*  *g:frawormap_AuAnnotate_Annotate*
              *g:frawormap_AuAnnotate_RVdiff* *g:frawormap_AuAnnotate_Open*
              *g:frawormap_AuAnnotate_Update* *g:frawormap_AuAnnotate_Next*
              *g:frawormap_AuAnnotate_Prev*       *aurum-m-AuAnnotate_Prev*
                  *aurum-m-AuAnnotate_Enter*      *aurum-m-AuAnnotate_Fdiff*
-                 *aurum-m-AuAnnotate_RFdiff*     *aurum-m-AuAnnotate_Diff*
+                 *aurum-m-AuAnnotate_RFdiff*     *aurum-m-AuAnnotate_FVdiff*
+                 *aurum-m-AuAnnotate_Diff*       *aurum-m-AuAnnotate_RFVdiff*
                  *aurum-m-AuAnnotate_Rdiff*      *aurum-m-AuAnnotate_Annotate*
                  *aurum-m-AuAnnotate_RVdiff*     *aurum-m-AuAnnotate_Open*
                  *aurum-m-AuAnnotate_Update*     *aurum-m-AuAnnotate_Next*
     Mapname  LHS  Description ~
     Enter    <CR> View changes between file and current revision (|vimdiff|)
+    FVdiff   gD   View diff between working directory and current revision 
+                  (using |vimdiff| in multiple tabs)
+    RFVdiff  gC   View diff between current revision and its first parent 
+                  (using |vimdiff| in multiple tabs)
     Fdiff    gd   View diff between working directory and current revision
-    RFdiff   gc   View diff between current revision and its parent
+    RFdiff   gc   View diff between current revision and its first parent
     Diff      d   View diff between file and current revision
     Rdiff     c   Like Fdiff, but view only changes made to annotated file
     Vdiff     D   Same as Enter
@@ -557,10 +566,11 @@ aurum://diff:{repo}:{rev1}:{rev2}:{files}:{diffopts}            *aurum://diff*
     all changes.
     Local mappings (mgid=AuDiff, without leader by default):
                                                           *g:frawormap_AuDiff*
-                         *g:frawormap_AuDiff_Next* *g:frawormap_AuDiff_Prev*
+                         *g:frawormap_AuDiff_Next* *g:frawormap_AuDiff_FVdiff*
+                         *g:frawormap_AuDiff_Prev* *g:frawormap_AuDiff_Vdiff*
                          *g:frawormap_AuDiff_Open* *g:frawormap_AuDiff_Update*
-                         *g:frawormap_AuDiff_Vdiff*    *aurum-m-AuDiff_Vdiff*
-                             *aurum-m-AuDiff_Next*     *aurum-m-AuDiff_Prev*
+                             *aurum-m-AuDiff_Next*     *aurum-m-AuDiff_FVdiff*
+                             *aurum-m-AuDiff_Prev*     *aurum-m-AuDiff_Vdiff*
                              *aurum-m-AuDiff_Open*     *aurum-m-AuDiff_Update*
     Mapname  LHS  Description ~
     Next      K   Change all revisions specified to aurum://diff to their 
@@ -580,6 +590,7 @@ aurum://diff:{repo}:{rev1}:{rev2}:{files}:{diffopts}            *aurum://diff*
                   and fallback to {rev2} version. If {rev1} is not empty, it 
                   will open {rev1} version.
     Vdiff     D   View diff section under cursor using |vimdiff|.
+    FVdiff    gD  View the whole diff in a multiple tabs using |vimdiff|.
 
     Note These mappings are defined only when buffer is created using 
          |:AuDiff| command or Prev/Next above mappings.
@@ -621,21 +632,22 @@ aurum://log:{repo}:{opts}                                        *aurum://log*
     Open log for given repo. {opts} are the same as used by |:AuLog|.
     Local mappings (mgid=AuLog, current revision=revision under cursor):
                                                            *g:frawormap_AuLog*
-                         *g:frawormap_AuLog_File* *g:frawormap_AuLog_Enter*
-                         *g:frawormap_AuLog_User* *g:frawormap_AuLog_Update*
-                         *g:frawormap_AuLog_Rev*  *g:frawormap_AuLog_Branch*
-                         *g:frawormap_AuLog_Diff* *g:frawormap_AuLog_Fdiff*
-                         *g:frawormap_AuLog_Next* *g:frawormap_AuLog_RFdiff*
-                         *g:frawormap_AuLog_Prev* *g:frawormap_AuLog_Rdiff*
-                         *g:frawormap_AuLog_Open* *g:frawormap_AuLog_Annotate*
-                         *g:frawormap_AuLog_Date*     *aurum-m-AuLog_Date*
-                             *aurum-m-AuLog_File*     *aurum-m-AuLog_Enter*
-                             *aurum-m-AuLog_User*     *aurum-m-AuLog_Update*
-                             *aurum-m-AuLog_Rev*      *aurum-m-AuLog_Branch*
-                             *aurum-m-AuLog_Diff*     *aurum-m-AuLog_Fdiff*
-                             *aurum-m-AuLog_Next*     *aurum-m-AuLog_RFdiff*
-                             *aurum-m-AuLog_Prev*     *aurum-m-AuLog_Rdiff*
-                             *aurum-m-AuLog_Open*     *aurum-m-AuLog_Annotate*
+                        *g:frawormap_AuLog_File*  *g:frawormap_AuLog_Enter*
+                        *g:frawormap_AuLog_User*  *g:frawormap_AuLog_Update*
+                        *g:frawormap_AuLog_Rev*   *g:frawormap_AuLog_Branch*
+                        *g:frawormap_AuLog_Diff*  *g:frawormap_AuLog_FVdiff*
+                        *g:frawormap_AuLog_Fdiff* *g:frawormap_AuLog_RFVdiff*
+                        *g:frawormap_AuLog_Next*  *g:frawormap_AuLog_RFdiff*
+                        *g:frawormap_AuLog_Prev*  *g:frawormap_AuLog_Rdiff*
+                        *g:frawormap_AuLog_Open*  *g:frawormap_AuLog_Annotate*
+                        *g:frawormap_AuLog_Date*      *aurum-m-AuLog_Date*
+                            *aurum-m-AuLog_File*      *aurum-m-AuLog_Enter*
+                            *aurum-m-AuLog_User*      *aurum-m-AuLog_Update*
+                            *aurum-m-AuLog_Rev*       *aurum-m-AuLog_Branch*
+                            *aurum-m-AuLog_Diff*      *aurum-m-AuLog_Fdiff*
+                            *aurum-m-AuLog_Next*      *aurum-m-AuLog_RFdiff*
+                            *aurum-m-AuLog_Prev*      *aurum-m-AuLog_Rdiff*
+                            *aurum-m-AuLog_Open*      *aurum-m-AuLog_Annotate*
     Mapname  LHS  Description ~
     Enter    <CR> Depending on element under cursor:
                   Element          Action ~
@@ -651,12 +663,16 @@ aurum://log:{repo}:{opts}                                        *aurum://log*
                   used)
     User     gu   View only revisions that were added by the user who added 
                   current one
-    Date     gD   View only revisions that were added in the same month as 
+    Date     gM   View only revisions that were added in the same month as 
                   current one
     Branch   gb   View only revisions that are in the same branch as current
     Rev      gr   View only ancestors of current revision
-    Fdiff    gd   View changes between repository state at current revision 
-                  and working directory state
+    FVdiff   gD   View changes between current revision and working directory 
+                  state in a multiple tabs each containing |vimdiff|
+    RFVdiff  gC   View all changes introduced by current revision as 
+                  a |vimdiff| in a multiple tabs
+    Fdiff    gd   View changes between current revision and working directory 
+                  state
     RFdiff   gc   View changes introduced by current revision
     Diff      d   View diff between working directory and current revision 
                   versions of one of the files
@@ -684,18 +700,22 @@ aurum://status:{repo}:{opts}                                  *aurum://status*
                                                         *g:frawormap_AuStatus*
                  *g:frawormap_AuStatus_Open*   *g:frawormap_AuStatus_ROpen*
                  *g:frawormap_AuStatus_RFdiff* *g:frawormap_AuStatus_Fdiff*
+                 *g:frawormap_AuStatus_FVdiff* *g:frawormap_AuStatus_RFVdiff*
                  *g:frawormap_AuStatus_Diff*   *g:frawormap_AuStatus_vDiff*
                  *g:frawormap_AuStatus_Rdiff*  *g:frawormap_AuStatus_vRdiff*
                  *g:frawormap_AuStatus_Vdiff*  *g:frawormap_AuStatus_RVdiff*
+                 *g:frawormap_AuStatus_vVdiff* *g:frawormap_AuStatus_vRVdiff*
                  *g:frawormap_AuStatus_Commit* *g:frawormap_AuStatus_Annotate*
                  *g:frawormap_AuStatus_Track*  *g:frawormap_AuStatus_vCommit*
                  *g:frawormap_AuStatus_vTrack* *g:frawormap_AuStatus_Forget*
                  *g:frawormap_AuStatus_vForget*    *aurum-m-AuStatus_vForget*
                      *aurum-m-AuStatus_Open*       *aurum-m-AuStatus_ROpen*
                      *aurum-m-AuStatus_RFdiff*     *aurum-m-AuStatus_Fdiff*
+                     *aurum-m-AuStatus_FVdiff*     *aurum-m-AuStatus_RFVdiff*
                      *aurum-m-AuStatus_Diff*       *aurum-m-AuStatus_vDiff*
                      *aurum-m-AuStatus_Rdiff*      *aurum-m-AuStatus_vRdiff*
                      *aurum-m-AuStatus_Vdiff*      *aurum-m-AuStatus_RVdiff*
+                     *aurum-m-AuStatus_vVdiff*     *aurum-m-AuStatus_vRVdiff*
                      *aurum-m-AuStatus_Commit*     *aurum-m-AuStatus_Annotate*
                      *aurum-m-AuStatus_Track*      *aurum-m-AuStatus_vCommit*
                      *aurum-m-AuStatus_vTrack*     *aurum-m-AuStatus_Forget*
@@ -706,12 +726,16 @@ aurum://status:{repo}:{opts}                                  *aurum://status*
     RFdiff   gd   View changes introduced by first revision
     Fdiff    gc   View diff between two revisions (or working directory state 
                   and first revision)
+    RFVdiff  gD   Like RFdiff, but show them in multiple tabs using |vimdiff|
+    FVdiff   gC   Like Fdiff,  but show them in multiple tabs using |vimdiff|
     Diff      d   Like RFdiff, but show only current file
     vDiff     d   Like RFdiff, but shows files selected in visual mode
     Rdiff     c   Like Fdiff, but show only current file
     vRdiff    c   Like Fdiff, but shows files selected in visual mode
     Vdiff     D   Like Diff, but use |vimdiff| to view changes
+    vVdiff    D   Like FVdiff, but limit files only to selected ones
     RVdiff    C   Like Rdiff, but use |vimdiff| to view changes
+    vRVdiff   C   Like RFVdiff, but limit files only to selected ones
     Annotate  a   Open file under cursor and annotate it
     Commit    i   Commit changes made to file under cursor
     vCommit   i   Commit changes made to selected files
@@ -1549,16 +1573,20 @@ Python driver was not tested under windows (wine) at all.
     2.1: Added |aurum-repo.iterfuncs| support.
     2.2: Added |aurum-repo.initprops|.
 @aurum:
-    0.1: Added :AuBranch and :AuName
+    0.1: Added :AuBranch and :AuName.
 @aurum/edit:
-    1.0: Removed setlines function (moved it to @aurum/repo)
-    1.1: Added “requiresbvar” _f.newcommand option
+    1.0: Removed setlines function (moved it to @aurum/repo).
+    1.1: Added “requiresbvar” _f.newcommand option.
 @aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
+    0.2: Added _r.vimdiff.full.
 @aurum/log:
     0.1: Added |aurum-style-git| and |aurum-style-gitoneline| log styles, 
          added skipping of $rev if |aurum-repo.hasrevisions| is false, made it 
-         separate graph from content using non-breaking spaces
-    0.2: Added |:AuLog| procinput option
+         separate graph from content using non-breaking spaces.
+    0.2: Added |:AuLog| procinput option.
+@aurum/status:
+    1.0: Renamed |:AuStatus| “rev1” and “rev2” options to “rev” and “wdrev” 
+         respectively. Same for |aurum://status| “rev1” and “rev2” options.
 
 vim: ft=help:tw=78

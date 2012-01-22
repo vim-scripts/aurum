@@ -3,7 +3,7 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/resources': '0.0',
                 \                  '@/options': '0.0',
-                \              '@aurum/status': '0.0',
+                \              '@aurum/status': '1.0',
                 \            '@aurum/cmdutils': '0.0',
                 \             '@aurum/bufvars': '0.0',
                 \                '@aurum/repo': '2.0',
@@ -176,7 +176,7 @@ function s:commfunc.function(opts, ...)
     endif
     let [repo, rev, files]=s:_r.cmdutils.getrrf(rrfopts,
                 \                               ((a:0)?(0):('nocfile')),
-                \                               -2)[1:]
+                \                               'getfiles')[1:]
     call s:_r.cmdutils.checkrepo(repo)
     let status=repo.functions.status(repo)
     "▶2 Get file list

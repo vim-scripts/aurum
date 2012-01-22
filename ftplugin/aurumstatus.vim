@@ -4,7 +4,8 @@ setlocal textwidth=0
 setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
-            \                '@aurum/vimdiff': '0.0',
+            \                '@aurum/vimdiff': '0.2',
+            \               '@aurum/cmdutils': '0.0',
             \                   '@aurum/edit': '1.0',
             \                 '@aurum/commit': '0.0',
             \                    '@/mappings': '0.0',
@@ -57,11 +58,15 @@ function s:F.runmap(action, ...)
     let vline1=line("'<")
     let vline2=line("'>")
     let file=bvar.files[curline]
+    let manyfiles=(visual || v:count1>1)
     if has_key(s:noacttypes, a:action) &&
+                \!(a:action[-7:] is# 'vimdiff' && manyfiles) &&
                 \index(s:noacttypes[a:action], bvar.types[curline])!=-1
         return ''
     endif
-    if !(a:action is# 'commit' || a:action is# 'track' || a:action is# 'forget')
+    if !(a:action is# 'commit' || a:action is# 'track' || a:action is# 'forget'
+                \|| a:action[-11:] is# 'fullvimdiff' ||
+                \(a:action[-7:] is# 'vimdiff' && manyfiles))
         if isrecord
             let [lwnr, rwnr, swnr]=bvar.getwnrs()
             execute lwnr.'wincmd w'
@@ -77,9 +82,25 @@ function s:F.runmap(action, ...)
         call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, [], {})
     elseif a:action is# 'revfulldiff'
         call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  [], {})
-    elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
+    elseif a:action is# 'fullvimdiff'
+        execute 'AuVimDiff full '.((empty(rev2) || empty(rev1))?
+                    \                   ('curfile '):
+                    \                   ('')).rev1.' '.rev2
+    elseif a:action is# 'revfullvimdiff'
+        let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
+        if !empty(cs1.parents)
+            call s:_r.vimdiff.full(bvar.repo, [rev1, cs1.parents[0]], 1, [], 0)
+        endif
+    elseif !manyfiles && (a:action is# 'revvimdiff' || a:action is# 'vimdiff')
         let file1=s:_r.fname('file', bvar.repo, rev1, file)
-        if empty(rev2) || a:action is# 'vimdiff'
+        if a:action is# 'revvimdiff'
+            let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
+            if empty(cs1.parents)
+                return
+            else
+                let file2=s:_r.fname('file', bvar.repo, cs1.parents[0], file)
+            endif
+        elseif empty(rev2)
             let file2=s:_r.os.path.join(bvar.repo.path, file)
         else
             let file2=s:_r.fname('file', bvar.repo, rev2, file)
@@ -108,7 +129,7 @@ function s:F.runmap(action, ...)
         endif
         let range=range(curline, rborder)
     endif
-    if has_key(s:noacttypes, a:action)
+    if has_key(s:noacttypes, a:action) && a:action[-7:] isnot# 'vimdiff'
         call filter(range,
                     \'index(s:noacttypes[a:action], bvar.types[v:val])==-1')
     endif
@@ -123,10 +144,10 @@ function s:F.runmap(action, ...)
                             \   'execute "autocmd AuStatusCommit '.
                             \                    'BufEnter <buffer='.buf.'> '.
                             \                    'nested '.
-                            \               'execute \"autocmd! AuStatusCommit '.
-                            \                           'BufEnter '
+                            \              'execute \"autocmd! AuStatusCommit '.
+                            \                          'BufEnter '
                             \                           '<buffer='.buf.'>\" | '.
-                            \                   'silent edit!" | '.
+                            \              'silent edit!" | '.
                             \'endif'
             augroup END
         endif
@@ -140,6 +161,23 @@ function s:F.runmap(action, ...)
         call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
     elseif a:action is# 'revdiff'
         call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
+    elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
+        let args=[bvar.repo]
+        if a:action is# 'revvimdiff'
+            let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
+            if empty(cs1.parents)
+                return
+            endif
+            let args+=[[cs1.parents[0], rev1]]
+        else
+            if empty(rev2)
+                let args+=[[0, rev1]]
+            else
+                let args+=[[rev1, rev2]]
+            endif
+        endif
+        let args+=[2, files, 0]
+        return call(s:_r.vimdiff.full, args, {})
     endif
 endfunction
 let s:_augroups+=['AuStatusCommit']
@@ -150,28 +188,34 @@ function s:F.getrhs(...)
 endfunction
 "▲2
 call s:_f.mapgroup.add('AuStatus', {
-            \    'Exit': {'lhs':  'X',   'rhs': ':<C-u>bwipeout!<CR>'    },
-            \    'Open': {'lhs': '<CR>', 'rhs': s:F.getrhs(       'open')},
-            \   'ROpen': {'lhs':  'o',   'rhs': s:F.getrhs(    'revopen')},
-            \  'RFdiff': {'lhs': 'gd',   'rhs': s:F.getrhs('revfulldiff')},
-            \   'Fdiff': {'lhs': 'gc',   'rhs': s:F.getrhs(   'fulldiff')},
-            \    'Diff': {'lhs':  'd',   'rhs': s:F.getrhs(       'diff')},
-            \   'vDiff': {'lhs':  'd',   'rhs': s:F.getrhs(       'diff', 1),
+            \    'Exit': {'lhs':  'X',   'rhs': ':<C-u>bwipeout!<CR>'       },
+            \    'Open': {'lhs': '<CR>', 'rhs': s:F.getrhs(          'open')},
+            \   'ROpen': {'lhs':  'o',   'rhs': s:F.getrhs(       'revopen')},
+            \ 'RFVdiff': {'lhs': 'gD',   'rhs': s:F.getrhs('revfullvimdiff')},
+            \  'FVdiff': {'lhs': 'gC',   'rhs': s:F.getrhs(   'fullvimdiff')},
+            \  'RFdiff': {'lhs': 'gd',   'rhs': s:F.getrhs(   'revfulldiff')},
+            \   'Fdiff': {'lhs': 'gc',   'rhs': s:F.getrhs(      'fulldiff')},
+            \    'Diff': {'lhs':  'd',   'rhs': s:F.getrhs(          'diff')},
+            \   'vDiff': {'lhs':  'd',   'rhs': s:F.getrhs(          'diff', 1),
+            \             'mode': 'x'},
+            \   'Rdiff': {'lhs':  'c',   'rhs': s:F.getrhs(       'revdiff')},
+            \  'vRdiff': {'lhs':  'c',   'rhs': s:F.getrhs(       'revdiff', 1),
+            \             'mode': 'x'},
+            \   'Vdiff': {'lhs':  'D',   'rhs': s:F.getrhs(       'vimdiff')},
+            \  'vVdiff': {'lhs':  'D',   'rhs': s:F.getrhs(       'vimdiff', 1),
+            \             'mode': 'x'},
+            \  'RVdiff': {'lhs':  'C',   'rhs': s:F.getrhs(    'revvimdiff')},
+            \ 'vRVdiff': {'lhs':  'C',   'rhs': s:F.getrhs(    'revvimdiff', 1),
+            \             'mode': 'x'},
+            \'Annotate': {'lhs':  'a',   'rhs': s:F.getrhs(      'annotate')},
+            \  'Commit': {'lhs':  'i',   'rhs': s:F.getrhs(        'commit')},
+            \ 'vCommit': {'lhs':  'i',   'rhs': s:F.getrhs(        'commit', 1),
             \             'mode': 'v'},
-            \   'Rdiff': {'lhs':  'c',   'rhs': s:F.getrhs(    'revdiff')},
-            \  'vRdiff': {'lhs':  'c',   'rhs': s:F.getrhs(    'revdiff', 1),
+            \   'Track': {'lhs':  'A',   'rhs': s:F.getrhs(         'track')},
+            \  'vTrack': {'lhs':  'A',   'rhs': s:F.getrhs(         'track', 1),
             \             'mode': 'v'},
-            \   'Vdiff': {'lhs':  'D',   'rhs': s:F.getrhs(    'vimdiff')},
-            \  'RVdiff': {'lhs':  'C',   'rhs': s:F.getrhs( 'revvimdiff')},
-            \'Annotate': {'lhs':  'a',   'rhs': s:F.getrhs(   'annotate')},
-            \  'Commit': {'lhs':  'i',   'rhs': s:F.getrhs(     'commit')},
-            \ 'vCommit': {'lhs':  'i',   'rhs': s:F.getrhs(     'commit', 1),
-            \             'mode': 'v'},
-            \   'Track': {'lhs':  'A',   'rhs': s:F.getrhs(      'track')},
-            \  'vTrack': {'lhs':  'A',   'rhs': s:F.getrhs(      'track', 1),
-            \             'mode': 'v'},
-            \  'Forget': {'lhs':  'R',   'rhs': s:F.getrhs(     'forget')},
-            \ 'vForget': {'lhs':  'R',   'rhs': s:F.getrhs(     'forget', 1),
+            \  'Forget': {'lhs':  'R',   'rhs': s:F.getrhs(        'forget')},
+            \ 'vForget': {'lhs':  'R',   'rhs': s:F.getrhs(        'forget', 1),
             \             'mode': 'v'},
             \}, {'func': s:F.runmap, 'silent': 1, 'mode': 'n'})
 "▶1

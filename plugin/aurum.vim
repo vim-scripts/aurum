@@ -10,14 +10,9 @@ if !exists('s:_pluginloaded')
                 \                      '@/os': '0.1',
                 \           '@aurum/cmdutils': '0.0',
                 \                     '@/fwc': '0.2',
-                \           '@aurum/annotate': '0.0',
-                \             '@aurum/status': '0.0',
-                \                '@aurum/log': '0.0',
-                \             '@aurum/commit': '0.0',
                 \               '@aurum/repo': '2.0',
                 \               '@aurum/edit': '1.0',
-                \            '@aurum/bufvars': '0.0',
-                \            '@aurum/vimdiff': '0.0',}, 0)
+                \            '@aurum/bufvars': '0.0',}, 0)
     "▶2 Команды
     call FraworLoad('@/commands')
     call FraworLoad('@/functions')
@@ -182,11 +177,11 @@ function s:movefunc.function(bang, opts, ...)
     if a:0==0
         let target='.'
         let files=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3])]
+                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
     elseif a:0==1 && isdirectory(a:1)
         let target=a:1
         let files=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3])]
+                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
     elseif a:0>1 && get(a:opts, 'rightrepl', 0)
         let patterns=map(a:000[:-2], 's:_r.globtopat('.
                     \                'repo.functions.reltorepo(repo,v:val), 1)')
@@ -229,7 +224,7 @@ function s:movefunc.function(bang, opts, ...)
     elseif a:0==2 && !isdirectory(a:2) && filewritable(a:1)
         let fst=a:1
         if fst is# ':'
-            let fst=s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3]
+            let fst=s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3]
         endif
         let moves = {repo.functions.reltorepo(repo, fst):
                     \repo.functions.reltorepo(repo, a:2)}
@@ -243,7 +238,7 @@ function s:movefunc.function(bang, opts, ...)
         endif
         let files=s:F.filterfiles(repo, globs, allfiles)
         if hascur
-            let files+=[s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3]]
+            let files+=[s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3]]
         endif
     endif
     if exists('files')
@@ -291,7 +286,7 @@ function s:junkfunc.function(opts, ...)
     if hascur
         let rrfopts={'repo': repo.path}
         let files+=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3])]
+                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
     endif
     for key in filter(['forget', 'remove', 'ignore'], 'eval(v:val)')
         call map(copy(files), 'repo.functions[key](repo, v:val)')
@@ -321,7 +316,7 @@ function s:tracfunc.function(...)
     if hascur
         let rrfopts={'repo': repo.path}
         let files+=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', -1)[3])]
+                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
     endif
     call map(copy(files), 'repo.functions.add(repo, v:val)')
 endfunction
@@ -336,7 +331,8 @@ function s:hypfunc.function(opts)
     let utype=get(opts, 'url', 'html')
     if utype is# 'html' || utype is# 'annotate' || utype is# 'raw'
                 \       || utype is# 'filehist'
-        let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'nocurf', 0)
+        let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'nocurf',
+                    \                                      'get')
         call s:_r.cmdutils.checkrepo(repo)
         let file=s:F.urlescape(file)
         if rev is 0
