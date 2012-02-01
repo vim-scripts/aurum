@@ -336,8 +336,7 @@ function s:hypfunc.function(opts)
         call s:_r.cmdutils.checkrepo(repo)
         let file=s:F.urlescape(file)
         if rev is 0
-            if has_key(opts, 'line') &&
-                        \index(repo.functions.status(repo).clean, file)==-1
+            if has_key(opts, 'line') && repo.functions.dirty(repo, file)
                 call remove(opts, 'line')
             endif
             let cs=repo.functions.getwork(repo)

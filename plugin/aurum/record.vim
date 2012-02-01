@@ -36,6 +36,22 @@ let s:_messages={
             \           'Update to version of Vim that has undotree() '.
             \           'function available',
             \ 'recnof': 'No files were selected for commiting',
+            \   'norm': 'Can’t remove file %s as it was not added',
+            \   'noad': 'Can’t add file %s as it is already included',
+            \ 'undona': "Can’t undo changes. Possible reasons:\n".
+            \           "  1. Current change is the oldest one\n".
+            \           "  2. You did some changes manually and thus buffer ".
+            \                "was reset\n".
+            \           "  3. You edited a file which discards undo ".
+            \                "information (supporting undoing edits is too ".
+            \                "complex)",
+            \ 'redona': "Can’t redo changes. Possible reasons:\n".
+            \           "  1. Current change is the newest one\n".
+            \           "  2. You did some changes manually and thus buffer ".
+            \                "was reset\n".
+            \           "  3. You edited a file which discards undo ".
+            \                "information (supporting undoing edits is too ".
+            \                "complex)",
         \}
 "▶1 write
 function s:F.write(bvar)
@@ -303,6 +319,7 @@ function s:F.runstatmap(action, ...)
         let add=(a:action[-3:] is# 'add')
         for line in range(sline, eline)
             let status=bvar.statuses[line-1]
+            let oldstatus=status
             if add
                 if status<2
                     let status+=2
@@ -311,6 +328,10 @@ function s:F.runstatmap(action, ...)
                 if status>1
                     let status-=2
                 endif
+            endif
+            if oldstatus==status
+                call s:_f.warn('no'.((add)?('ad'):('rm')), bvar.files[line-1])
+                continue
             endif
             let bvar.statuses[line-1]=status
             call setline(line, s:statchars[status].bvar.lines[line-1])
@@ -327,6 +348,7 @@ function s:F.runstatmap(action, ...)
         endif
         if bvar.reset || s:F.curundo()<=bvar.startundo
             setlocal nomodifiable
+            call s:_f.warn('undona')
             return
         endif
         silent undo
@@ -344,6 +366,7 @@ function s:F.runstatmap(action, ...)
         endif
         if bvar.reset || s:F.curundo()<=bvar.startundo
             setlocal nomodifiable
+            call s:_f.warn('redona')
             return
         endif
         silent redo
@@ -373,14 +396,14 @@ function s:F.runstatmap(action, ...)
             endif
         endif
         if ntype isnot 0
+            execute swnr.'wincmd w'
             if !modified
-                execute swnr.'wincmd w'
                 let status=3
                 let bvar.statuses[line('.')-1]=status
-                call s:F.reset(bvar)
-                setlocal nomodifiable
-                execute lwnr.'wincmd w'
             endif
+            call s:F.reset(bvar)
+            setlocal nomodifiable
+            execute lwnr.'wincmd w'
             call s:F.edit(bvar, fullpath, 0)
             if ntype is# 'm' || (modified && ntype is# 'a')
                 if !modified
@@ -528,6 +551,8 @@ function s:F.runleftmap(action)
             call setline(fidx+1, s:statchars[sbvar.statuses[fidx]].
                         \        sbvar.lines[fidx])
             call s:F.supdate(sbvar)
+        else
+            call s:_f.warn('norm', bvar.recfile)
         endif
     endif
 endfunction

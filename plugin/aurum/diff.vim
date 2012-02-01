@@ -21,6 +21,9 @@ if !exists('s:_pluginloaded')
 elseif s:_pluginloaded
     finish
 endif
+let s:_messages={
+            \'nodfile': 'Failed to get file whose section is under the cursor',
+        \}
 "▶1 difffunc
 function s:difffunc.function(opts, ...)
     if a:0 && a:opts.repo is# ':'
@@ -138,7 +141,7 @@ function s:F.rundiffmap(action)
     elseif a:action is# 'open'
         let file=s:_r.cmdutils.getdifffile(bvar)
         if file is 0
-            return ''
+            call s:_f.throw('nodfile')
         endif
         let fullpath=s:_r.os.path.join(bvar.repo.path, file)
         if empty(bvar.rev1)

@@ -116,6 +116,9 @@ function s:annfunc.function(opts)
     if rev is 0
         let rev=repo.functions.getworkhex(repo)
     endif
+    if hasannbuf==2
+        let hasannbuf=!repo.functions.dirty(repo, file)
+    endif
     if hasannbuf
         let annbuf=bufnr('%')
     else

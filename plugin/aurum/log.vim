@@ -609,8 +609,10 @@ function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
     "▶3 Get grapher
     if get(a:repo, 'has_octopus_merges', 1)
         let literfuncs=s:iterfuncs.git
-    else
+    elseif get(a:repo, 'has_merges', 1)
         let literfuncs=s:iterfuncs.hg
+    else
+        let literfuncs=s:iterfuncs.simple
     endif
     "▶3 Initialize variables
     let haslimit=(has_key(a:opts, 'limit') && a:opts.limit)
@@ -738,7 +740,6 @@ function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
 endfunction
 "▶1 iterfuncs: loggers
 "▶2 iterfuncs.git
-" TODO Fix skipping changesets if possible
 let s:iterfuncs.git={}
 function s:iterfuncs.git.start(repo, opts, ...)
     let graph=s:F.glog.graph_init(get(a:000, 0, []), a:opts, a:repo)
@@ -782,6 +783,25 @@ function s:iterfuncs.hg.proccs(d, cs)
     else
         return [text.text, 0, 0]
     endif
+endfunction
+"▶2 iterfuncs.simple
+let s:iterfuncs.simple={}
+function s:iterfuncs.simple.start(repo, opts, ...)
+    return {'opts': a:opts, 'repo': a:repo, 'showparents': get(a:000, 0, [])}
+endfunction
+function s:iterfuncs.simple.proccs(d, cs)
+    if has_key(a:d.opts.skipchangesets, a:cs.hex)
+        return [[], 0, 0]
+    endif
+    let text=a:d.opts.templatefunc(a:cs, a:d.opts, a:d.repo)
+    let text.block_r=[[0, 0],
+                \     [len(text.text)-1,
+                \      max(map(copy(text.text), 'len(v:val)'))]]
+    let char='@o'[(index(a:d.showparents, a:cs.hex)==-1)]
+    call map(text.text, '(v:key ? "|" : char)." ".v:val')
+    call s:F.glog.addcols(text.special, 2)
+    let text.special.bullet=[0, 0, char]
+    return [text.text, text.block_r, text.special]
 endfunction
 "▶1 temp
 "▶2 s:templates

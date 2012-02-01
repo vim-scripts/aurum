@@ -542,7 +542,7 @@ function s:hg.annotate(repo, rev, file)
         if empty(match)
             call s:_f.throw('annfail', a:rev, a:file, line)
         endif
-        let r+=[[match[2], str2nr(match[1]), str2nr(match[3])]]
+        let r+=[[match[2], match[1], str2nr(match[3])]]
     endfor
     return r
 endfunction
@@ -717,7 +717,7 @@ function s:hg.difftobuffer(repo, buf, rev1, rev2, files, opts)
     endtry
 endfunction
 endif
-"▶1 hg.status :: repo[, rev1[, rev2[, files]]] → {type : [file]}
+"▶1 hg.status :: repo[, rev1[, rev2[, files[, clean]]]] → {type : [file]}
 " type :: "modified" | "added" | "removed" | "deleted" | "unknown" | "ignored"
 "       | "clean"
 if s:usepythondriver "▶2
@@ -750,8 +750,10 @@ function s:hg.status(repo, ...)
                 \'removed': 1,
                 \'deleted': 1,
                 \'unknown': 1,
-                \'ignored': 1,
-                \  'clean': 1}
+                \'ignored': 1}
+    if (a:0>3 && a:4)
+        let kwargs.clean=1
+    endif
     let reverse=0
     if a:0
         if a:1 is 0
@@ -784,15 +786,6 @@ endif
 "▶1 hg.commit :: repo, message[, files[, user[, date[, closebranch[, force]]]]]
 function s:hg.commit(repo, message, ...)
     let kwargs={}
-    let usingfile=0
-    if a:message=~#'\v[\r\n]'
-        let tmpfile=tempname()
-        call writefile(split(a:message, "\n", 1), tmpfile, 'b')
-        let kwargs.logfile=tmpfile
-        let usingfile=1
-    else
-        let kwargs.message=a:message
-    endif
     let args=[]
     if a:0
         if !empty(a:1)
@@ -809,13 +802,8 @@ function s:hg.commit(repo, message, ...)
             let kwargs.close_branch=1
         endif
     endif
-    try
-        call s:F.runcmd(a:repo, 'commit', args, kwargs)
-    finally
-        if usingfile && filereadable(tmpfile)
-            call delete(tmpfile)
-        endif
-    endtry
+    return s:_r.utils.usefile(a:repo, a:message, 'logfile', 'message',
+                \             s:F.runcmd, args, kwargs)
 endfunction
 "▶1 hg.update :: repo, rev, force
 if s:usepythondriver "▶2

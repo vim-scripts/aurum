@@ -10,6 +10,9 @@ execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
             \                 '@aurum/commit': '0.0',
             \                    '@/mappings': '0.0',
             \                          '@/os': '0.0',})
+let s:_messages={
+            \  'nopars': 'Revision %s has no parents',
+        \}
 "▶1 runmap
 let s:noacttypes={
             \    'open': ['deleted'],
@@ -75,7 +78,7 @@ function s:F.runmap(action, ...)
         endif
     endif
     if a:action is# 'open'
-        execute 'silent e' fnameescape(s:_r.os.path.join(bvar.repo.path,file))
+        execute 'silent e' fnameescape(s:_r.os.path.join(bvar.repo.path, file))
     elseif a:action is# 'revopen'
         call s:_r.run('silent edit', 'file', bvar.repo, rev1, file)
     elseif a:action is# 'fulldiff'
@@ -88,18 +91,18 @@ function s:F.runmap(action, ...)
                     \                   ('')).rev1.' '.rev2
     elseif a:action is# 'revfullvimdiff'
         let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
-        if !empty(cs1.parents)
-            call s:_r.vimdiff.full(bvar.repo, [rev1, cs1.parents[0]], 1, [], 0)
+        if empty(cs1.parents)
+            call s:_f.throw('nopars', cs1.hex)
         endif
+        call s:_r.vimdiff.full(bvar.repo, [rev1, cs1.parents[0]], 1, [], 0)
     elseif !manyfiles && (a:action is# 'revvimdiff' || a:action is# 'vimdiff')
         let file1=s:_r.fname('file', bvar.repo, rev1, file)
         if a:action is# 'revvimdiff'
             let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
             if empty(cs1.parents)
-                return
-            else
-                let file2=s:_r.fname('file', bvar.repo, cs1.parents[0], file)
+                call s:_f.throw('nopars', cs1.hex)
             endif
+            let file2=s:_r.fname('file', bvar.repo, cs1.parents[0], file)
         elseif empty(rev2)
             let file2=s:_r.os.path.join(bvar.repo.path, file)
         else
@@ -166,7 +169,7 @@ function s:F.runmap(action, ...)
         if a:action is# 'revvimdiff'
             let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
             if empty(cs1.parents)
-                return
+                call s:_f.throw('nopars', cs1.hex)
             endif
             let args+=[[cs1.parents[0], rev1]]
         else

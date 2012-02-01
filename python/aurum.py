@@ -216,7 +216,7 @@ def annotate(path, rev, filepath):
     try:
         ann=g_fctx(g_cs(g_repo(path), rev), filepath).annotate(follow=True,
                                                                linenumber=True)
-        ann_vim=[(line[0][0].path(), str(line[0][0].rev()), str(line[0][1]))
+        ann_vim=[(line[0][0].path(), str(line[0][0].rev()), line[0][1])
                                                                 for line in ann]
         vim.eval('extend(r, '+nonutf_dumps(ann_vim)+')')
     except AurumError:
@@ -319,18 +319,18 @@ def get_cs_prop(path, rev, prop):
     except AurumError:
         pass
 
-def get_status(path, rev1=None, rev2=None, files=None):
+def get_status(path, rev1=None, rev2=None, files=None, clean=None):
     try:
         if rev1 is None and rev2 is None:
             rev1='.'
         repo=g_repo(path)
         if hasattr(repo, 'status'):
-            if files is None:
+            if not files:
                 m=None
             else:
                 m=match.match(None, None, files, exact=True)
-            status=repo.status(rev1, rev2, ignored=True, clean=True, unknown=True,
-                               match=m)
+            status=repo.status(rev1, rev2, ignored=True, clean=clean,
+                               unknown=True, match=m)
             vim.eval('extend(r, '+nonutf_dumps({'modified': status[0],
                                                    'added': status[1],
                                                  'removed': status[2],

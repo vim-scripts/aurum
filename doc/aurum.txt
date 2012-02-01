@@ -19,13 +19,14 @@ CONTENTS                                                      *aurum-contents*
     10. Notes about various driver implementations   |aurum-driver-notes|
         10.1. Mercurial                              |aurum-driver-Mercurial|
         10.2. Git                                    |aurum-driver-Git|
+        10.3. Subversion                             |aurum-driver-Subversion|
     11. Changelog                                    |aurum-changelog|
 
 ==============================================================================
 1. Intro                                                         *aurum-intro*
 
-This plugin provides a vim <--> VCS (currently mercurial and git) integration 
-for your projects. Features:
+This plugin provides a vim <--> VCS (currently mercurial, git and subversion) 
+integration for your projects. Features:
   - Partially committing changes (|:AuRecord|).
   - Viewing file state at particular revision (|aurum://file|, |:AuFile|).
   - Viewing uncommited changes in a |vimdiff|, as well as changes between 
@@ -1313,18 +1314,27 @@ functions :: {String : FRef}                            *aurum-repo.functions*
           (revision, filename (relative to repository root)). Second is to be 
           transformed into |aurum://file| path.
                                                              *aurum-rf-status*
-  status :: [hex[, hex[, [ file ]]]] -> {status : [ files ]}
+  status :: [hex[, hex[, [ file ][, requiresclean]]]] -> {status : [ file ]}
     Returns dictionary where values are lists of files and keys are 
     "modified", "added" (new tracked files), "removed" (made untracked, not 
     necessary deleted from filesystem), "deleted" (just deleted from 
     filesystem without making files untracked), "unknown" (new untracked 
     files), "ignored" and "clean" (unmodified).
+    Specifying 0 instead of any optional argument acts like not specifying 
+    this argument.
+    Note: “clean” may be empty unless {requiresclean} argument is present and 
+          true.
   dirty :: file -> Bool                                       *aurum-rf-dirty*
     Check whether file is “dirty” (meaning that it has changes that can be 
     committed).
   annotate :: repo, hex, file -> [ rev ]                   *aurum-rf-annotate*
-    Returns a list of revision numbers: one revision number for each line of 
-    the file as it was at given changeset.
+    Returns a list of 3-tuples: ({hex}, {file}, {line-number}), one 3-tuple 
+    for each line of the file as it was at given changeset. {hex} must be 
+    anything supported by |aurum-rf-getcs|, {file} is a filename (in case this 
+    function is able to track copies or renames) and {line-number} is number 
+    of the corresponding line in that file as it was at that revision.
+    If {line-number} is 0, then |aurum://annotate| mappings will use line 
+    contents to search for the same line in another revision.
   diff :: hex, hex, [ file ], diffopts -> [ String ]           *aurum-rf-diff*
     Returns list of strings (similar to |readfile()| output with "b" flag set) 
     that contains changes made to given files between given revisions. If list 
@@ -1432,6 +1442,14 @@ The following functions do not accept repo argument:
 <   . Second is called once on paths that contain “://” in their string (it is 
     likely to return just 0 because normal work with remote repositories is 
     impossible in most VCS’es).
+  getroot :: path -> path|0                                 *aurum-rf-getroot*
+    Being given a path for which |aurum-rf-checkdir| returns true should 
+    return a repository root.
+    If absent acts like the below function, thus considering any directory for 
+    which |aurum-rf-checkdir| returns true being a repository root >
+        function s:driver.getroot(path)
+            return a:path
+        endfunction
 
 ------------------------------------------------------------------------------
 8.2. Changeset                                               *aurum-changeset*
@@ -1496,6 +1514,15 @@ Optional functions:
   |aurum-rf-remove|        Uses |aurum-rf-forget| to untrack file and then 
                          |delete()|s it.
   |aurum-rf-checkremote|   Returns 0.
+  |aurum-rf-grep|          Does just the same what git grep does: iterates 
+                         over given revisions and searches for given regular 
+                         expression (in this case: vim |regexp|) in each file. 
+                         If third argument is empty, then searches working 
+                         directory versions of files present in current 
+                         changeset. Uses |aurum-rf-getcsprop| (with “allfiles” 
+                         argument), |aurum-rf-revrange|, |aurum-rf-getcs| and 
+                         |aurum-rf-readfile|.
+                         Slow!
   |aurum-repo.iterfuncs|   "changeset": Uses |aurum-rf-getchangesets|
                          "revrange": Uses |aurum-rf-revrange|
                          "ancestors": Iterates recursively over 
@@ -1537,8 +1564,8 @@ Python driver was not tested under windows (wine) at all.
     just tags.
 |aurum-cs.rev| contains truncated hash (for use in |aurum://annotate|).
 |aurum-repo.cslist| is always empty
-|aurum-rf-status|: If two first optional arguments are given and are non-zero, 
-    then unknown and deleted files won’t be shown (if any).
+|aurum-rf-status|: if at least one of first two optional arguments is 
+    non-zero, then then unknown and deleted files won’t be shown (if any).
 |aurum-rf-gettiphex|: Same as |aurum-rf-getworkhex|.
 |aurum-rf-diff|: Options "git", "iblanks", "showfunc", "dates" are not 
     supported.
@@ -1559,6 +1586,35 @@ Python driver was not tested under windows (wine) at all.
 |aurum-rf-annotate| won’t output annotation of file in working directory, it 
     is always returning annotation of file at given revision.
 
+------------------------------------------------------------------------------
+10.3. Subversion                                     *aurum-driver-Subversion*
+
+|aurum-rf-label|, |aurum-rf-branch| are not supported.
+
+|aurum-cs.branch| always contains string "default".
+|aurum-cs.rev| and |aurum-cs.hex| have the same value, though second one is 
+    a string.
+|aurum-cs.time| is always 0 if “date” programm from coreutils is missing.
+|aurum-cs.hex| contains the stringified value of |aurum-cs.rev| and thus is 
+    not fixed-length.
+|aurum-repo.cslist|: repo.cslist[cs.rev] is any revision with .rev≥cs.rev, not 
+    necessary cs itself.
+|aurum-rf-diff|: Options "git", "iblanks", "dates", "alltext" are not 
+    supported, option "reverse" is supported only if two revisions are given.
+|aurum-rf-status|: if at least one of first two optional arguments is 
+    non-zero, then then unknown and deleted files won’t be shown (if any).
+    Note: this function may output directories in a list.
+|aurum-rf-annotate| neither tracks renames/copies nor is able to output line 
+    numbers.
+|aurum-rf-grep| uses internal grep implementation based on 
+    |aurum-rf-readfile|. Thus it is slow, but supports vim |regexp|.
+    See more in |aurum-f-regdriver|.
+|aurum-rf-ignoreglob| uses “svn propset svn:ignore” and thus is limited to 
+    non-recursive globs applying to exactly one directory: ignoring 
+    “subdir*/ignored*” will ignore all files with names starting with 
+    “ignored” in a directory “subdir*”, which is probably not what you 
+    initially wanted.
+
 ==============================================================================
 11. Changelog                                                *aurum-changelog*
 
@@ -1572,6 +1628,8 @@ Python driver was not tested under windows (wine) at all.
          value of |aurum-rf-getchangesets| is not stated as ignored.
     2.1: Added |aurum-repo.iterfuncs| support.
     2.2: Added |aurum-repo.initprops|.
+    2.3: Added |aurum-rf-getroot| support.
+    2.4: Added {requiresclean} argument to |aurum-rf-status|.
 @aurum:
     0.1: Added :AuBranch and :AuName.
 @aurum/edit:

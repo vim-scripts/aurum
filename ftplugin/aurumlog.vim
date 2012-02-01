@@ -19,6 +19,9 @@ execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
             \                     '@/mappings': '0.0',})
 let s:_messages={
             \'nocontents': 'Log is empty',
+            \    'noprev': 'Can’t find any revision before %s',
+            \    'nonext': 'Can’t find any revision after %s',
+            \    'nopars': 'Revision %s has no parents',
         \}
 let s:ignkeys=['crrestrict', 'filepats', 'revs', 'cmd', 'repo']
 "▶1 findCurSpecial :: bvar, hex, blockstart + cursor → special
@@ -149,11 +152,11 @@ function s:F.fvdiff(...)
         return cmd.'curfile '.hex."\n"
     else
         let cs=bvar.repo.changesets[hex]
-        if !empty(cs.parents)
-            return cmd.hex.' '.cs.parents[0]."\n"
+        if empty(cs.parents)
+            call s:_f.throw('nopars', hex)
         endif
+        return cmd.hex.' '.cs.parents[0]."\n"
     endif
-    return ''
 endfunction
 "▶1 gethexfile
 function s:F.gethexfile()
@@ -243,14 +246,16 @@ function s:F.vimdiff(...)
                     \':silent diffsplit '.
                     \fnameescape(s:_r.fname('file', bvar.repo, cs.parents[0],
                     \                       file))."\n"
+    else
+        call s:_f.throw('nopars', hex)
     endif
-    return ''
 endfunction
 "▶1 findfirstvisible :: n → hex
 function s:F.findfirstvisible(n)
     let bvar=s:_r.bufvars[bufnr('%')]
     let repo=bvar.repo
     let hex=bvar.getblock(bvar)[2]
+    let oldhex=hex
     let n=abs(a:n)
     let direction=((a:n>0)?('parents'):('children'))
     let tocheck=[]
@@ -276,6 +281,9 @@ function s:F.findfirstvisible(n)
             break
         endif
     endwhile
+    if lastfoundhex is# oldhex
+        call s:_f.throw('no'.((a:n>0)?('prev'):('next')), hex)
+    endif
     return "\<C-\>\<C-n>".(bvar.csstarts[lastfoundhex]+1).'gg'
 endfunction
 "▶1 next

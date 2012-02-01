@@ -75,6 +75,35 @@ function s:utils.diffopts(opts, defaultdiffopts, difftrans)
     endif
     return r
 endfunction
+"▶1 utils.addfiles :: repo, files + status → + add, forget
+function s:utils.addfiles(repo, files)
+    let status=a:repo.functions.status(a:repo, 0, 0, a:files)
+    for file in status.unknown
+        call a:repo.functions.add(a:repo, file)
+    endfor
+    for file in status.deleted
+        call a:repo.functions.forget(a:repo, file)
+    endfor
+endfunction
+"▶1 utils.usefile :: repo, message, kw, kw, func, args, kwargs, emes
+function s:utils.usefile(repo, message, kwfile, kwmes, Func, args, kwargs, ...)
+    if a:message=~#'\v[\r\n]'
+        let tmpfile=tempname()
+        call writefile(split(a:message, "\n", 1), tmpfile, 'b')
+        let a:kwargs[a:kwfile]=tmpfile
+        let usingfile=1
+    else
+        let a:kwargs[a:kwmes]=a:message
+        let usingfile=0
+    endif
+    try
+        return call(a:Func, [a:repo, 'commit', a:args, a:kwargs]+a:000, {})
+    finally
+        if usingfile && filereadable(tmpfile)
+            call delete(tmpfile)
+        endif
+    endtry
+endfunction
 "▶1 post resource
 call s:_f.postresource('utils', s:utils)
 unlet s:utils

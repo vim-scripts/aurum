@@ -20,7 +20,11 @@ execute frawor#Setup('0.0', {'@aurum/repo': '2.0',
             \                       '@/os': '0.0',})
 let s:_messages={
             \  'nofile': 'File %s was added in revision %s',
-            \ 'norfile': 'File %s is not present in the working directory',
+            \ 'norfile': 'File %s is not present in the working directory '.
+            \            'or is not readable',
+            \  'noprev': 'Can’t find any revision before %s',
+            \  'nonext': 'Can’t find any revision after %s',
+            \  'nopars': 'Revision %s has no parents',
         \}
 "▶1 getfile :: repo, cs → path
 function s:F.getfile(repo, cs)
@@ -49,13 +53,17 @@ function s:F.runmap(action, ...)
     let bvar=s:_r.bufvars[buf]
     let hex=bvar.revisions[line('.')-1]
     let file=bvar.files[line('.')-1]
-    let hasannbuf = has_key(bvar, 'annbuf') && bufwinnr(bvar.annbuf)!=-1
+    let hasannbuf=has_key(bvar, 'annbuf')
+    if hasannbuf
+        let abwnr=bufwinnr(bvar.annbuf)
+        let hasannbuf=(abwnr!=-1)
+    endif
     "▶2 Various *diff actions
     if a:action[-4:] is# 'diff'
         if a:action[:2] is# 'rev'
             let cs1=bvar.repo.functions.getcs(bvar.repo, hex)
             if empty(cs1.parents)
-                return
+                call s:_f.throw('nopars', cs1.hex)
             endif
             let rev1=cs1.parents[0]
         elseif bvar.rev isnot# bvar.repo.functions.getworkhex(bvar.repo)
@@ -66,7 +74,7 @@ function s:F.runmap(action, ...)
         let rev2=hex
         if hasannbuf
             wincmd c
-            execute bufwinnr(bvar.annbuf).'wincmd w'
+            execute abwnr.'wincmd w'
             setlocal noscrollbind
         endif
         if a:action[-7:-5] is# 'vim'
@@ -78,18 +86,13 @@ function s:F.runmap(action, ...)
                 if empty(rev1)
                     let file1=s:_r.os.path.join(bvar.repo.path, bvar.file)
                     let existed=bufexists(file1)
-                    if filereadable(file1)
-                        execute 'silent edit' fnameescape(file1)
-                    else
+                    if !filereadable(file1)
                         call s:_f.throw('norfile', file1)
                     endif
+                    execute 'silent edit' fnameescape(file1)
                 else
-                    try
-                        let existed=s:_r.run('silent edit', 'file', bvar.repo,
-                                    \        rev1, file)
-                    catch /\V\^Frawor:\[^:]\+:nofile:/
-                        call s:_f.throw('nofile', file, rev1)
-                    endtry
+                    let existed=s:_r.run('silent edit', 'file', bvar.repo, rev1,
+                                \                               file)
                 endif
                 if existed
                     setlocal bufhidden=wipe
@@ -119,6 +122,9 @@ function s:F.runmap(action, ...)
         if a:0 && a:1
             let file=bvar.files[line('.')-1]
             let lnr=bvar.linenumbers[line('.')-1]
+            if lnr is 0
+                unlet lnr
+            endif
         else
             let file=s:F.getfile(bvar.repo,
                         \        bvar.repo.functions.getcs(bvar.repo, hex))
@@ -128,16 +134,32 @@ function s:F.runmap(action, ...)
         endif
         if hasannbuf
             let lnr=bvar.linenumbers[line('.')-1]
+            if lnr is 0
+                let ablnr=line('.')
+                execute abwnr.'wincmd w'
+                let line=getline(ablnr)
+                unlet lnr
+                wincmd p
+            endif
             call s:_r.run('silent edit', 'annotate', bvar.repo, hex, file)
-            execute lnr
+            if exists('lnr')
+                execute lnr
+            endif
             setlocal scrollbind cursorbind
             let abuf=bufnr('%')
             let newbvar=s:_r.bufvars[abuf]
-            execute bufwinnr(bvar.annbuf).'wincmd w'
+            execute abwnr.'wincmd w'
         endif
         let existed=s:_r.run('silent edit', 'file', bvar.repo, hex, file)
         if exists('lnr')
             execute lnr
+        elseif exists('line')
+            0
+            call search('\V\^'.escape(line, '\').'\$', 'cW')
+            let lnr=line('.')
+            wincmd p
+            execute lnr
+            wincmd p
         endif
         if hasannbuf
             if exists('lnr')
@@ -154,14 +176,14 @@ function s:F.runmap(action, ...)
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))
         let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev, c).hex
         if rev is# hex
-            return
+            call s:_f.throw('no'.a:action[:3], hex)
         endif
         call s:_r.run('silent edit', 'annotate', bvar.repo, rev, bvar.file)
         setlocal scrollbind
         let abuf=bufnr('%')
         let newbvar=s:_r.bufvars[abuf]
         if hasannbuf
-            execute bufwinnr(bvar.annbuf).'wincmd w'
+            execute abwnr.'wincmd w'
             setlocal noscrollbind
         else
             vsplit

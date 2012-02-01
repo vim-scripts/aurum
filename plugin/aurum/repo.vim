@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('2.2', {'@/resources': '0.0',
+    execute frawor#Setup('2.4', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                  '@/options': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
@@ -11,6 +11,7 @@ elseif s:_pluginloaded
 endif
 let s:drivers={}
 let s:repos={}
+let s:bufrepos={}
 let s:_options={
             \'diffopts':  {'default': {},
             \              'checker': 'dict {numlines         range 0 inf '.
@@ -265,29 +266,20 @@ function s:deffuncs.getstats(repo, diff, opts)
     let llines=len(a:diff)
     let stats={'files': {}, 'insertions': 0, 'deletions': 0}
     let file=0
+    let pmlines=0
     while i<llines
         let line=a:diff[i]
-        if line[:3] is# 'diff'
-            let file=a:repo.functions.diffname(a:repo, line, diffre, a:opts)
-            if file isnot 0
-                let stats.files[file]={'insertions': 0, 'deletions': 0,}
-                let i+=1
-                let oldi=i
-                let pmlines=2
-                while pmlines && i<llines
-                    let lstart=a:diff[i][:2]
-                    if lstart is# '+++' || lstart is# '---'
-                        let pmlines-=1
-                    endif
-                    let i+=1
-                    if i-oldi>=4
-                        let i=oldi
-                        break
-                    endif
-                endwhile
-                continue
-            endif
+        let newfile=a:repo.functions.diffname(a:repo, line, diffre, a:opts)
+        if newfile isnot 0
+            let file=newfile
+            let stats.files[file]={'insertions': 0, 'deletions': 0,}
+            let pmlines=2
         elseif file is 0
+        elseif pmlines
+            let lstart=line[:2]
+            if lstart is# '+++' || lstart is# '---'
+                let pmlines-=1
+            endif
         elseif line[0] is# '+'
             let stats.insertions+=1
             let stats.files[file].insertions+=1
@@ -298,6 +290,46 @@ function s:deffuncs.getstats(repo, diff, opts)
         let i+=1
     endwhile
     return stats
+endfunction
+"▶1 grep :: repo, pattern, [file], [Either hex (hex, hex)], ic, _ → qflist
+function s:deffuncs.grep(repo, pattern, files, revs, ic, wdf)
+    if empty(a:revs)
+        let cs=a:repo.functions.getwork(a:repo)
+        let filelist=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
+        if !empty(a:files)
+            call filter(filelist, 'index(a:files, v:val)!=-1')
+        endif
+        call map(filelist, 's:_r.os.path.join(a:repo.path, v:val)')
+        call filter(filelist, 'filereadable(v:val)')
+        let expr='readfile(fspec, "b")'
+    else
+        let css=[]
+        for rspec in a:revs
+            if type(rspec)==type([])
+                let css+=a:repo.functions.revrange(a:repo, rspec[0], rspec[1])
+            else
+                let css+=[a:repo.functions.getcs(a:repo, rspec)]
+            endif
+            unlet rspec
+        endfor
+        let filelist=[]
+        let gcspexpr='a:repo.functions.getcsprop(a:repo, v:val, "allfiles")'
+        let mexpr='extend(filelist, '.
+                    \    'map('.((empty(a:files))?
+                    \               (gcspexpr):
+                    \               ('filter(copy('.gcspexpr.'), '.
+                    \                       '"index(a:files, v:val)!=-1")')).
+                    \        ', "[css[".v:key."].hex, v:val]"))'
+        call map(copy(css), mexpr)
+        let expr='a:repo.functions.readfile(a:repo, fspec[0], fspec[1])'
+    endif
+    let r=[]
+    let fexpr='v:val[1]=~'.('?#'[!a:ic]).string(a:pattern)
+    for fspec in filelist
+        let r+=map(filter(map(copy(eval(expr)), '[v:key, v:val]'), fexpr),
+                    \'{"filename": fspec,"lnum": v:val[0]+1,"text": v:val[1]}')
+    endfor
+    return r
 endfunction
 "▶1 copy
 function s:deffuncs.copy(repo, force, source, target)
@@ -375,7 +407,14 @@ function s:F.getdriver(path, ptype)
     endfor
     return 0
 endfunction
-"▶1 getrepo :: path → repo
+"▶1 updaterepo :: repo → repo + repo
+function s:F.updaterepo(repo)
+    if !empty(a:repo.cslist)
+        call a:repo.functions.updatechangesets(a:repo)
+    endif
+    return a:repo
+endfunction
+"▶1 getrepo :: path → Maybe repo
 function s:F.getrepo(path)
     "▶2 Pull in drivers if there are no
     if empty(s:drivers)
@@ -393,19 +432,27 @@ function s:F.getrepo(path)
     elseif a:path is# ':'
         let buf=bufnr('%')
         if has_key(s:_r.bufvars, buf) && has_key(s:_r.bufvars[buf], 'repo')
-            let path=s:_r.bufvars[buf].repo.path
+            return s:F.updaterepo(s:_r.bufvars[buf].repo)
         elseif has_key(s:_r.bufvars,buf) && s:_r.bufvars[buf].command is# 'copy'
             let path=s:_r.os.path.dirname(
                         \s:_r.os.path.realpath(s:_r.bufvars[buf].file))
-        elseif empty(&buftype) && isdirectory(expand('%:p:h'))
+        elseif empty(&buftype) && !empty(bufname('%')) &&
+                    \isdirectory(expand('%:p:h'))
             let path=s:_r.os.path.realpath(expand('%:p:h'))
         else
             let path=s:_r.os.path.realpath('.')
+            unlet buf
         endif
     elseif stridx(a:path, '://')==-1
         let path=s:_r.os.path.realpath(a:path)
     else
         let path=a:path
+    endif
+    "▶2 Try to get repo from cache
+    if exists('buf') && has_key(s:bufrepos, buf)
+        return s:F.updaterepo(s:bufrepos[buf])
+    elseif has_key(s:repos, path)
+        return s:F.updaterepo(s:repos[path])
     endif
     "▶2 Get driver
     if stridx(path, '://')==-1
@@ -415,6 +462,13 @@ function s:F.getrepo(path)
             unlet driver
             let driver=s:F.getdriver(path, 'dir')
             if driver isnot 0
+                if has_key(driver.functions, 'getroot')
+                    let newpath=driver.functions.getroot(path)
+                    if newpath is 0
+                        continue
+                    endif
+                    let path=newpath
+                endif
                 break
             endif
             let olddir=path
@@ -426,14 +480,11 @@ function s:F.getrepo(path)
     if driver is 0
         return 0
     endif
-    "▲2
+    "▶2 Try to get repo from cache, attempt 2
     if has_key(s:repos, path)
-        let repo=s:repos[path]
-        if !empty(repo.cslist)
-            call repo.functions.updatechangesets(repo)
-        endif
-        return repo
+        return s:F.updaterepo(s:repos[path])
     endif
+    "▲2
     let repo=driver.functions.repo(path)
     if repo is 0
         return 0
@@ -455,9 +506,15 @@ function s:F.getrepo(path)
     unlockvar! repo.cslist
     unlockvar! repo.changesets
     unlockvar 1 repo
+    let s:repos[path]=repo
+    if exists('buf')
+        let s:bufrepos[buf]=repo
+    endif
     return repo
 endfunction
 "▶1 update
+" TODO Investigate whether this function should be moved to cmdutils, or to 
+" maputils which is probably to be created
 function s:F.update(repo, rev, count)
     let rev=a:rev
     if a:count>1
@@ -512,5 +569,5 @@ endfunction
 call s:_f.newfeature('regdriver', {'cons': s:F.regdriver,
             \                    'unload': s:F.deldriver})
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,_r,repos,drivers')
+call frawor#Lockvar(s:, '_pluginloaded,_r,bufrepos,repos,drivers')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

@@ -231,7 +231,7 @@ function s:F.getrrf(opts, failmsg, act)
             let file=repo.functions.reltorepo(repo, expand('%'))
         endif
         let  rev=0
-        let hasbuf=1
+        let hasbuf=2
     "▲2
     elseif a:failmsg isnot 0
         call s:_f.throw(a:failmsg)

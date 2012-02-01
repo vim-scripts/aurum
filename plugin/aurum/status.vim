@@ -4,7 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('1.1', {'@/resources': '0.0',
                 \            '@aurum/cmdutils': '0.0',
                 \                      '@/fwc': '0.2',
-                \                '@aurum/repo': '2.0',
+                \                '@aurum/repo': '2.4',
                 \                '@aurum/edit': '1.0',
                 \                 '@/commands': '0.0',
                 \                  '@/options': '0.0',
@@ -50,21 +50,25 @@ function s:F.setup(read, repo, opts)
         let opts[key]=a:repo.functions.getrevhex(a:repo, opts[key])
     endfor
     let bvar={}
-    let status=a:repo.functions.status(a:repo, get(opts, 'rev',   0),
-                \                              get(opts, 'wdrev', 0))
-    let bvar.status=status
-    let bvar.types=[]
-    let bvar.chars=[]
-    let bvar.files=[]
+    let requiresclean=0
     if has_key(opts, 'show')
         if index(opts.show, 'all')==-1
             let show=s:F.parseshow(opts.show)
+            let requiresclean=(index(show, 'clean')!=-1)
         else
             let show=s:allshow
+            let requiresclean=1
         endif
     else
         let show=s:defshow
     endif
+    let status=a:repo.functions.status(a:repo, get(opts, 'rev',   0),
+                \                              get(opts, 'wdrev', 0),
+                \                              0, requiresclean)
+    let bvar.status=status
+    let bvar.types=[]
+    let bvar.chars=[]
+    let bvar.files=[]
     let isrecord=get(opts, 'record', 0)
     let statlines=[]
     for [type, files] in filter(sort(items(status)), 'index(show,v:val[0])!=-1')

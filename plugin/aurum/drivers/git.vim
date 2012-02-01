@@ -300,7 +300,12 @@ function s:git.diffre(repo, opts)
 endfunction
 "▶1 git.diffname :: _, line, diffre, _ → rpath
 function s:git.diffname(repo, line, diffre, opts)
-    return s:F.refile(get(matchlist(a:line, a:diffre), 1, 0))[2:]
+    let file=get(matchlist(a:line, a:diffre), 1, 0)
+    if file is 0
+        return 0
+    else
+        return s:F.refile(file)[2:]
+    endif
 endfunction
 "▶1 nullnl :: [String] → [String]
 " Convert between lines (NL separated strings with NULLs represented as NLs) and 
@@ -318,7 +323,7 @@ function s:F.nullnl(text)
     endfor
     return r
 endfunction
-"▶1 git.status :: repo[, rev1[, rev2[, files]]]
+"▶1 git.status :: repo[, rev1[, rev2[, files[, clean]]]]
 let s:statchars={
             \'A': 'added',
             \'M': 'modified',
@@ -335,6 +340,7 @@ let s:initstatdct={
         \}
 function s:git.status(repo, ...)
     let r=deepcopy(s:initstatdct)
+    let requiresclean=(a:0>3 && a:4)
     if a:0 && (a:1 isnot 0 || (a:0>1 && a:2 isnot 0))
         let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let rspec=[]
@@ -358,21 +364,19 @@ function s:git.status(repo, ...)
             let [r.deleted, r.unknown]=[r.unknown, r.deleted]
             let [r.added,   r.removed]=[r.removed, r.added  ]
         endif
-        let allfiles=a:repo.functions.getcsprop(a:repo, rspec[0], 'allfiles')
-        if a:0>2 && !empty(a:3)
-            let allfiles=filter(copy(allfiles), 'index(a:3, v:val)!=-1')
+        if requiresclean
+            let allfiles=a:repo.functions.getcsprop(a:repo,rspec[0],'allfiles')
         endif
-        let r.clean=filter(copy(allfiles), 'index(files, v:val)==-1')
     else
         let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let kwargs={'porcelain': 1, 'z': 1}
-        let s=s:F.nullnl(s:F.git(a:repo, 'status', args, kwargs, 1, 'statusf'))
-        let files=[]
+        let s=s:F.nullnl(s:F.git(a:repo,'status',args,kwargs,1,'statusf'))[:-2]
+        let files={}
         while !empty(s)
             let line=remove(s, 0)
             let status=line[:1]
             let file=line[3:]
-            call add(files, file)
+            let files[file]=1
             if status[0] is# 'R'
                 let r.added+=[file]
                 let r.removed+=[remove(s, 0)]
@@ -392,11 +396,15 @@ function s:git.status(repo, ...)
                 let r.unknown+=[file]
             endif
         endwhile
-        let allfiles=a:repo.functions.getcsprop(a:repo, 'HEAD', 'allfiles')
+        if requiresclean
+            let allfiles=a:repo.functions.getcsprop(a:repo, 'HEAD', 'allfiles')
+        endif
+    endif
+    if exists('allfiles')
         if a:0>2 && !empty(a:3)
             let allfiles=filter(copy(allfiles), 'index(a:3, v:val)!=-1')
         endif
-        let r.clean=filter(copy(allfiles), 'index(files, v:val)==-1')
+        let r.clean=filter(copy(allfiles), '!has_key(files, v:val)')
     endif
     return r
 endfunction
@@ -420,26 +428,13 @@ endfunction
 "▶1 git.commit :: repo, message[, files[, user[, date[, _]]]]
 function s:git.commit(repo, message, ...)
     let kwargs={'cleanup': 'verbatim'}
-    let usingfile=0
-    if a:message=~#'\v[\r\n]'
-        let tmpfile=tempname()
-        call writefile(split(a:message, "\n", 1), tmpfile, 'b')
-        let kwargs.file=tmpfile
-        let usingfile=1
-    else
-        let kwargs.message=a:message
-    endif
     let args=[]
     if a:0
         if empty(a:1)
             let kwargs.all=1
         else
             let args+=['--']+a:1
-            for file in filter(copy(a:1),
-                        \      'filereadable(s:_r.os.path.join(a:repo.path, '.
-                        \                                     'v:val))')
-                call a:repo.functions.add(a:repo, file)
-            endfor
+            call s:_r.utils.addfiles(a:repo, a:1)
         endif
         if a:0>1 && !empty(a:2)
             let kwargs.author=a:2
@@ -453,13 +448,8 @@ function s:git.commit(repo, message, ...)
     else
         let kwargs.all=1
     endif
-    try
-        return s:F.gitm(a:repo, 'commit', args, kwargs, 0, 'cif')
-    finally
-        if usingfile && filereadable(tmpfile)
-            call delete(tmpfile)
-        endif
-    endtry
+    return s:_r.utils.usefile(a:repo, a:message, 'file', 'message',
+                \             s:F.gitm, args, kwargs, 0, 'cif')
 endfunction
 "▶1 git.update :: repo, rev, force → + FS
 " XXX This must not transform {rev} into hash: it will break rf-branch()
