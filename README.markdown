@@ -2,31 +2,31 @@
 This plugin provides a vim <--> VCS (currently mercurial, git and subversion) 
 integration for your projects. Features:
 
-  - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line357-0)).
+  - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line359-0)).
 
-  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line599-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line158-0)).
+  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line601-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line158-0)).
 
   - Viewing uncommited changes in a vimdiff, as well as changes between 
-    specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line400-0)). It is also possible to open multiple 
+    specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line402-0)). It is also possible to open multiple 
     tabs with all changes to all files viewed as side-by-side diffs.
 
   - Viewing revisions log ([:AuLog](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line239-0)). Output is highly customizable.
 
-  - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line361-0)).
+  - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line363-0)).
 
   - Commiting changes ([:AuCommit](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line99-0)), commit messages are remembered in case of 
-    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line870-0)).
+    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line872-0)).
 
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
     attached: useful for sharing) ([:AuHyperlink](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line189-0)).
 
-  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line448-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line444-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line452-0) functions 
+  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line450-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line446-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line454-0) functions 
     that are to be used from modeline.
 
   - Frontends for various other VCS commands.
 
-Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line754-0)), 
+Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line756-0)), 
 all mappings are customizable.
 
 

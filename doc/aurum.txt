@@ -330,6 +330,8 @@ AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
     - Two or more arguments with last one that is a name of existing 
       directory: move files matching given patterns (all arguments but the 
       last one) to given directory (last argument).
+      You may also specify unexisting directory with trailing forward slash. 
+      In this case it will be created.
     - One or more arguments that have not matched any of the above rules: move 
       files matching given patterns (patterns are all arguments) to the 
       current directory.
@@ -1287,17 +1289,19 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     normalized form, they just should be accepted by VCS.
   update :: hex, force                                       *aurum-rf-update*
     Update working directory to changeset {hex}.
-  move :: force, file, file -> _                               *aurum-rf-move*
-  copy :: force, file, file -> _                               *aurum-rf-copy*
-    Move or copy given file (second argument) to given destination (third 
-    argument).
-  forget :: file -> _                                        *aurum-rf-forget*
-  remove :: file -> _                                        *aurum-rf-remove*
-  add    :: file -> _                                        *aurum-rf-add*
-  ignore :: file -> _                                        *aurum-rf-ignore*
+  move :: force, fdir, file -> _                               *aurum-rf-move*
+  copy :: force, fdir, file -> _                               *aurum-rf-copy*
+    Move or copy given file or directory (second argument) to given 
+    destination (third argument).
+    Note: directories are always passed with trailing forward slash.
+  forget :: fdir -> _                                        *aurum-rf-forget*
+  remove :: fdir -> _                                        *aurum-rf-remove*
+  add    :: fdir -> _                                        *aurum-rf-add*
+  ignore :: fdir -> _                                        *aurum-rf-ignore*
     Forget, remove, add (make tracked) or ignore (add to .hgignore or 
-    something similar) given file. “ignore” function properly escapes file if 
-    it happen to contain any wildcards.
+    something similar) given file or directory. “ignore” function properly 
+    escapes file if it happen to contain any wildcards.
+    Note: directories are always passed with trailing forward slash.
   ignoreglob :: glob -> _                                *aurum-rf-ignoreglob*
     Add given glob to .hgignore or similar.
                                                                *aurum-rf-grep*

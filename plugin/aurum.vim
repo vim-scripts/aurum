@@ -76,6 +76,7 @@ let s:_messages={
             \ 'nunsup': 'Naming is not supported for repository %s',
             \'ukntype': 'Unknown label type: %s. Supported types: %s',
             \   'ldef': 'Label %s with type %s was alredy defined',
+            \   'nomv': 'No movable files found',
             \'_mvheader': ['Source', 'Destination'],
         \}
 let s:utypes=['html', 'raw', 'annotate', 'filehist', 'bundle', 'changeset',
@@ -111,12 +112,39 @@ function s:F.getaddedermvdfiles(repo)
 endfunction
 "▶1 filterfiles
 function s:F.filterfiles(repo, globs, files)
+    if empty(a:globs)
+        return []
+    endif
     let r=[]
-    for pattern in map(copy(a:globs), 's:_r.globtopat('.
-                \                     'a:repo.functions.reltorepo(a:repo, '.
-                \                                                'v:val))')
-        let r+=filter(copy(a:files), 'v:val=~#pattern && index(r, v:val)==-1')
+    let dirs={}
+    for file in a:files
+        let fsplit=split(file, '\V/')
+        if empty(fsplit)
+            continue
+        endif
+        let d=dirs
+        for component in fsplit[:-2]
+            let component.='/'
+            if !has_key(d, component)
+                let d[component]={}
+            endif
+            let d=d[component]
+        endfor
+        let d[fsplit[-1]]=1
     endfor
+    unlet! d
+    let patterns=map(copy(a:globs), 's:_r.globtopat('.
+                \                   'a:repo.functions.reltorepo(a:repo,v:val))')
+    let tocheck=map(items(dirs), '[v:val[1], v:val[0]]')
+    while !empty(tocheck)
+        let [d, f]=remove(tocheck, 0)
+        if !empty(filter(copy(patterns), 'f=~#v:val'))
+            let r+=[f]
+        elseif f[-1:] is# '/'
+            let tocheck+=map(items(d), '[v:val[1], f.v:val[0]]')
+        endif
+        unlet d
+    endwhile
     return r
 endfunction
 "▶1 urlescape :: String → String
@@ -231,10 +259,13 @@ function s:movefunc.function(bang, opts, ...)
     else
         let globs=filter(copy(a:000), 'v:val isnot# ":"')
         let hascur=(len(globs)!=a:0)
-        if a:0==1 || !isdirectory(globs[-1])
+        if a:0==1 || !(isdirectory(globs[-1]) && globs[-1][-1:] isnot# '/')
             let target='.'
         else
             let target=remove(globs, -1)
+            if !isdirectory(target)
+                call mkdir(target, 'p')
+            endif
         endif
         let files=s:F.filterfiles(repo, globs, allfiles)
         if hascur
@@ -253,6 +284,9 @@ function s:movefunc.function(bang, opts, ...)
             endif
             let moves[file]=dest
         endfor
+    endif
+    if empty(moves)
+        call s:_f.throw('nomv')
     endif
     if get(a:opts, 'pretend', 0)
         call s:_r.printtable(items(moves), {'header': s:_messages._mvheader})
