@@ -2,7 +2,7 @@
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.1', {   '@aurum/repo': '2.0',
-                \                          '@/os': '0.0',
+                \                          '@/os': '0.1',
                 \   '@aurum/drivers/common/utils': '0.0',
                 \'@aurum/drivers/common/hypsites': '0.0',}, 0)
     finish
@@ -78,8 +78,17 @@ function s:F.gitm(...)
     return s:_r.utils.printm(call(s:F.git, a:000, {}))
 endfunction
 "▶1 git.getrevhex :: repo, rev → hex
+let s:prevrevhex={}
 function s:git.getrevhex(repo, rev)
-    return s:F.git(a:repo, 'rev-parse', [a:rev], {}, 0, 'hexf', a:rev)[0]
+    if a:rev=~#'\v^[0-9a-f]{40}$'
+        if has_key(s:prevrevhex, a:repo.path)
+            unlet s:prevrevhex[a:repo.path]
+        endif
+        return a:rev
+    endif
+    let r=s:F.git(a:repo, 'rev-parse', [a:rev], {}, 0, 'hexf', a:rev)[0]
+    let s:prevrevhex[a:repo.path]=[a:rev, r]
+    return r
 endfunction
 "▶1 parsecs :: csdata, lstart::UInt → (cs, line::UInt)
 " hash-parent hashes-timestamp
@@ -180,8 +189,14 @@ function s:git.getworkhex(repo)
     return a:repo.functions.getrevhex(a:repo, 'HEAD')
 endfunction
 "▶1 git.gettiphex
-" XXX Uses working directory revision instead of latest revision
-let s:git.gettiphex=s:git.getworkhex
+" XXX Uses master or working directory revision instead of latest revision
+function s:git.gettiphex(repo)
+    try
+        return a:repo.functions.getrevhex(a:repo, 'master')
+    catch
+        return a:repo.functions.gettiphex(a:repo)
+    endtry
+endfunction
 "▶1 git.setcsprop :: repo, cs, propname → propvalue
 function s:git.setcsprop(repo, cs, prop)
     if a:prop is# 'allfiles'
@@ -458,7 +473,36 @@ function s:git.update(repo, rev, force)
     if a:force
         let kwargs.force=1
     endif
-    let args=[a:rev]
+    "▶2 XXX HACK: use s:prevrevhex to checkout a branch using :AuUpdate
+    if a:rev=~#'\v^[0-9a-z]{40}$'
+        if has_key(s:prevrevhex, a:repo.path) &&
+                    \a:rev is# s:prevrevhex[a:repo.path][1] &&
+                    \filereadable(s:_r.os.path.join(a:repo.githpath,
+                    \                             s:prevrevhex[a:repo.path][0]))
+            let rev=s:prevrevhex[a:repo.path][0]
+            unlet s:prevrevhex[a:repo.path]
+        else
+            for [d, ds, fs] in s:_r.os.walk(a:repo.githpath)
+                for f in fs
+                    let reffile=s:_r.os.path.join(d, f)
+                    if a:rev is# get(readfile(reffile, 'b'), 0, 0)
+                        let rev=join(s:_r.os.path.split(
+                                    \s:_r.os.path.relpath(reffile,
+                                    \                     a:repo.githpath))[1:],
+                                    \"/")
+                        break
+                    endif
+                endfor
+            endfor
+            if !exists('rev')
+                let rev=a:rev
+            endif
+        endif
+    else
+        let rev=a:rev
+    endif
+    "▲2
+    let args=[rev]
     return s:F.gitm(a:repo, 'checkout', args, kwargs, 0, 'updf', a:rev)
 endfunction
 "▶1 git.move :: repo, force, source, destination → + FS
@@ -598,8 +642,10 @@ function s:git.getrepoprop(repo, prop)
             return r
         endif
     elseif a:prop is# 'branchslist' || a:prop is# 'brancheslist'
-        return map(s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
-                    \      'branchf')[:-2], 'v:val[2:]')
+        " XXX stridx(v:val, " ")==-1 filters out “(no branch)” item
+        return filter(map(s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
+                    \             'branchf')[:-2], 'v:val[2:]'),
+                    \     'stridx(v:val, " ")==-1')
     elseif a:prop is# 'tagslist'
         return s:F.git(a:repo, 'tag', [], {}, 0, 'tagf')[:-2]
     elseif a:prop is# 'bookmarkslist'
@@ -612,7 +658,11 @@ function s:git.repo(path)
     let repo={'path': a:path, 'changesets': {}, 'cslist': [],
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': ['tag', 'branch'],
-                \'hasrevisions': 0, 'requires_sort': 0}
+                \'hasrevisions': 0, 'requires_sort': 0,
+                \'githpath': s:_r.os.path.join(a:path, '.git', 'refs', 'heads')}
+    if has_key(s:prevrevhex, a:path)
+        unlet s:prevrevhex[a:path]
+    endif
     return repo
 endfunction
 "▶1 git.checkdir :: dir → Bool
@@ -622,5 +672,5 @@ endfunction
 "▶1 Register driver
 call s:_f.regdriver('Git', s:git)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded')
+call frawor#Lockvar(s:, '_pluginloaded,prevrevhex')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

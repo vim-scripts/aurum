@@ -3,7 +3,10 @@ for s:plug in ['@aurum/repo',
             \  '@aurum/cache',
             \  '@aurum/drivers/common/utils',
             \  '@aurum/drivers/common/hypsites',]
-    call FraworUnload(s:plug)
+    try
+        call FraworUnload(s:plug)
+    catch /^Frawor:\(\\.\|[^:]\)\+:notloaded:/
+    endtry
 endfor
 if has('python')
     python aurum=None

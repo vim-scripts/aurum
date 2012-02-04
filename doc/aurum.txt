@@ -1589,6 +1589,11 @@ Python driver was not tested under windows (wine) at all.
     Note: This function always uses extended regular expressions.
 |aurum-rf-annotate| won’t output annotation of file in working directory, it 
     is always returning annotation of file at given revision.
+|aurum-rf-update| will avoid “detached HEAD” state whenever possible. In order 
+    to make this behavior sensible it has a hack for |:AuUpdate| with branch 
+    name as an argument, but it may also search .git/refs/heads for {hex} 
+    argument and use first found file with contents equal to {hex} as a branch 
+    name.
 
 ------------------------------------------------------------------------------
 10.3. Subversion                                     *aurum-driver-Subversion*
