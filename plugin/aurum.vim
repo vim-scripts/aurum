@@ -68,6 +68,8 @@ let s:_messages={
             \ 'uknurl': 'Failed to process url %s of repository %s',
             \ 'uunsup': 'Url type “%s” is not supported for repository %s '.
             \           'linked with %s',
+            \ 'ldirty': 'Cannot attach line number to a dirty file %s '.
+            \           'in the repository %s (dirty=having uncommited changes)',
             \'nofiles': 'No files were specified',
             \   'nogf': 'No files found',
             \  'nrepo': 'Not a repository: %s',
@@ -372,19 +374,20 @@ function s:hypfunc.function(opts)
         if rev is 0
             if has_key(opts, 'line') && repo.functions.dirty(repo, file)
                 call remove(opts, 'line')
+                call s:_f.warn('ldirty', file, repo.path)
             endif
-            let cs=repo.functions.getwork(repo)
+            let hex=repo.functions.getworkhex(repo)
         else
-            let cs=repo.functions.getcs(repo, rev)
+            let hex=repo.functions.getrevhex(repo, rev)
         endif
     else
         let repo=s:_r.repo.get(a:opts.repo)
         call s:_r.cmdutils.checkrepo(repo)
         if utype is# 'bundle' || utype is# 'changeset' || utype is# 'log'
             if has_key(a:opts, 'rev')
-                let cs=repo.functions.getwork(repo)
+                let hex=repo.functions.getworkhex(repo)
             else
-                let cs=repo.functions.getcs(repo, a:opts.rev)
+                let hex=repo.functions.getrevhex(repo, a:opts.rev)
             endif
         endif
     endif

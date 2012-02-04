@@ -1210,7 +1210,7 @@ hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
     Local variables you can use in expressions:
         Variable   Description ~
         repo       Repository object (|aurum-repository|).
-        cs         Changeset object (|aurum-changeset|) (url≠clone,push).
+        hex        Changeset hash (|aurum-cs.hex|) (url≠clone,push).
         url        URL of remote repository from local repository 
                    configuration.
         protocol, user, domain, port, path
@@ -1650,5 +1650,7 @@ Python driver was not tested under windows (wine) at all.
 @aurum/status:
     1.0: Renamed |:AuStatus| “rev1” and “rev2” options to “rev” and “wdrev” 
          respectively. Same for |aurum://status| “rev1” and “rev2” options.
+@aurum/commit:
+    1.0: Added fifth argument to _r.commit.commit()
 
 vim: ft=help:tw=78

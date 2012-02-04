@@ -9,7 +9,7 @@ setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
             \                    '@/mappings': '0.0',
-            \                 '@aurum/commit': '0.0',})
+            \                 '@aurum/commit': '1.0',})
 "▶1 com.runcommap
 function s:F.runcommap(action)
     let buf=bufnr('%')

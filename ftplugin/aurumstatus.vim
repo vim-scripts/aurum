@@ -7,7 +7,7 @@ execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
             \                '@aurum/vimdiff': '0.2',
             \               '@aurum/cmdutils': '0.0',
             \                   '@aurum/edit': '1.0',
-            \                 '@aurum/commit': '0.0',
+            \                 '@aurum/commit': '1.0',
             \                    '@/mappings': '0.0',
             \                          '@/os': '0.0',})
 let s:_messages={
@@ -138,7 +138,9 @@ function s:F.runmap(action, ...)
     endif
     let files=map(copy(range), 'bvar.files[v:val]')
     if a:action is# 'commit'
-        if s:_r.commit.commit(bvar.repo, bvar.opts, files, bvar.status)
+        if s:_r.commit.commit(bvar.repo, bvar.opts, files, bvar.status,
+                    \         ['modified', 'added', 'removed', 'deleted',
+                    \          'unknown'])
             silent edit!
         else
             augroup AuStatusCommit

@@ -7,7 +7,7 @@ if !exists('s:_pluginloaded')
                 \                    '@/mappings': '0.0',
                 \                    '@/commands': '0.0',
                 \                   '@/functions': '0.0',
-                \                 '@aurum/commit': '0.0',
+                \                 '@aurum/commit': '1.0',
                 \               '@aurum/cmdutils': '0.0',
                 \                   '@aurum/repo': '2.0',
                 \                   '@aurum/edit': '1.0',
@@ -488,7 +488,7 @@ function s:F.runstatmap(action, ...)
             return
         endif
         aboveleft let r=s:_r.commit.commit(bvar.repo, bvar.recopts, files,
-                    \                      bvar.status)
+                    \                      bvar.status, keys(s:ntypes))
         if r
             call s:F.unload(bvar)
         else

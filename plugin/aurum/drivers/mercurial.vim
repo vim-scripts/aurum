@@ -75,23 +75,26 @@ let s:_options={
         \}
 "▶1 s:hypsites
 let s:hypsites=[]
-let s:gitrev='((!empty(cs.bookmarks))?'.
-            \      '(cs.bookmarks[0]):'.
-            \   '((!empty(cs.tags))?'.
-            \      '(get(filter(copy(cs.tags), "v:val[:7] is# ''default/''"), 0, '.
-            \           '"default/master")[8:])'.
+let s:bookmarks='repo.functions.getcsprop(repo, hex, "bookmarks")'
+let s:tags='repo.functions.getcsprop(repo, hex, "tags")'
+let s:gitrev='((!empty('.s:bookmarks.'))?'.
+            \      '('.s:bookmarks.'[0]):'.
+            \   '((!empty('.s:tags.'))?'.
+            \      '(matchstr(get(filter(copy('.s:tags.'), "stridx(v:val, ''/'')!=-1"), 0, '.
+            \           '"master"), "\\v[^/]+$"))'.
             \   ':'.
             \      '("master")))'
+unlet s:bookmarks s:tags
 let s:hypsites+=map(copy(s:_r.hypsites.git), '["protocol[:2] is# ''git'' && (".v:val[0].")", '.
             \                                 'map(copy(v:val[1]), '.
             \                                     '''(v:key is# "clone" || v:key is# "push")?'.
             \                                           '(substitute(v:val, "\\v^\"%(git)@!", "\"git+", "")):'.
-            \                                           '(substitute(v:val, "\\Vcs.hex", s:gitrev, "g"))'')]')
+            \                                           '(substitute(v:val, "\\v<hex>", s:gitrev, "g"))'')]')
 unlet s:gitrev
 let s:hypsites+=s:_r.hypsites.mercurial
 let s:svnrev='"HEAD"'
 let s:hypsites+=map(copy(s:_r.hypsites.svn), '[v:val[0], map(copy(v:val[1]), '.
-            \                                               '''substitute(v:val, "\\Vcs.rev", s:svnrev, "g")'')]')
+            \                                               '''substitute(v:val, "\\v<hex>", s:svnrev, "g")'')]')
 unlet s:svnrev
 "▶1 removechangesets :: repo, start_rev_num → + repo
 function s:F.removechangesets(repo, start)

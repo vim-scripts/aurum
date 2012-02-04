@@ -186,8 +186,8 @@ function s:F.parsecs(repo, csdata, line)
                 call s:_f.throw('perr', '<path', a:csdata[line])
             endif                                "▲3
             let line+=1
-            let kind=matchstr(a:csdata[line], '\v(kind\=\")@<=\w+\"@=')
-            if empty(kind) "▶3
+            let kind=get(matchlist(a:csdata[line], 'kind="\(\w*\)"'), 1, 0)
+            if kind is 0 "▶3
                 call s:_f.throw('perr', 'kind="..."', a:csdata[line])
             endif          "▲3
             let line+=1
@@ -891,6 +891,7 @@ function s:svn.repo(path)
                 \              'branch', 'time', 'user', 'description',
                 \              'renames', 'copies', 'files', 'changes',
                 \              'removes'],
+                \'hypsites': deepcopy(s:hypsites),
                 \'has_merges': 0, 'iterfuncs': deepcopy(s:iterfuncs),}
     "▶2 Get svnprefix
     let str1='URL: '

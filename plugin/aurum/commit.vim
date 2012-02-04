@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',
+    execute frawor#Setup('1.0', {'@/resources': '0.0',
                 \                  '@/options': '0.0',
                 \              '@aurum/status': '1.0',
                 \            '@aurum/cmdutils': '0.0',
@@ -25,6 +25,7 @@ let s:_messages={
             \'emptmsg': 'Message must contain at least one non-blank character',
             \'nocfile': 'Unsure what should be commited',
             \'nocread': 'Cannot read aurum://commit',
+            \  'nocom': 'Nothing to commit',
         \}
 let s:_options={
             \'remembermsg':         {'default': 1, 'filter': 'bool'},
@@ -87,7 +88,7 @@ function s:F.parsedate(str)
     endif
     return r
 endfunction
-"▶1 commit :: repo, opts, files, status → + repo
+"▶1 commit :: repo, opts, files, status, types → + repo
 let s:defdate=['strftime("%Y")',
             \  'strftime("%m")',
             \  'strftime("%d")',
@@ -103,14 +104,17 @@ let s:statmsgs.unknown=s:statmsgs.added
 let s:statmsgs.deleted=s:statmsgs.removed
 " TODO Investigate why closing commit buffer on windows consumes next character
 " XXX Do not change names of options used here, see :AuRecord
-function s:F.commit(repo, opts, files, status)
+function s:F.commit(repo, opts, files, status, types)
     let user=''
     let date=''
     let message=''
     let cb=get(a:opts, 'closebranch', 0)
     let revstatus={}
-    call map(copy(a:status),
+    call map(filter(copy(a:status), 'index(a:types, v:key)!=-1'),
                 \'map(copy(v:val),"extend(revstatus,{v:val : ''".v:key."''})")')
+    if !empty(a:files)
+        call filter(revstatus, 'index(a:files, v:key)!=-1')
+    endif
     for key in filter(['user', 'date', 'message'], 'has_key(a:opts, v:val)')
         let l:{key}=a:opts[key]
     endfor
@@ -135,8 +139,8 @@ function s:F.commit(repo, opts, files, status)
             unlet g:AuPreviousRepoPath g:AuPreviousTip g:AuPreviousCommitMessage
         endif
         let fmessage=[]
-        for file in a:files
-            let fmessage+=['# '.s:statmsgs[revstatus[file]].' '.file]
+        for [file, state] in items(revstatus)
+            let fmessage+=['# '.s:statmsgs[state].' '.file]
         endfor
         call sort(fmessage)
         call append('.', fmessage)
@@ -149,6 +153,9 @@ function s:F.commit(repo, opts, files, status)
 endfunction
 "▶1 savemsg :: message, bvar → + g:
 function s:F.savemsg(message, bvar)
+    if a:message!~#"[^[:blank:]\n]"
+        return
+    endif
     let g:AuPreviousCommitMessage=a:message
     let g:AuPreviousTip=a:bvar.repo.functions.gettiphex(a:bvar.repo)
     let g:AuPreviousRepoPath=a:bvar.repo.path
@@ -180,21 +187,20 @@ function s:commfunc.function(opts, ...)
     call s:_r.cmdutils.checkrepo(repo)
     let status=repo.functions.status(repo)
     "▶2 Get file list
+    let types=['modified', 'added', 'removed']
     if a:0 && index(a:000, 'all')!=-1
         let files=[]
     elseif a:0
         if has_key(a:opts, 'type')
             let types=s:_r.status.parseshow(a:opts.type)
+            call filter(types, 'v:val isnot# "clean" && v:val isnot# "ignored"')
         endif
         let filepats=map(filter(copy(a:000), 'v:val isnot# ":"'),
                     \    's:_r.globtopat('.
                     \    'repo.functions.reltorepo(repo, v:val))')
         let statfiles={}
         for [type, sfiles] in items(status)
-            if type is# 'clean' || type is# 'ignored' ||
-                        \(exists('types')?(index(types, type)==-1):
-                        \                 (type is# 'unknown' ||
-                        \                  type is# 'deleted'))
+            if index(types, type)==-1
                 continue
             endif
             let curfiles=[]
@@ -210,7 +216,7 @@ function s:commfunc.function(opts, ...)
         call s:_f.throw('nocfile')
     endif
     "▲2
-    return s:F.commit(repo, a:opts, files, status)
+    return s:F.commit(repo, a:opts, files, status, types)
 endfunction
 let s:commfunc['@FWC']=['-onlystrings '.
             \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
