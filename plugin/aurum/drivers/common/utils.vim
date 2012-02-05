@@ -23,9 +23,32 @@ function s:utils.getcmd(cmd, args, kwargs, esc)
     endif
     return cmd
 endfunction
-"▶1 utils.run :: sh, hasnulls::Bool → [String] + shell
+"▶1 utils.run :: sh, hasnulls::0|1|2 → [String] + shell
 function s:utils.run(cmd, hasnulls, cdpath)
-    if a:hasnulls
+    if a:hasnulls==2 && !empty(&shellredir)
+        let tempfile=tempname()
+        let etempfile=shellescape(tempfile, 1)
+        let cmd=a:cmd
+        if stridx(&shellredir, '%s')!=-1
+            let cmd.=printf(&shellredir, etempfile)
+        else
+            let cmd.=&shellredir.etempfile
+        endif
+        if !empty(a:cdpath)
+            let cmd='cd '.shellescape(a:cdpath).' && '.cmd
+        endif
+        try
+            execute 'silent! !'.cmd
+            if !filereadable(tempfile)
+                return s:utils.run(a:cmd, 1, a:cdpath)
+            endif
+            return readfile(tempfile, 'b')
+        finally
+            if filereadable(tempfile)
+                call delete(tempfile)
+            endif
+        endtry
+    elseif a:hasnulls
         let savedlazyredraw=&lazyredraw
         set lazyredraw
         noautocmd tabnew
@@ -33,7 +56,7 @@ function s:utils.run(cmd, hasnulls, cdpath)
             noautocmd execute 'lcd' fnameescape(a:cdpath)
         endif
         " XXX this is not able to distinguish between output with and without 
-        " trailing newline
+        " trailing newline, and also is “smart” about lineendings
         noautocmd execute '%!'.a:cmd
         let r=getline(1, '$')
         noautocmd bwipeout!

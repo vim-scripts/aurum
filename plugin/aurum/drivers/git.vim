@@ -269,7 +269,7 @@ function s:git.setcsprop(repo, cs, prop)
 endfunction
 "▶1 git.readfile :: repo, rev, file → [String]
 function s:git.readfile(repo, rev, file)
-    return s:F.git(a:repo, 'cat-file', ['blob', a:rev.':'.a:file], {}, 1,
+    return s:F.git(a:repo, 'cat-file', ['blob', a:rev.':'.a:file], {}, 2,
                 \  'filef', a:rev, a:file)
 endfunction
 "▶1 git.diff :: repo, rev, rev, files, opts → [String]
@@ -473,7 +473,7 @@ function s:git.update(repo, rev, force)
     if a:force
         let kwargs.force=1
     endif
-    "▶2 XXX HACK: use s:prevrevhex to checkout a branch using :AuUpdate
+    "▶2 XXX (hacks): Avoid “detached HEAD” state if possible
     if a:rev=~#'\v^[0-9a-z]{40}$'
         if has_key(s:prevrevhex, a:repo.path) &&
                     \a:rev is# s:prevrevhex[a:repo.path][1] &&

@@ -203,6 +203,32 @@ function s:F.copy(read, file)
         endif
     endif
 endfunction
+"▶1 edit
+function s:F.edit(rw, file)
+    if a:rw>=0
+        call s:F.copy(a:rw, a:file)
+        if !a:rw
+            setlocal buftype=acwrite nomodified modifiable noreadonly
+            let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'edit'}
+        endif
+    elseif a:rw==-1
+        let lines=getline(1, '$')
+        if &binary
+            if &endofline
+                let lines+=['']
+            endif
+        else
+            let lines+=['']
+            if &fileformat is# 'dos'
+                call map(lines, 'v:val."\n"')
+            elseif &fileformat is# 'mac'
+                let lines=[join(lines, "\r")]
+            endif
+        endif
+        call writefile(lines, a:file, 'b')
+        setlocal nomodified
+    endif
+endfunction
 "▶1 repotuplesplit :: str, UInt → (repo, String, ...)
 function s:F.repotuplesplit(str, num)
     let tail=a:str
@@ -312,8 +338,10 @@ function s:auefunc.function(rw)
     let tail=amatch[len('aurum://'):]
     let command=tolower(matchstr(tail, '\v^\w+'))
     let tail=tail[len(command)+1:]
-    if command is# 'copy' && a:rw>=0
+    if command is# 'copy' && (a:rw==0 || a:rw==1)
         return s:F.copy(a:rw, tail)
+    elseif command is# 'edit' && abs(a:rw)<=1
+        return s:F.edit(a:rw, tail)
     endif
     call s:F.checkcmd(command)
     "▶2 Launch bvar.write if applicable

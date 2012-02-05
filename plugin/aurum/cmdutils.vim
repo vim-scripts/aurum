@@ -76,6 +76,8 @@ function s:rrf.copy(bvar, opts, act, failmsg)
     let r.hasbuf=1
     return r
 endfunction
+"▶2 rrf.edit : same as copy
+let s:rrf.edit=s:rrf.copy
 "▶2 rrf.status : bvar → (repo, rev), . → (file)
 function s:rrf.status(bvar, opts, act, failmsg)
     let r={}

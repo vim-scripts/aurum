@@ -517,7 +517,7 @@ function s:hg.readfile(repo, rev, file)
 endfunction
 else "▶2
 function s:hg.readfile(repo, rev, file)
-    return s:F.hg(a:repo, 'cat', ['--',a:file], {'rev': ''.a:rev}, 1,
+    return s:F.hg(a:repo, 'cat', ['--',a:file], {'rev': ''.a:rev}, 2,
                 \ 'file', a:file)
 endfunction
 endif

@@ -445,7 +445,7 @@ function s:svn.setcsprop(repo, cs, prop)
 endfunction
 "▶1 svn.readfile :: repo, rev, file → [String]
 function s:svn.readfile(repo, rev, file)
-    return s:F.svn(a:repo, 'cat', ['--', a:file], {'revision': a:rev}, 1,
+    return s:F.svn(a:repo, 'cat', ['--', a:file], {'revision': a:rev}, 2,
                 \  'filef', a:rev, a:file)
 endfunction
 "▶1 svn.diff :: repo, rev, rev, files, opts → [String]

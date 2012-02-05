@@ -27,6 +27,8 @@ let s:_options={
             \               'filter': '(if type "" earg _  range 0 inf)'},
         \}
 let s:_messages={
+            \  'recex': 'There is already one AuRecord tab active '.
+            \           '(found tab with t:aurecid set to "AuRecordTab")',
             \ 'bkpmis': 'Backup file %s not found',
             \'delfail': 'Failed to remove file %s',
             \'renfail': 'Failed to move file %s to %s',
@@ -63,6 +65,10 @@ endfunction
 " TODO investigate why closing record tab is causing next character consumption
 "      under wine
 function s:recfunc.function(opts, ...)
+    if !empty(filter(range(1, tabpagenr('$')),
+                \    'gettabvar(v:val, "aurecid") is# "AuRecordTab"'))
+        call s:_f.throw('recex')
+    endif
     let files=copy(a:000)
     if !empty(files) && a:opts.repo is# ':'
         let repo=s:_r.repo.get(s:_r.os.path.dirname(files[0]))
@@ -110,8 +116,9 @@ function s:recfunc.function(opts, ...)
     let bvar.getwnrs=s:F.getwnrs
     let bvar.recrunmap=s:F.runstatmap
     let bvar.write=s:F.write
+    let bvar.savedundolevels=&undolevels
     if !bvar.startundo
-        setlocal undolevels=-1
+        setglobal undolevels=-1
     endif
     setlocal noreadonly buftype=acwrite
     if empty(bvar.chars)
@@ -153,7 +160,7 @@ function s:F.reset(bvar)
     if a:bvar.startundo
         let a:bvar.undolevels=&undolevels
         let a:bvar.startundo=s:F.curundo()
-        setlocal undolevels=-1
+        setglobal undolevels=-1
     endif
 endfunction
 "▶1 supdate
@@ -162,7 +169,7 @@ function s:F.supdate(bvar)
         let a:bvar.prevct=b:changedtick
         if a:bvar.reset
             if has_key(a:bvar, 'undolevels')
-                let &l:undolevels=a:bvar.undolevels
+                let &g:undolevels=a:bvar.undolevels
                 unlet a:bvar.undolevels
             endif
             let a:bvar.reset=0
@@ -190,6 +197,7 @@ endfunction
 "▶1 unload
 function s:F.unload(bvar)
     let sbvar=get(a:bvar, 'sbvar', a:bvar)
+    let &g:undolevels=sbvar.savedundolevels
     if bufexists(sbvar.bufnr)
         call setbufvar(sbvar.bufnr, '&modified', 0)
     endif
@@ -258,17 +266,27 @@ function s:F.getwnrs()
     return [lwnr, rwnr, swnr]
 endfunction
 "▶1 edit
+let s:savedopts=['readonly', 'modifiable', 'scrollbind', 'cursorbind',
+            \    'scrollopt', 'wrap', 'foldmethod', 'foldcolumn']
 function s:F.edit(bvar, fname, ro)
     if type(a:fname)==type('')
-        let existed=bufexists(a:fname)
-        execute 'silent edit' fnameescape(a:fname)
+        " XXX Do not handle existance of aurum://edit and aurum://copy buffers: 
+        " they are only used by AuRecord and recfunc forbids to launch new 
+        " record if there is already one active
+        let existed=0
+        execute 'silent edit!' fnameescape(a:fname)
     else
         let existed=call(s:_r.run, ['silent edit']+a:fname, {})
     endif
     let buf=bufnr('%')
     if existed
-        let a:bvar.oldbufs[buf]={'readonly': &readonly,
-                    \          'modifiable': &modifiable,}
+        if !has_key(a:bvar.oldbufs, buf)
+            let savedopts={'diff': 0}
+            let a:bvar.oldbufs[buf]=savedopts
+            for o in s:savedopts
+                let savedopts[o]=getbufvar(buf, '&'.o)
+            endfor
+        endif
     else
         setlocal bufhidden=wipe
     endif
@@ -381,6 +399,7 @@ function s:F.runstatmap(action, ...)
         let status=bvar.statuses[line('.')-1]
         let modified=status%2
         execute lwnr.'wincmd w'
+        diffoff!
         let fullpath=s:_r.os.path.join(bvar.repo.path, file)
         let ntype=get(s:ntypes, type, 0)
         if !modified
@@ -404,7 +423,7 @@ function s:F.runstatmap(action, ...)
             call s:F.reset(bvar)
             setlocal nomodifiable
             execute lwnr.'wincmd w'
-            call s:F.edit(bvar, fullpath, 0)
+            call s:F.edit(bvar, 'aurum://edit:'.fullpath, 0)
             if ntype is# 'm' || (modified && ntype is# 'a')
                 if !modified
                     let fcontents=bvar.repo.functions.readfile(
