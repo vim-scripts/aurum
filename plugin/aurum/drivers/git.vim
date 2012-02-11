@@ -659,7 +659,8 @@ function s:git.repo(path)
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': ['tag', 'branch'],
                 \'hasrevisions': 0, 'requires_sort': 0,
-                \'githpath': s:_r.os.path.join(a:path, '.git', 'refs', 'heads')}
+                \'githpath': s:_r.os.path.join(a:path, '.git', 'refs', 'heads'),
+                \'hypsites': deepcopy(s:hypsites),}
     if has_key(s:prevrevhex, a:path)
         unlet s:prevrevhex[a:path]
     endif

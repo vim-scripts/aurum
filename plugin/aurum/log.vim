@@ -604,6 +604,72 @@ function s:DateCmp(a, b)
     return ((a==b)?(0):((a>b)?(-1):(1)))
 endfunction
 let s:_functions+=['s:DateCmp']
+"▶2 iterfuncs.csshow
+let s:iterfuncs.csshow={}
+"▶3 iterfuncs.csshow.setup :: procinput → d
+function s:iterfuncs.csshow.setup(procinput)
+    return {     'input': '',
+           \ 'skipuntil': 0,
+           \       'buf': bufnr('%'),
+           \'lastw0line': -1,
+           \ 'didredraw': 0,
+           \ 'procinput': a:procinput,}
+endfunction
+"▶3 iterfuncs.csshow.next
+function s:iterfuncs.csshow.next(d)
+    if !a:d.didredraw
+        let haschar=getchar(1)
+        if haschar || (line('$')>=line('w0')+winheight(0))
+            redraw
+            let a:d.didredraw=!haschar
+            let a:d.lastw0line=line('w0')
+        endif
+    endif
+    if !a:d.procinput
+        return
+    endif
+    while getchar(1)
+        let char=getchar()
+        if type(char)==type(0)
+            let char=nr2char(char)
+        endif
+        let a:d.input.=char
+        if a:d.skipuntil isnot 0
+            if eval(a:d.skipuntil)
+                let a:d.skipuntil=0
+            endif
+        elseif char is# 'g' || char is# 'z'
+            let a:d.skipuntil='len(a:d.input)>='.(len(a:d.input)+1)
+        elseif stridx('/?:', char)!=-1
+            let a:d.skipuntil=
+                        \'match(a:d.input, "[\n\r\e]", '.len(a:d.input).')!=-1'
+        endif
+    endwhile
+    if !empty(a:d.input) && (a:d.skipuntil is 0 || eval(a:d.skipuntil))
+        let a:d.skipuntil=0
+        execute 'normal' a:d.input
+        let a:d.input=''
+        if bufnr('%')==a:d.buf
+            let lw0=line('w0')
+            if lw0!=a:d.lastw0line
+                redraw
+                let a:d.didredraw=(line('$')>=lw0+winheight(0))
+                let a:d.lastw0line=lw0
+            endif
+        else
+            if bufexists(a:d.buf)
+                execute 'silent bwipeout!' a:d.buf
+            endif
+            call s:_f.throw('ebuf')
+        endif
+    endif
+endfunction
+"▶3 iterfuncs.csshow.finish
+function s:iterfuncs.csshow.finish(d)
+    if !empty(a:d.input)
+        return feedkeys(a:d.input)
+    endif
+endfunction
 "▶2 glog.graphlog
 function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
     "▶3 Get grapher
@@ -636,10 +702,7 @@ function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
         let a:bvar.rectangles=rectangles
         let a:bvar.specials=specials
         let a:bvar.csstarts=csstarts
-        let didredraw=0
-        let procinput=a:bvar.procinput
-        let lastw0line=-1
-        let buf=bufnr('%')
+        let sd=s:iterfuncs.csshow.setup(a:bvar.procinput)
     endif
     "▶3 Initialize iterator functions
     let ld=literfuncs.start(a:repo,a:opts,[a:repo.functions.getworkhex(a:repo)])
@@ -693,40 +756,8 @@ function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
                         else
                             call append('$', lines)
                         endif
-                        "▶4 Process user input
-                        if didredraw
-                            if procinput && getchar(1)
-                                let input=''
-                                while getchar(1)
-                                    let char=getchar()
-                                    if type(char)==type(0)
-                                        let input.=nr2char(char)
-                                    else
-                                        let input.=char
-                                    endif
-                                endwhile
-                                execute 'normal' input
-                                if bufnr('%')!=buf
-                                    if bufexists(buf)
-                                        execute 'silent bwipeout!' buf
-                                    endif
-                                    call s:_f.warn('ebuf')
-                                    return []
-                                endif
-                                let lw0=line('w0')
-                                if lw0!=lastw0line
-                                    redraw
-                                    let didredraw=(line('$')>=lw0+winheight(0))
-                                    let lastw0line=lw0
-                                endif
-                            endif
-                        "▶4 Redraw if necessary
-                        elseif line('$')>=line('w0')+winheight(0)
-                            redraw
-                            let didredraw=1
-                            let lastw0line=line('w0')
-                        endif
                         "▲4
+                        call s:iterfuncs.csshow.next(sd)
                     endif
                     "▲3
                     unlet rectangle special
@@ -736,6 +767,9 @@ function s:F.glog.graphlog(repo, opts, csiterfuncs, bvar, read)
         endif
         unlet cs
     endwhile
+    if !a:read
+        call s:iterfuncs.csshow.finish(sd)
+    endif
     return r
 endfunction
 "▶1 iterfuncs: loggers
@@ -1407,11 +1441,18 @@ function s:F.temp.syntax(template, opts, repo)
                     let r+=['syn match auLog_'.kw.' /'.arg.synreg.'/ '.
                                 \'contained nextgroup=']
                 elseif kw is# 'hex'
-                    call s:F.temp.addgroup(r, nlgroups, 'auLogHexStart')
-                    let r+=['syn match auLogHexStart /\v\x{12}/ contained'.
-                                \' nextgroup=auLogHexEnd',
-                            \'syn match auLogHexEnd /\v\x+/ contained '.
-                            \   (has('conceal')?('conceal'):('')).' nextgroup=']
+                    if has_key(a:repo, 'hexreg')
+                        call s:F.temp.addgroup(r, nlgroups, 'auLog_hex')
+                        let r+=['syn match auLog_hex /'.a:repo.hexreg.'/ '.
+                                    \'contained nextgroup=']
+                    else
+                        call s:F.temp.addgroup(r, nlgroups, 'auLogHexStart')
+                        let r+=['syn match auLogHexStart /\v\x{12}/ contained'.
+                                    \' nextgroup=auLogHexEnd',
+                                \'syn match auLogHexEnd /\v\x+/ contained '.
+                                \   (has('conceal')?('conceal'):('')).
+                                \   ' nextgroup=']
+                    endif
                 elseif kw is# 'patch'
                     call s:F.temp.addgroup(r, nlgroups,
                                 \'auLogPatchAdded,auLogPatchRemoved,'.
@@ -1464,13 +1505,19 @@ function s:F.temp.syntax(template, opts, repo)
                 elseif (index(s:kwpempt, kw)!=-1 || kw is# 'branch' ||
                             \                       kw is# 'rev') &&
                             \(has_key(arg, 'pref') || has_key(arg, 'suf'))
+                    " Case kw=='rev' with !repo.hasrevisions is caught in the 
+                    " first branch
+                    let trail=((kw is# 'rev' || index(s:kwpempt, kw)==-1)?
+                                    \   (''):
+                                    \   (','))
                     if has_key(arg, 'pref')
-                        call s:F.temp.addgroup(r,nlgroups,'auLog_'.kw.'_pref,')
+                        call s:F.temp.addgroup(r,nlgroups,'auLog_'.kw.'_pref'.
+                                    \          trail)
                         let r+=['syn match auLog_'.kw.'_pref '.
                                     \'/\V'.escape(arg.pref, '\/').'/ '.
                                     \'contained nextgroup=auLog_'.kw]
                     else
-                        call s:F.temp.addgroup(r, nlgroups, 'auLog_'.kw.',')
+                        call s:F.temp.addgroup(r, nlgroups, 'auLog_'.kw.trail)
                     endif
                     let nextlit=get(arg, 'suf', get(lit, j+1, 0))
                     let r+=['syn match auLog_'.kw.' '.

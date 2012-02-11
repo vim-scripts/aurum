@@ -155,6 +155,8 @@ unlet s:hgwebdict s:pkbase s:cpbase s:cbssh s:cbhttps
 "       ssh://repo.or.cz/srv/git/test2.git
 "  git://gitorious.org/test4/test.git / https://git.gitorious.org/test4/test.git
 "       / ssh://git@gitorious.org:test4/test.git
+"  git://git.kitenet.net/mr.git / http://git.kitenet.net/git/mr.git
+"       / ssh://git.kitenet.net/srv/git/mr.git
 "  (unable to clone with hg-git) https://code.google.com/p/tortoisegit/
 let s:ghpath='substitute(path, "\\v^[:/]|\\.git$", "", "g")'
 let s:roproj='matchstr(path, ''\v\/@<=[^/]{-1,}%(%(\.git)?\/*$)@='').".git"'
@@ -199,6 +201,14 @@ let s:hyp.git=[
 \   'filehist': s:robase.'."/history/".hex.":/".file',
 \  'changeset': s:robase.'."/commit/".hex',
 \        'log': s:robase.'."/log/".hex',
+\      'clone': '"git://".domain."/".'.s:roproj,
+\       'push': '"ssh://".domain."/srv/git/".'.s:roproj,}],
+\['domain =~? "\\Vgit.kitenet.net\\$"',
+\ {     'html': '"http://".domain."/?p=".'.s:roproj.'.";a=blob;hb=".hex.";f=".file', 'hline': '"l".line',
+\        'raw': '"http://".domain."/?p=".'.s:roproj.'.";a=blob_plain;hb=".hex.";f=".file',
+\   'filehist': '"http://".domain."/?p=".'.s:roproj.'.";a=history;hb=".hex.";f=".file',
+\  'changeset': '"http://".domain."/?p=".'.s:roproj.'.";a=commitdiff;hb=".hex',
+\        'log': '"http://".domain."/?p=".'.s:roproj.'.";a=log"',
 \      'clone': '"git://".domain."/".'.s:roproj,
 \       'push': '"ssh://".domain."/srv/git/".'.s:roproj,}],
 \]

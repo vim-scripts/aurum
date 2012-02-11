@@ -4,6 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('0.1', {   '@aurum/repo': '2.3',
                 \                          '@/os': '0.0',
                 \   '@aurum/drivers/common/utils': '0.0',
+                \     '@aurum/drivers/common/xml': '0.0',
                 \'@aurum/drivers/common/hypsites': '0.0',}, 0)
     finish
 elseif s:_pluginloaded
@@ -39,7 +40,12 @@ let s:_messages={
             \  'statf': 'Failed to get status of the repository %s: %s',
             \  'nocfg': 'Failed to get property %s of repository %s',
             \'fcunsup': 'Forced copy is not supported',
-            \   'perr': 'Parser error: expected %s, but got %s',
+            \'perrtag': 'Parser error: expected tag %s, but got %s',
+            \'perratt': 'Parser error: expected attribute %s, but got only %s',
+            \ 'perrtv': 'Parser error: expected something like %s in text, '.
+            \           'but got %s',
+            \'perratv': 'Parser error: expected something like %s '.
+            \           'in %s value, but got %s',
             \   'derr': 'Program “date” failed to parse date “%s” obtained '.
             \           'by parsing “%s”: %s',
             \'infoerr': 'Failed to get information for the repository %s: '.
@@ -94,16 +100,8 @@ function s:svn.getrevhex(repo, rev)
     return s:F.getfrominfo(a:repo, 'Revision', {'revision': ''.a:rev})
 endfunction
 "▶1 decodeentities :: String → String
-let s:entities={
-            \  'lt': '<',
-            \  'gt': '>',
-            \ 'amp': '&',
-            \'quot': '"',
-        \}
-function s:F.decodeentities(s)
-    return substitute(a:s, '\v\&([lg]t|amp)\;', '\=s:entities[submatch(1)]','g')
-endfunction
-"▶1 parsecs :: repo, csdata, lstart::UInt → (cs, line::UInt)
+let s:F.decodeentities=s:_r.xml.decodeentities
+"▶1 parsecs :: repo, xml → cs
 let s:logseparator=repeat('-', 72)
 let s:csinit={
             \'branch': 'default',
@@ -114,173 +112,118 @@ let s:csinit={
             \'status': {'added': [], 'removed': [], 'modified': []},
         \}
 let s:logstatchars={
-            \'C': 'modified',
             \'M': 'modified',
-            \'~': 'modified',
             \'R': 'modified',
             \'A': 'added',
             \'D': 'removed',
-            \'!': 'deleted',
-            \'?': 'unknown',
-            \'I': 'ignored',
         \}
 let s:hasdateexe=executable('date')
 " TODO HEAD, ... in cs.tags
 " TODO use merge information if available
-function s:F.parsecs(repo, csdata, line)
+function s:F.parsecs(repo, xml)
     let cs=deepcopy(s:csinit)
-    let lcsdata=len(a:csdata)
-    "▶2 Check for logentry start
-    let line=a:line
-    if a:csdata[line][:8] isnot# '<logentry'
-        call s:_f.throw('perr', '<logentry', a:csdata[line])
+    "▶2 <logentry> → rev, hex; parents
+    let [tagname, attributes]=a:xml.parsetag()
+    call a:xml.skipws()
+    if tagname isnot# 'logentry'
+        call s:_f.throw('perrtag', 'logentry', tagname)
+    elseif !has_key(attributes, 'revision')
+        call s:_f.throw('perratt', 'revision', join(keys(attributes), ', '))
     endif
-    let line+=1
-    "▶2 rev and hex, parents
-    let rev=matchstr(a:csdata[line], '\v(\srevision\=\")@<=(\d+)\"@=')
-    if empty(rev)
-        call s:_f.throw('perr', 'revision="N"', a:csdata[line])
-    endif
-    let cs.rev=str2nr(rev)
-    let cs.hex=rev
+    let cs.hex=attributes.revision
+    let cs.rev=str2nr(cs.hex)
     let cs.parents=((cs.rev>1)?([''.(cs.rev-1)]):([]))
-    let line+=1
-    "▶2 author
-    let author=matchstr(a:csdata[line], '\v(\<author\>)@<=.*(\<\/author\>)@=')
-    if empty(author)
-        call s:_f.throw('perr', '<author>name</author>', a:csdata[line])
-    endif
-    let cs.user=s:F.decodeentities(author)
-    let line+=1
-    "▶2 date
-    " date :: (year, month, day, hour, minute, second)
-    if s:hasdateexe || executable('date')
-        let s:hasdateexe=1
-        let date=matchlist(a:csdata[line], '\V<date>'.
-                    \                        '\v(\d{4,})\-(\d\d)\-(\d\d)'.
-                    \                         'T(\d\d)\:(\d\d)\:(\d\d)\.\d+Z'.
-                    \                      '\V</date>')[1:6]
-        if empty(date)
-            call s:_f.throw('perr', '<date>yyyy-mm-ddTHH:MM:SS.nnnnnnZ</date>',
-                        \   a:csdata[line])
-        endif
-        let [y, mon, d, h, min, s]=date
-        let datearg=y.'-'.mon.'-'.d.' '.h.':'.min.':'.s.' UTC'
-        let time=system('date --date='.shellescape(datearg).' +%s')
-        if v:shell_error
-            call s:_f.throw('derr', datearg, a:csdata[line], time)
-        else
-            let cs.time=str2nr(time)
-        endif
-    else
-        call s:_f.warn('ndate')
-        let cs.time=0
-    endif
-    let line+=1
-    "▶2 paths
-    if a:csdata[line] is# '<paths>'
-        let line+=1
-        let svnplidx=len(a:repo.svnprefix)-1
-        while line<lcsdata && a:csdata[line] isnot# '</paths>'
-            if a:csdata[line][:4] isnot# '<path' "▶3
-                call s:_f.throw('perr', '<path', a:csdata[line])
-            endif                                "▲3
-            let line+=1
-            let kind=get(matchlist(a:csdata[line], 'kind="\(\w*\)"'), 1, 0)
-            if kind is 0 "▶3
-                call s:_f.throw('perr', 'kind="..."', a:csdata[line])
-            endif          "▲3
-            let line+=1
-            "▶3 Process copies
-            let source=matchstr(a:csdata[line],'\(copyfrom-path="/\)\@<=.*"\@=')
-            if !empty(source)
-                let line+=1
-                let sourcerev=matchstr(a:csdata[line],
-                            \'\v(copyfrom\-rev\=\")@<=\d+\"@=')
-                if empty(sourcerev)
-                    call s:_f.throw('perr', 'copyfrom-rev="N"', a:csdata[line])
-                endif
-                let line+=1
-                if svnplidx==-1 || source[:(svnplidx)] is# a:repo.svnprefix
-                    let source=source[(svnplidx+1):]
-                else
-                    let source=''
-                endif
-            endif
-            "▲3
-            let match=matchlist(a:csdata[line],
-                        \       'action="\(.\)">/\(.\+\)</path>')[1:2]
-            if empty(match) "▶3
-                call s:_f.throw('perr','action="C">/path</path>',a:csdata[line])
-            endif           "▲3
-            let [action, file]=match
-            "▶3 Add file to list(s)
-            if svnplidx==-1 || file[:(svnplidx)] is# a:repo.svnprefix
-                let file=file[(svnplidx+1):]
-                if has_key(s:logstatchars, action)
-                    let status=s:logstatchars[action]
-                    let cs.status[status]+=[file]
-                else
-                    call s:_f.throw('perr', 'action="'.
-                                \           join(keys(s:logstatchars, '/')).'"',
-                                \   action)
-                endif
-                if !empty(source)
-                    let cs.copies[file]=source
-                endif
-            endif
-            "▲3
-            let line+=1
-        endwhile
-        "▶3 Move some copies to renames
-        for [destination, source] in items(cs.copies)
-            if index(cs.status.removed, source)!=-1
-                let cs.renames[destination]=source
-                unlet cs.copies[destination]
-            endif
-        endfor
-        if line>=lcsdata "▶3
-            call s:_f.throw('perr', '</paths>', a:csdata[-1])
-        endif            "▲3
-        let line+=1
-    endif
-    let cs.files=cs.status.added+cs.status.modified
-    let cs.removes=cs.status.removed
-    let cs.changes=cs.files+cs.removes
-    "▶2 description
-    let idx=stridx(a:csdata[line], '<msg>')
-    if idx==-1
-        call s:_f.throw('perr', '<msg>...', a:csdata[line])
-    endif
-    let idx+=5
-    let description=a:csdata[line][(idx):]
-    let line+=1
-    let idx=stridx(description, '</msg>')
-    if idx==-1
-        let cs.description=s:F.decodeentities(description)
-        while line<lcsdata
-            let idx=stridx(a:csdata[line], '</msg>')
-            if idx==-1
-                let cs.description.="\n".s:F.decodeentities(a:csdata[line])
-            else
-                if idx
-                    let cs.description.="\n".a:csdata[line][:(idx-1)]
-                endif
-                break
-            endif
-            let line+=1
-        endwhile
-        let line+=1
-    else
-        let cs.description=s:F.decodeentities(description[:(idx-1)])
-    endif
-    "▶2 check for </logentry>
-    if a:csdata[line] isnot# '</logentry>'
-        call s:_f.throw('perr', '</logentry>', a:csdata[line])
-    endif
-    let line+=1
     "▲2
-    return [cs, line]
+    while !a:xml.checkctag()
+        let [tagname, attributes]=a:xml.parsetag()
+        if tagname is# 'author'
+            let cs.user=join(a:xml.parsetextintag(), "\n")
+        elseif tagname is# 'date'
+            if s:hasdateexe || executable('date')
+                let s:hasdateexe=1
+                let date=join(a:xml.parsetextintag(), "\n")
+                let dcomponents=matchlist(date,
+                            \             '\v(\d{4,})\-(\d\d)\-(\d\d)'.
+                            \              'T(\d\d)\:(\d\d)\:(\d\d)\.\d+Z')[1:6]
+                if empty(dcomponents)
+                    call s:_f.throw('perrtv', 'yyyy-mm-ddTHH:MM:SS.nnnnnnZ',
+                                \   date)
+                endif
+                let [y, mon, d, h, min, s]=dcomponents
+                let datearg=y.'-'.mon.'-'.d.' '.h.':'.min.':'.s.' UTC'
+                let time=system('date --date='.shellescape(datearg).' +%s')
+                if v:shell_error
+                    call s:_f.throw('derr', datearg, a:csdata[line], time)
+                else
+                    let cs.time=str2nr(time)
+                endif
+            else
+                call s:_f.warn('ndate')
+                let cs.time=0
+            endif
+        elseif tagname is# 'paths'
+            let svnplidx=len(a:repo.svnprefix)-1
+            call a:xml.skipws()
+            while !a:xml.checkctag()
+                let [tagname, attributes]=a:xml.parsetag()
+                if !has_key(attributes, 'action')
+                    call s:_f.throw('perratt', 'action',
+                                \   join(keys(attributes), ", "))
+                elseif tagname isnot# 'path'
+                    call s:_f.throw('perrtag', 'path', tagname)
+                endif
+                if has_key(attributes, 'copyfrom-path')
+                    if attributes['copyfrom-path'][0] isnot# '/'
+                        call s:_f.throw('perratv', '/path/to/file',
+                                    \   'copyfrom-path',
+                                    \   attributes['copyfrom-path'])
+                    endif
+                    let source=attributes['copyfrom-path'][1:]
+                    if svnplidx==-1 || source[:(svnplidx)] is# a:repo.svnprefix
+                        let source=source[(svnplidx+1):]
+                    else
+                        unlet source
+                    endif
+                endif
+                let file=join(a:xml.parsetextintag(), "\n")
+                if file[0] isnot# '/'
+                    call s:_f.throw('perrtv', '/path/to/file', file)
+                endif
+                let file=file[1:]
+                let action=attributes.action
+                if svnplidx==-1 || file[:(svnplidx)] is# a:repo.svnprefix
+                    let file=file[(svnplidx+1):]
+                    if has_key(s:logstatchars, action)
+                        let status=s:logstatchars[action]
+                        let cs.status[status]+=[file]
+                    else
+                        call s:_f.throw('perratv',
+                                    \   join(keys(s:logstatchars, '/')),
+                                    \   'action', action)
+                    endif
+                    if exists('source')
+                        let cs.copies[file]=source
+                    endif
+                endif
+                call a:xml.skipws()
+                unlet! source
+            endwhile
+            for [destination, source] in items(cs.copies)
+                if index(cs.status.removed, source)!=-1
+                    let cs.renames[destination]=source
+                    unlet cs.copies[destination]
+                endif
+            endfor
+            let cs.files=cs.status.added+cs.status.modified
+            let cs.removes=cs.status.removed
+            let cs.changes=cs.files+cs.removes
+            call a:xml.skipctag()
+        elseif tagname is# 'msg'
+            let cs.description=join(a:xml.parsetextintag(), "\n")
+        endif
+        call a:xml.skipws()
+    endwhile
+    return cs
 endfunction
 "▶1 getchangesets :: repo → [cs]
 function s:F.getchangesets(repo, ...)
@@ -295,12 +238,12 @@ function s:F.getchangesets(repo, ...)
     elseif a:0==2
         let kwargs.revision=a:1.':'.a:2
     endif
-    let log=s:F.svn(a:repo, 'log', args, kwargs, 0, 'logf')[2:-3]
+    let xml=s:_r.xml.new(s:F.svn(a:repo, 'log', args, kwargs, 0, 'logf')[2:])
     let cslist=[]
-    let llog=len(log)
-    let line=0
-    while line<llog
-        let [cs, line]=s:F.parsecs(a:repo, log, line)
+    while !xml.checkctag()
+        let cs=s:F.parsecs(a:repo, xml)
+        call xml.skipctag()
+        call xml.skipws()
         let a:repo.changesets[cs.hex]=cs
         call insert(cslist, cs)
     endwhile
@@ -376,10 +319,11 @@ function s:svn.getcs(repo, rev)
     endif
     "▲2
     let cs=s:F.parsecs(a:repo,
+                \      s:_r.xml.new(
                 \      s:F.svn(a:repo, 'log', ['--', a:repo.svnroot],
                 \              {'revision': rev, 'limit': '1', 'xml': 1,
                 \               'verbose': 1},
-                \              0, 'csf', a:rev), 2)[0]
+                \              0, 'csf', a:rev)[2:]))
     let a:repo.changesets[cs.hex]=cs
     return a:repo.changesets[cs.hex]
 endfunction
@@ -892,7 +836,8 @@ function s:svn.repo(path)
                 \              'renames', 'copies', 'files', 'changes',
                 \              'removes'],
                 \'hypsites': deepcopy(s:hypsites),
-                \'has_merges': 0, 'iterfuncs': deepcopy(s:iterfuncs),}
+                \'has_merges': 0, 'iterfuncs': deepcopy(s:iterfuncs),
+                \'hexreg': '\v[1-9]\d*',}
     "▶2 Get svnprefix
     let str1='URL: '
     let str1lidx=len(str1)-1

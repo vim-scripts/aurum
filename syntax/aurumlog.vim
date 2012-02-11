@@ -32,5 +32,6 @@ else
     hi auLogSkipBefore_rev ctermfg=DarkYellow  guifg=DarkYellow
     hi auLogHexStart       ctermfg=DarkYellow  guifg=DarkYellow
 endif
+hi def link auLog_hex auLogHexStart
 
 let b:current_syntax=expand('<sfile>:t:r')

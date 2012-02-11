@@ -50,17 +50,24 @@ function s:utils.run(cmd, hasnulls, cdpath)
         endtry
     elseif a:hasnulls
         let savedlazyredraw=&lazyredraw
+        let savedeventignore=&eventignore
+        set eventignore=all
         set lazyredraw
-        noautocmd tabnew
-        if !empty(a:cdpath)
-            noautocmd execute 'lcd' fnameescape(a:cdpath)
-        endif
-        " XXX this is not able to distinguish between output with and without 
-        " trailing newline, and also is “smart” about lineendings
-        noautocmd execute '%!'.a:cmd
-        let r=getline(1, '$')
-        noautocmd bwipeout!
-        let &lazyredraw=savedlazyredraw
+        try
+            tabnew
+            setlocal buftype=nofile modifiable noreadonly
+            if !empty(a:cdpath)
+                execute 'lcd' fnameescape(a:cdpath)
+            endif
+            " XXX this is not able to distinguish between output with and 
+            " without trailing newline, and also is “smart” about lineendings
+            silent execute '%!'.a:cmd
+            let r=getline(1, '$')
+            bwipeout!
+        finally
+            let &lazyredraw=savedlazyredraw
+            let &eventignore=savedeventignore
+        endtry
     else
         let cmd=a:cmd
         if !empty(a:cdpath)

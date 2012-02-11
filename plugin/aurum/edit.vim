@@ -225,6 +225,9 @@ function s:F.edit(rw, file)
                 let lines=[join(lines, "\r")]
             endif
         endif
+        if !empty(&fileencoding) && &encoding isnot# &fileencoding
+            call map(lines, 'iconv(v:val, "'.&encoding.'","'.&fileencoding.'")')
+        endif
         call writefile(lines, a:file, 'b')
         setlocal nomodified
     endif
