@@ -1,9 +1,10 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('2.4', {'@/resources': '0.0',
+    execute frawor#Setup('3.0', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                  '@/options': '0.0',
+                \           '@aurum/lineutils': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)
     finish
 elseif s:_pluginloaded
@@ -85,6 +86,205 @@ function s:F.sort_in_topological_order(repo, css)
     endtry
     return r
 endfunction
+"▶1 getnthparent :: repo, rev, n → cs
+function s:deffuncs.getnthparent(repo, rev, n)
+    let r=a:repo.functions.getcs(a:repo, a:rev)
+    let key=((a:n>0)?('parents'):('children'))
+    for i in range(1, abs(a:n))
+        let rl=a:repo.functions.getcsprop(a:repo, r, key)
+        if empty(rl)
+            break
+        endif
+        let r=a:repo.functions.getcs(a:repo, rl[0])
+    endfor
+    return r
+endfunction
+"▶1 getcsprop :: repo, Either cs rev, propname → a
+function s:deffuncs.getcsprop(repo, csr, propname)
+    if type(a:csr)==type({})
+        let cs=a:csr
+    else
+        let cs=a:repo.functions.getcs(a:repo, a:csr)
+    endif
+    if has_key(cs, a:propname)
+        return cs[a:propname]
+    endif
+    call a:repo.functions.setcsprop(a:repo, cs, a:propname)
+    " XXX There is much code relying on the fact that after getcsprop property 
+    " with given name is added to changeset dictionary
+    return cs[a:propname]
+endfunction
+"▶1 dirty :: repo, file → Bool
+function s:deffuncs.dirty(repo, file)
+    let status=a:repo.functions.status(a:repo, 0, 0, [a:file])
+    for [type, files] in items(status)
+        if type is# 'ignored' || type is# 'clean'
+            continue
+        endif
+        if index(files, a:file)!=-1
+            return 1
+        endif
+    endfor
+    return 0
+endfunction
+"▶1 move
+function s:deffuncs.move(repo, force, source, target)
+    call a:repo.functions.copy(a:repo, a:force, a:source, a:target)
+    call a:repo.functions.remove(a:repo, a:source)
+endfunction
+"▶1 copy
+function s:deffuncs.copy(repo, force, source, target)
+    let src=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:source))
+    let tgt=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:target))
+    if filewritable(tgt)==1
+        if a:force
+            call delete(tgt)
+        else
+            call s:_f.throw('tgtex', tgt)
+        endif
+    elseif s:_r.os.path.exists(tgt)
+        " Don’t try to delete directories and non-writable files.
+        call s:_f.throw('tgtex', tgt)
+    endif
+    let cmd=0
+    if executable('cp')
+        let cmd='cp --'
+    elseif executable('copy')
+        let cmd='copy'
+    endif
+    if cmd is 0
+        try
+            if writefile(readfile(src, 'b'), tgt, 'b')!=0
+                call s:_f.throw('wrfail', src, tgt)
+            endif
+        endtry
+    else
+        let hasnls=(stridx(src.tgt, "\n")==-1)
+        let cmd.=' '.shellescape(src, hasnls).' '.shellescape(tgt, hasnls)
+        if hasnls
+            let shout=system(cmd)
+        else
+            noautocmd tabnew
+            noautocmd setlocal buftype=nofile
+            noautocmd execute 'silent! %!'.cmd
+            let shout=join(getline(1, '$'), "\n")
+            noautocmd tabclose
+        endif
+        if v:shell_error
+            call s:_f.throw('cpfail', src, tgt, shout)
+        endif
+    endif
+    call a:repo.functions.add(a:repo, tgt)
+endfunction
+"▶1 remove
+function s:deffuncs.remove(repo, file)
+    call a:repo.functions.forget(a:repo, a:file)
+    let file=s:_r.os.path.join(a:repo.path, a:file)
+    if s:_r.os.path.isfile(file)
+        if delete(file)
+            call s:_f.throw('nrm', a:file, a:repo.path)
+        endif
+    endif
+endfunction
+"▶1 grep :: repo, pattern, [file], [Either hex (hex, hex)], ic, _ → qflist
+function s:deffuncs.grep(repo, pattern, files, revs, ic, wdf)
+    if empty(a:revs)
+        let cs=a:repo.functions.getwork(a:repo)
+        let filelist=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
+        if !empty(a:files)
+            call filter(filelist, 'index(a:files, v:val)!=-1')
+        endif
+        call map(filelist, 's:_r.os.path.join(a:repo.path, v:val)')
+        call filter(filelist, 'filereadable(v:val)')
+        let expr='readfile(fspec, "b")'
+    else
+        let css=[]
+        for rspec in a:revs
+            if type(rspec)==type([])
+                let css+=a:repo.functions.revrange(a:repo, rspec[0], rspec[1])
+            else
+                let css+=[a:repo.functions.getcs(a:repo, rspec)]
+            endif
+            unlet rspec
+        endfor
+        let filelist=[]
+        let gcspexpr='a:repo.functions.getcsprop(a:repo, v:val, "allfiles")'
+        let mexpr='extend(filelist, '.
+                    \    'map('.((empty(a:files))?
+                    \               (gcspexpr):
+                    \               ('filter(copy('.gcspexpr.'), '.
+                    \                       '"index(a:files, v:val)!=-1")')).
+                    \        ', "[css[".v:key."].hex, v:val]"))'
+        call map(copy(css), mexpr)
+        let expr='a:repo.functions.readfile(a:repo, fspec[0], fspec[1])'
+    endif
+    let r=[]
+    let fexpr='v:val[1]=~'.('?#'[!a:ic]).string(a:pattern)
+    for fspec in filelist
+        let r+=map(filter(map(copy(eval(expr)), '[v:key, v:val]'), fexpr),
+                    \'{"filename": fspec,"lnum": v:val[0]+1,"text": v:val[1]}')
+    endfor
+    return r
+endfunction
+"▶1 difftobuffer
+function s:deffuncs.difftobuffer(repo, buf, ...)
+    let diff=call(a:repo.functions.diff, [a:repo]+a:000, {})
+    let oldbuf=bufnr('%')
+    if oldbuf!=a:buf
+        execute 'buffer' a:buf
+    endif
+    call s:_r.lineutils.setlines(diff, 0)
+    if oldbuf!=a:buf
+        execute 'buffer' oldbuf
+    endif
+endfunction
+"▶1 diffname :: _, line, diffre, _ → rpath
+function s:deffuncs.diffname(repo, line, diffre, opts)
+    return get(matchlist(a:line, a:diffre), 1, 0)
+endfunction
+"▶1 getstats :: _, diff, diffopts → stats
+" stats :: { ( "insertions" | "deletions" ): UInt,
+"            "files": { ( "insertions" | "deletions" ): UInt } }
+function s:deffuncs.getstats(repo, diff, opts)
+    let diffre=a:repo.functions.diffre(a:repo, a:opts)
+    let i=0
+    let llines=len(a:diff)
+    let stats={'files': {}, 'insertions': 0, 'deletions': 0}
+    let file=0
+    let pmlines=0
+    while i<llines
+        let line=a:diff[i]
+        let newfile=a:repo.functions.diffname(a:repo, line, diffre, a:opts)
+        if newfile isnot 0
+            let file=newfile
+            let stats.files[file]={'insertions': 0, 'deletions': 0,}
+            let pmlines=2
+        elseif file is 0
+        elseif pmlines
+            let lstart=line[:2]
+            if lstart is# '+++' || lstart is# '---'
+                let pmlines-=1
+            endif
+        elseif line[0] is# '+'
+            let stats.insertions+=1
+            let stats.files[file].insertions+=1
+        elseif line[0] is# '-'
+            let stats.deletions+=1
+            let stats.files[file].deletions+=1
+        endif
+        let i+=1
+    endwhile
+    return stats
+endfunction
+"▶1 reltorepo :: repo, path → rpath
+function s:deffuncs.reltorepo(repo, path)
+    return join(s:_r.os.path.split(s:_r.os.path.relpath(a:path,
+                \                                       a:repo.path))[1:], '/')
+endfunction
+"▶1 checkremote
+function s:deffuncs.checkremote(...)
+    return 0
+endfunction
 "▶1 iterfuncs: cs generators
 " startfunc (here)  :: repo, opts → d
 "▶2 ancestors
@@ -158,246 +358,6 @@ function s:iterfuncs.revrange.next(d)
 endfunction
 "▶2 changesets
 let s:iterfuncs.changesets=s:iterfuncs.revrange
-"▶1 setlines :: [String], read::Bool → + buffer
-function s:F.setlines(lines, read)
-    let d={'set': function((a:read)?('append'):('setline'))}
-    if len(a:lines)>1 && empty(a:lines[-1])
-        call d.set('.', a:lines[:-2])
-    else
-        if !a:read
-            setlocal binary noendofline
-        endif
-        call d.set('.', a:lines)
-    endif
-endfunction
-"▶1 dirty :: repo, file → Bool
-function s:deffuncs.dirty(repo, file)
-    let status=a:repo.functions.status(a:repo, 0, 0, [a:file])
-    for [type, files] in items(status)
-        if type is# 'ignored' || type is# 'clean'
-            continue
-        endif
-        if index(files, a:file)!=-1
-            return 1
-        endif
-    endfor
-    return 0
-endfunction
-"▶1 getnthparent :: repo, rev, n → cs
-function s:deffuncs.getnthparent(repo, rev, n)
-    let r=a:repo.functions.getcs(a:repo, a:rev)
-    let key=((a:n>0)?('parents'):('children'))
-    for i in range(1, abs(a:n))
-        let rl=a:repo.functions.getcsprop(a:repo, r, key)
-        if empty(rl)
-            break
-        endif
-        let r=a:repo.functions.getcs(a:repo, rl[0])
-    endfor
-    return r
-endfunction
-"▶1 reltorepo :: repo, path → rpath
-function s:deffuncs.reltorepo(repo, path)
-    return join(s:_r.os.path.split(s:_r.os.path.relpath(a:path,
-                \                                       a:repo.path))[1:], '/')
-endfunction
-"▶1 getcsprop :: repo, Either cs rev, propname → a
-function s:deffuncs.getcsprop(repo, csr, propname)
-    if type(a:csr)==type({})
-        let cs=a:csr
-    else
-        let cs=a:repo.functions.getcs(a:repo, a:csr)
-    endif
-    if has_key(cs, a:propname)
-        return cs[a:propname]
-    endif
-    call a:repo.functions.setcsprop(a:repo, cs, a:propname)
-    " XXX There is much code relying on the fact that after getcsprop property 
-    " with given name is added to changeset dictionary
-    return cs[a:propname]
-endfunction
-"▶1 revrange :: repo, rev, rev → [cs]
-function s:F.getrev(repo, rev, cslist)
-    if type(a:rev)==type(0)
-        if a:rev<0
-            return len(a:cslist)+a:rev
-        else
-            return a:rev
-        endif
-    else
-        return a:repo.functions.getcs(a:repo, a:rev).rev
-    endif
-endfunction
-function s:deffuncs.revrange(repo, rev1, rev2)
-    if empty(a:repo.cslist)
-        let cslist=a:repo.functions.getchangesets(a:repo)
-    else
-        let cslist=a:repo.cslist
-    endif
-    let rev1=s:F.getrev(a:repo, a:rev1, cslist)
-    let rev2=s:F.getrev(a:repo, a:rev2, cslist)
-    if rev1>rev2
-        let [rev1, rev2]=[rev2, rev1]
-    endif
-    return cslist[(rev1):(rev2)]
-endfunction
-"▶1 difftobuffer
-function s:deffuncs.difftobuffer(repo, buf, ...)
-    let diff=call(a:repo.functions.diff, [a:repo]+a:000, {})
-    let oldbuf=bufnr('%')
-    if oldbuf!=a:buf
-        execute 'buffer' a:buf
-    endif
-    call s:F.setlines(diff, 0)
-    if oldbuf!=a:buf
-        execute 'buffer' oldbuf
-    endif
-endfunction
-"▶1 diffname :: _, line, diffre, _ → rpath
-function s:deffuncs.diffname(repo, line, diffre, opts)
-    return get(matchlist(a:line, a:diffre), 1, 0)
-endfunction
-"▶1 getstats :: _, diff, diffopts → stats
-" stats :: { ( "insertions" | "deletions" ): UInt,
-"            "files": { ( "insertions" | "deletions" ): UInt } }
-function s:deffuncs.getstats(repo, diff, opts)
-    let diffre=a:repo.functions.diffre(a:repo, a:opts)
-    let i=0
-    let llines=len(a:diff)
-    let stats={'files': {}, 'insertions': 0, 'deletions': 0}
-    let file=0
-    let pmlines=0
-    while i<llines
-        let line=a:diff[i]
-        let newfile=a:repo.functions.diffname(a:repo, line, diffre, a:opts)
-        if newfile isnot 0
-            let file=newfile
-            let stats.files[file]={'insertions': 0, 'deletions': 0,}
-            let pmlines=2
-        elseif file is 0
-        elseif pmlines
-            let lstart=line[:2]
-            if lstart is# '+++' || lstart is# '---'
-                let pmlines-=1
-            endif
-        elseif line[0] is# '+'
-            let stats.insertions+=1
-            let stats.files[file].insertions+=1
-        elseif line[0] is# '-'
-            let stats.deletions+=1
-            let stats.files[file].deletions+=1
-        endif
-        let i+=1
-    endwhile
-    return stats
-endfunction
-"▶1 grep :: repo, pattern, [file], [Either hex (hex, hex)], ic, _ → qflist
-function s:deffuncs.grep(repo, pattern, files, revs, ic, wdf)
-    if empty(a:revs)
-        let cs=a:repo.functions.getwork(a:repo)
-        let filelist=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
-        if !empty(a:files)
-            call filter(filelist, 'index(a:files, v:val)!=-1')
-        endif
-        call map(filelist, 's:_r.os.path.join(a:repo.path, v:val)')
-        call filter(filelist, 'filereadable(v:val)')
-        let expr='readfile(fspec, "b")'
-    else
-        let css=[]
-        for rspec in a:revs
-            if type(rspec)==type([])
-                let css+=a:repo.functions.revrange(a:repo, rspec[0], rspec[1])
-            else
-                let css+=[a:repo.functions.getcs(a:repo, rspec)]
-            endif
-            unlet rspec
-        endfor
-        let filelist=[]
-        let gcspexpr='a:repo.functions.getcsprop(a:repo, v:val, "allfiles")'
-        let mexpr='extend(filelist, '.
-                    \    'map('.((empty(a:files))?
-                    \               (gcspexpr):
-                    \               ('filter(copy('.gcspexpr.'), '.
-                    \                       '"index(a:files, v:val)!=-1")')).
-                    \        ', "[css[".v:key."].hex, v:val]"))'
-        call map(copy(css), mexpr)
-        let expr='a:repo.functions.readfile(a:repo, fspec[0], fspec[1])'
-    endif
-    let r=[]
-    let fexpr='v:val[1]=~'.('?#'[!a:ic]).string(a:pattern)
-    for fspec in filelist
-        let r+=map(filter(map(copy(eval(expr)), '[v:key, v:val]'), fexpr),
-                    \'{"filename": fspec,"lnum": v:val[0]+1,"text": v:val[1]}')
-    endfor
-    return r
-endfunction
-"▶1 copy
-function s:deffuncs.copy(repo, force, source, target)
-    let src=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:source))
-    let tgt=s:_r.os.path.normpath(s:_r.os.path.join(a:repo.path, a:target))
-    if filewritable(tgt)==1
-        if a:force
-            call delete(tgt)
-        else
-            call s:_f.throw('tgtex', tgt)
-        endif
-    elseif s:_r.os.path.exists(tgt)
-        " Don’t try to delete directories and non-writable files.
-        call s:_f.throw('tgtex', tgt)
-    endif
-    let cmd=0
-    if executable('cp')
-        let cmd='cp --'
-    elseif executable('copy')
-        let cmd='copy'
-    endif
-    if cmd is 0
-        try
-            if writefile(readfile(src, 'b'), tgt, 'b')!=0
-                call s:_f.throw('wrfail', src, tgt)
-            endif
-        endtry
-    else
-        let hasnls=(stridx(src.tgt, "\n")==-1)
-        let cmd.=' '.shellescape(src, hasnls).' '.shellescape(tgt, hasnls)
-        if hasnls
-            let shout=system(cmd)
-        else
-            noautocmd tabnew
-            noautocmd setlocal buftype=nofile
-            noautocmd execute 'silent! %!'.cmd
-            let shout=join(getline(1, '$'), "\n")
-            noautocmd tabclose
-        endif
-        if v:shell_error
-            call s:_f.throw('cpfail', src, tgt, shout)
-        endif
-    endif
-    call a:repo.functions.add(a:repo, tgt)
-endfunction
-"▶1 move
-function s:deffuncs.move(repo, force, source, target)
-    call a:repo.functions.copy(a:repo, a:force, a:source, a:target)
-    call a:repo.functions.remove(a:repo, a:source)
-endfunction
-"▶1 remove
-function s:deffuncs.remove(repo, file)
-    call a:repo.functions.forget(a:repo, a:file)
-    let file=s:_r.os.path.join(a:repo.path, a:file)
-    if s:_r.os.path.isfile(file)
-        if delete(file)
-            call s:_f.throw('nrm', a:file, a:repo.path)
-        endif
-    endif
-endfunction
-"▶1 checkremote
-function s:deffuncs.checkremote(...)
-    return 0
-endfunction
-"▶1 getrevhex
-function s:deffuncs.getrevhex(repo, rev)
-    return a:rev.''
-endfunction
 "▶1 getdriver :: path, type → Maybe driver
 function s:F.getdriver(path, ptype)
     for driver in values(s:drivers)
@@ -527,7 +487,6 @@ call s:_f.postresource('repo', {'get': s:F.getrepo,
             \                'update': s:F.update,
             \           'diffoptslst': s:diffoptslst,
             \           'diffoptsstr': s:diffoptsstr,})
-call s:_f.postresource('setlines', s:F.setlines)
 "▶1 regdriver feature
 let s:requiredfuncs=['repo', 'getcs', 'checkdir']
 let s:optfuncs=['readfile', 'annotate', 'diff', 'status', 'commit', 'update',

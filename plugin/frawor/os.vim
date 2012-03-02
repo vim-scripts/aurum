@@ -1,6 +1,6 @@
 "▶1 Header
 scriptencoding utf-8
-execute frawor#Setup('0.1', {'@/resources': '0.0'}, 1)
+execute frawor#Setup('0.2', {'@/resources': '0.0'}, 1)
 "▶1 os resource
 let s:os={}
 "▶2 os.fullname
@@ -221,54 +221,83 @@ function s:os.chdir(path, ...)
     endif
     return 0
 endfunction
-"▶2 os.run            :: command[, cwd::path] → String + sh
+"▶2 run               :: command[, path] → shell_error + sh
 let s:opts={
             \ 'eventignore': 'all',
             \   'autowrite':   0,
             \'autowriteall':   0,
             \  'lazyredraw':   1,
         \}
-function s:os.run(command, ...)
-    let hasnewlines=!empty(filter(copy(a:command), 'stridx(v:val, "\n")>0'))
+function s:F.run(cmd, ...)
+    try
+        if a:0
+            let savedopts={}
+            for [opt, val] in items(s:opts)
+                let savedopts[opt]=eval('&g:'.opt)
+                execute 'let &g:'.opt.'=val'
+            endfor
+            new
+            if !s:os.chdir(a:1, 1)
+                return -1
+            endif
+        endif
+        execute 'silent! !'.a:cmd
+        return v:shell_error
+    finally
+        if exists('savedopts')
+            for [opt, val] in items(savedopts)
+                execute 'let &g:'.opt.'=val'
+            endfor
+            bwipeout!
+            redraw!
+        endif
+    endtry
+endfunction
+"▶2 getcmd            :: command → cmd
+function s:F.getcmd(command)
+    if type(a:command)==type('')
+        return a:command
+    endif
     if s:os.name is# 'nt'
         let cmd=escape(a:command[0], '\ %')
         if len(a:command)>1
             let cmd.=' '.join(map(a:command[1:],
                         \'((v:val=~#"^[[:alnum:]/\\-]\\+$")?'.
                         \   '(v:val):'.
-                        \   '(shellescape(v:val, hasnewlines)))'))
+                        \   '(shellescape(v:val, 1)))'))
         endif
     else
-        let cmd=join(map(copy(a:command), 'shellescape(v:val, hasnewlines)'))
+        let cmd=join(map(copy(a:command), 'shellescape(v:val, 1)'))
+    endif
+    return cmd
+endfunction
+"▶2 os.run            :: command[, cwd::path] → shell_error + sh
+function s:os.run(command, ...)
+    return call(s:F.run, [s:F.getcmd(a:command)]+a:000, {})
+endfunction
+"▶2 os.readsystem :: command[, path] → [String] + sh
+function s:os.readsystem(command, ...)
+    let tempfile=tempname()
+    let cmd=s:F.getcmd(a:command)
+    let etempfile=shellescape(tempfile, stridx(cmd, "\n")!=-1)
+    if stridx(&shellredir, '%s')!=-1
+        let cmd.=printf(&shellredir, etempfile)
+    else
+        let cmd.=&shellredir.etempfile
     endif
     try
-        if a:0
-            let savedopts={}
-            for [opt, val] in items(s:opts)
-                let savedopts[opt]=eval('&g:'.opt)
-                execute 'let &g:'.opt.'='.val
-            endfor
-            new
-            if !s:os.chdir(a:1, 1)
-                bwipeout
-                return -1
-            endif
+        call call(s:F.run, [cmd]+a:000, {})
+        if !filereadable(tempfile)
+            return 0
         endif
-        if hasnewlines
-            execute 'silent! !'.cmd
-        else
-            call system(cmd)
-        endif
-        redraw!
-        return v:shell_error
+        return readfile(tempfile, 'b')
     finally
-        if exists('savedopts')
-            for [opt, val] in items(savedopts)
-                execute 'let &g:'.opt.'='.val
-            endfor
+        if filereadable(tempfile)
+            call delete(tempfile)
         endif
     endtry
 endfunction
+"▶2 os.readrun
 "▶2 mkdir, makedirs
 if exists('*mkdir')
     "▶3 os.makedirs       :: path[, mode] → Bool + FS

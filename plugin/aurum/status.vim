@@ -4,7 +4,7 @@ if !exists('s:_pluginloaded')
     execute frawor#Setup('1.1', {'@/resources': '0.0',
                 \            '@aurum/cmdutils': '0.0',
                 \                      '@/fwc': '0.2',
-                \                '@aurum/repo': '2.4',
+                \                '@aurum/repo': '3.0',
                 \                '@aurum/edit': '1.0',
                 \                 '@/commands': '0.0',
                 \                  '@/options': '0.0',

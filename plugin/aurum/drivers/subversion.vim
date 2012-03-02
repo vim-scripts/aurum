@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {   '@aurum/repo': '2.3',
+    execute frawor#Setup('0.1', {   '@aurum/repo': '3.0',
                 \                          '@/os': '0.0',
                 \   '@aurum/drivers/common/utils': '0.0',
                 \     '@aurum/drivers/common/xml': '0.0',
@@ -225,6 +225,49 @@ function s:F.parsecs(repo, xml)
     endwhile
     return cs
 endfunction
+"▶1 svn.getcs :: repo, rev → cs
+function s:svn.getcs(repo, rev)
+    "▶2 Do the best trying to get it from repo.changesets
+    if has_key(a:repo.changesets, a:rev)
+        return a:repo.changesets[a:rev]
+    else
+        let rev=a:repo.functions.getrevhex(a:repo, a:rev)
+        if has_key(a:repo.changesets, rev)
+            return a:repo.changesets[rev]
+        elseif !empty(a:repo.cslist)
+            call a:repo.functions.updatechangesets(a:repo)
+            if has_key(a:repo.changesets, rev)
+                return a:repo.changesets[rev]
+            endif
+        endif
+    endif
+    "▲2
+    let cs=s:F.parsecs(a:repo,
+                \      s:_r.xml.new(
+                \      s:F.svn(a:repo, 'log', ['--', a:repo.svnroot],
+                \              {'revision': rev, 'limit': '1', 'xml': 1,
+                \               'verbose': 1},
+                \              0, 'csf', a:rev)[2:]))
+    let a:repo.changesets[cs.hex]=cs
+    return a:repo.changesets[cs.hex]
+endfunction
+"▶1 svn.getwork :: repo → cs
+function s:svn.getwork(repo)
+    return a:repo.functions.getcs(a:repo, 'BASE')
+endfunction
+"▶1 svn.getnthparent :: repo, rev, n → cs
+function s:svn.getnthparent(repo, rev, n)
+    let rev=a:repo.functions.getrevhex(a:repo, a:rev)-a:n
+    if a:n<0 && rev<=0
+        let rev=0
+    elseif a:n>0
+        let tiprev=+a:repo.functions.gettiphex(a:repo)
+        if rev>tiprev
+            let rev=tiprev
+        endif
+    endif
+    return a:repo.functions.getcs(a:repo, rev)
+endfunction
 "▶1 getchangesets :: repo → [cs]
 function s:F.getchangesets(repo, ...)
     let args=['--', a:repo.svnroot]
@@ -261,25 +304,6 @@ function s:svn.getchangesets(repo)
     endif
     return a:repo.cslist
 endfunction
-"▶1 svn.updatechangesets :: repo → _
-function s:svn.updatechangesets(repo)
-    let oldtiprev=a:repo.cslist[-1].rev
-    let tiprev=+a:repo.functions.gettiphex(a:repo)
-    if tiprev<oldtiprev
-        while !empty(a:repo.cslist) && a:repo.cslist[-1].rev>tiprev
-            call remove(a:repo.cslist, -1)
-        endwhile
-    elseif tiprev>oldtiprev
-        let cslist=s:F.getchangesets(a:repo, ''.oldtiprev, ''.tiprev)
-        if !empty(cslist)
-            let a:repo.cslist[-1].children=''.(a:repo.cslist[-1].rev+1)
-            call map(cslist[:-2], 'extend(v:val, {"children": '.
-                        \                                '["".(v:val.rev-1)]})')
-            let a:repo.cslist+=cslist
-        endif
-    endif
-    let a:repo.cslist[-1].children=[]
-endfunction
 "▶1 svn.revrange :: repo, rev1, rev2 → [cs]
 function s:svn.revrange(repo, rev1, rev2)
     if empty(a:repo.cslist)
@@ -301,73 +325,33 @@ function s:svn.revrange(repo, rev1, rev2)
     endif
     return a:repo.cslist[(i):(r2i)]
 endfunction
-"▶1 svn.getcs :: repo, rev → cs
-function s:svn.getcs(repo, rev)
-    "▶2 Do the best trying to get it from repo.changesets
-    if has_key(a:repo.changesets, a:rev)
-        return a:repo.changesets[a:rev]
-    else
-        let rev=a:repo.functions.getrevhex(a:repo, a:rev)
-        if has_key(a:repo.changesets, rev)
-            return a:repo.changesets[rev]
-        elseif !empty(a:repo.cslist)
-            call a:repo.functions.updatechangesets(a:repo)
-            if has_key(a:repo.changesets, rev)
-                return a:repo.changesets[rev]
-            endif
+"▶1 svn.updatechangesets :: repo → _
+function s:svn.updatechangesets(repo)
+    let oldtiprev=a:repo.cslist[-1].rev
+    let tiprev=+a:repo.functions.gettiphex(a:repo)
+    if tiprev<oldtiprev
+        while !empty(a:repo.cslist) && a:repo.cslist[-1].rev>tiprev
+            call remove(a:repo.cslist, -1)
+        endwhile
+    elseif tiprev>oldtiprev
+        let cslist=s:F.getchangesets(a:repo, ''.oldtiprev, ''.tiprev)
+        if !empty(cslist)
+            let a:repo.cslist[-1].children=''.(a:repo.cslist[-1].rev+1)
+            call map(cslist[:-2], 'extend(v:val, {"children": '.
+                        \                                '["".(v:val.rev-1)]})')
+            let a:repo.cslist+=cslist
         endif
     endif
-    "▲2
-    let cs=s:F.parsecs(a:repo,
-                \      s:_r.xml.new(
-                \      s:F.svn(a:repo, 'log', ['--', a:repo.svnroot],
-                \              {'revision': rev, 'limit': '1', 'xml': 1,
-                \               'verbose': 1},
-                \              0, 'csf', a:rev)[2:]))
-    let a:repo.changesets[cs.hex]=cs
-    return a:repo.changesets[cs.hex]
+    let a:repo.cslist[-1].children=[]
 endfunction
-"▶1 svn.getwork :: repo → cs
-function s:svn.getwork(repo)
-    return a:repo.functions.getcs(a:repo, 'BASE')
+"▶1 svn.gettiphex :: repo → hex
+function s:svn.gettiphex(repo)
+    return a:repo.functions.getrevhex(a:repo, 'HEAD')
 endfunction
 "▶1 svn.getworkhex :: repo → hex
 function s:svn.getworkhex(repo)
     return a:repo.functions.getrevhex(a:repo, 'BASE')
 endfunction
-"▶1 svn.gettiphex
-function s:svn.gettiphex(repo)
-    return a:repo.functions.getrevhex(a:repo, 'HEAD')
-endfunction
-"▶1 iterfuncs.ancestors
-let s:iterfuncs.ancestors={}
-function s:iterfuncs.ancestors.start(repo, opts)
-    let cslist=copy(a:repo.functions.revrange(a:repo, '1', a:opts.revision))
-    return {'cslist': cslist}
-endfunction
-function s:iterfuncs.ancestors.next(d)
-    while !empty(a:d.cslist)
-        let cs=remove(a:d.cslist, -1)
-        if !empty(cs.changes)
-            return cs
-        endif
-    endwhile
-    return 0
-endfunction
-"▶1 iterfuncs.changesets
-let s:iterfuncs.changesets={}
-function s:iterfuncs.changesets.start(repo, opts)
-    return {'cslist': copy(a:repo.functions.getchangesets(a:repo))}
-endfunction
-let s:iterfuncs.changesets.next=s:iterfuncs.ancestors.next
-"▶1 iterfuncs.revrange
-let s:iterfuncs.revrange={}
-function s:iterfuncs.revrange.start(repo, opts)
-    let cslist=copy(a:repo.functions.revrange(a:repo, a:opts.revrange[0],
-                \                                     a:opts.revrange[1]))
-    return {'cslist': cslist}
-endfunction
-let s:iterfuncs.revrange.next=s:iterfuncs.ancestors.next
 "▶1 svn.setcsprop :: repo, cs, propname → propvalue
 function s:svn.setcsprop(repo, cs, prop)
     if a:prop is# 'allfiles'
@@ -385,119 +369,6 @@ function s:svn.setcsprop(repo, cs, prop)
         endif
     endif
     let a:cs[a:prop]=r
-    return r
-endfunction
-"▶1 svn.readfile :: repo, rev, file → [String]
-function s:svn.readfile(repo, rev, file)
-    return s:F.svn(a:repo, 'cat', ['--', a:file], {'revision': a:rev}, 2,
-                \  'filef', a:rev, a:file)
-endfunction
-"▶1 svn.diff :: repo, rev, rev, files, opts → [String]
-let s:difftrans={
-            \ 'numlines': 'unified',
-            \ 'ignorews': 'ignore-all-space',
-            \'iwsamount': 'ignore-space-change',
-            \ 'showfunc': 'show-c-function',
-        \}
-function s:svn.diff(repo, rev1, rev2, files, opts)
-    let cancache=1
-    "▶2 Get --extensions arguments
-    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
-    if has_key(diffopts, 'unified') && diffopts.unified && diffopts.unified!=3
-        call s:_f.throw('u3', diffopts.unified)
-    endif
-    let reverse=get(a:opts, 'reverse', 0)
-    let kwargs={}
-    let args=[]
-    for [k, v] in items(diffopts)
-        if v
-            let args+=['--extensions', '--'.k]
-        endif
-    endfor
-    "▶2 Get revision arguments
-    if empty(a:rev2)
-        if !empty(a:rev1)
-            if reverse
-                let kwargs.revision=a:rev1.':'.(a:rev1-1)
-            else
-                let kwargs.change=''.a:rev1
-            endif
-        elseif reverse
-            call s:_f.throw('rnimp')
-        endif
-    else
-        let kwargs.revision=''.a:rev2
-        if empty(a:rev1)
-            if reverse
-                call s:_f.throw('rnimp')
-            endif
-            let cancache=0
-        else
-            if reverse
-                let kwargs.revision=a:rev1.':'.kwargs.revision
-            else
-                let kwargs.revision.=':'.a:rev1
-            endif
-        endif
-    endif
-    "▶2 Get files arguments
-    if !empty(a:files)
-        " FIXME Work with case when local repository root is not remote 
-        " repository root
-        let args+=['--']+a:files
-    endif
-    "▶2 Process cache
-    if cancache
-        let cachekey=string(args).string(sort(items(kwargs)))
-        if !has_key(a:repo, 'diffcache')
-            let a:repo.diffcache={}
-        elseif has_key(a:repo.diffcache, cachekey)
-            let cache=a:repo.diffcache[cachekey]
-            let cache.acccount+=1
-            return copy(cache.diff)
-        endif
-    endif
-    "▲2
-    let r=s:F.svn(a:repo, 'diff', args, kwargs, 1,
-                \ 'difff', a:rev1, a:rev2, join(a:files, ', '))
-    "▶2 Remove cache entries if needed
-    if cancache
-        let cache={'diff': copy(r), 'acccount': 1}
-        if len(keys(a:repo.diffcache))==50
-            let dcitems=items(a:repo.diffcache)
-            let [minacccountkey, ccache]=remove(dcitems, 0)
-            let minacccount=ccache.acccount
-            for [key, ccache] in dcitems
-                if ccache.acccount<minacccount
-                    let minacccountkey=key
-                    let minacccount=ccache.acccount
-                endif
-            endfor
-            call remove(a:repo.diffcache, minacccountkey)
-        endif
-        let a:repo.diffcache[cachekey]=cache
-    endif
-    "▲2
-    return r
-endfunction
-"▶1 svn.diffre :: _, opts → Regex
-function s:svn.diffre(repo, opts)
-    return '\m^Index: \v(.*)'
-endfunction
-"▶1 nullnl :: [String] → [String]
-" Convert between lines (NL separated strings with NULLs represented as NLs) and 
-" NULL separated strings with NLs represented by NLs.
-function s:F.nullnl(text)
-    let r=[]
-    for line in a:text
-        let nlsplit=split(line, "\n", 1)
-        if empty(r)
-            call extend(r, nlsplit)
-        else
-            let r[-1].="\n".nlsplit[0]
-            call extend(r, nlsplit[1:])
-        endif
-    endfor
     return r
 endfunction
 "▶1 status :: repo, files → (status, revstatus)
@@ -733,18 +604,6 @@ function s:svn.status(repo, ...)
     endif
     return r
 endfunction
-"▶1 svn.annotate :: repo, rev, file → [(file, hex, linenumber)]
-" TODO use merge history if available
-function s:svn.annotate(repo, rev, file)
-    let args=['--', a:file]
-    let kwargs={'revision': ''.a:rev}
-    let lines=s:F.svn(a:repo, 'blame', args, kwargs, 1, 'annf', a:rev, a:file)
-    let r=[]
-    for line in lines
-        let r+=[[a:file, matchstr(line, '\v\d+'), 0]]
-    endfor
-    return r
-endfunction
 "▶1 svn.commit :: repo, message[, files[, user[, date[, _]]]]
 function s:svn.commit(repo, message, ...)
     let args=[]
@@ -788,20 +647,20 @@ function s:svn.copy(repo, force, source, destination)
     return s:F.svnm(a:repo, 'copy', ['--', a:source, a:destination], {}, 0,
                 \   'cpf', a:source, a:destination)
 endfunction
-"▶1 svn.remove :: repo, file → + FS
-" FIXME For some reason :AuJ in drivers-subversion-subdir test is not actually 
-" removing file
-function s:svn.remove(repo, file)
-    return s:F.svnm(a:repo, 'delete', ['--', a:file], {}, 0, 'rmf', a:file)
+"▶1 svn.add :: repo, file → + FS
+function s:svn.add(repo, file)
+    return s:F.svnm(a:repo, 'add', ['--', a:file], {}, 0, 'addf', a:file)
 endfunction
 "▶1 svn.forget :: repo, file → + FS
 function s:svn.forget(repo, file)
     return s:F.svnm(a:repo, 'delete', ['--',a:file], {'keep-local':1}, 0, 'fgf',
                 \   a:file)
 endfunction
-"▶1 svn.add :: repo, file → + FS
-function s:svn.add(repo, file)
-    return s:F.svnm(a:repo, 'add', ['--', a:file], {}, 0, 'addf', a:file)
+"▶1 svn.remove :: repo, file → + FS
+" FIXME For some reason :AuJ in drivers-subversion-subdir test is not actually 
+" removing file
+function s:svn.remove(repo, file)
+    return s:F.svnm(a:repo, 'delete', ['--', a:file], {}, 0, 'rmf', a:file)
 endfunction
 "▶1 svn.ignore :: repo, file → + FS
 function s:svn.ignore(repo, file)
@@ -813,6 +672,115 @@ function s:svn.ignoreglob(repo, glob)
     let glob=s:_r.os.path.basename(a:glob)
     return s:F.svnm(a:repo, 'propset', ['svn:ignore', glob, dir], {}, 0,
                 \   'ignf', a:glob)
+endfunction
+"▶1 svn.readfile :: repo, rev, file → [String]
+function s:svn.readfile(repo, rev, file)
+    return s:F.svn(a:repo, 'cat', ['--', a:file], {'revision': a:rev}, 2,
+                \  'filef', a:rev, a:file)
+endfunction
+"▶1 svn.annotate :: repo, rev, file → [(file, hex, linenumber)]
+" TODO use merge history if available
+function s:svn.annotate(repo, rev, file)
+    let args=['--', a:file]
+    let kwargs={'revision': ''.a:rev}
+    let lines=s:F.svn(a:repo, 'blame', args, kwargs, 1, 'annf', a:rev, a:file)
+    let r=[]
+    for line in lines
+        let r+=[[a:file, matchstr(line, '\v\d+'), 0]]
+    endfor
+    return r
+endfunction
+"▶1 svn.diff :: repo, rev, rev, files, opts → [String]
+let s:difftrans={
+            \ 'numlines': 'unified',
+            \ 'ignorews': 'ignore-all-space',
+            \'iwsamount': 'ignore-space-change',
+            \ 'showfunc': 'show-c-function',
+        \}
+function s:svn.diff(repo, rev1, rev2, files, opts)
+    let cancache=1
+    "▶2 Get --extensions arguments
+    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
+    if has_key(diffopts, 'unified') && diffopts.unified && diffopts.unified!=3
+        call s:_f.throw('u3', diffopts.unified)
+    endif
+    let reverse=get(a:opts, 'reverse', 0)
+    let kwargs={}
+    let args=[]
+    for [k, v] in items(diffopts)
+        if v
+            let args+=['--extensions', '--'.k]
+        endif
+    endfor
+    "▶2 Get revision arguments
+    if empty(a:rev2)
+        if !empty(a:rev1)
+            if reverse
+                let kwargs.revision=a:rev1.':'.(a:rev1-1)
+            else
+                let kwargs.change=''.a:rev1
+            endif
+        elseif reverse
+            call s:_f.throw('rnimp')
+        endif
+    else
+        let kwargs.revision=''.a:rev2
+        if empty(a:rev1)
+            if reverse
+                call s:_f.throw('rnimp')
+            endif
+            let cancache=0
+        else
+            if reverse
+                let kwargs.revision=a:rev1.':'.kwargs.revision
+            else
+                let kwargs.revision.=':'.a:rev1
+            endif
+        endif
+    endif
+    "▶2 Get files arguments
+    if !empty(a:files)
+        " FIXME Work with case when local repository root is not remote 
+        " repository root
+        let args+=['--']+a:files
+    endif
+    "▶2 Process cache
+    if cancache
+        let cachekey=string(args).string(sort(items(kwargs)))
+        if !has_key(a:repo, 'diffcache')
+            let a:repo.diffcache={}
+        elseif has_key(a:repo.diffcache, cachekey)
+            let cache=a:repo.diffcache[cachekey]
+            let cache.acccount+=1
+            return copy(cache.diff)
+        endif
+    endif
+    "▲2
+    let r=s:F.svn(a:repo, 'diff', args, kwargs, 1,
+                \ 'difff', a:rev1, a:rev2, join(a:files, ', '))
+    "▶2 Remove cache entries if needed
+    if cancache
+        let cache={'diff': copy(r), 'acccount': 1}
+        if len(keys(a:repo.diffcache))==50
+            let dcitems=items(a:repo.diffcache)
+            let [minacccountkey, ccache]=remove(dcitems, 0)
+            let minacccount=ccache.acccount
+            for [key, ccache] in dcitems
+                if ccache.acccount<minacccount
+                    let minacccountkey=key
+                    let minacccount=ccache.acccount
+                endif
+            endfor
+            call remove(a:repo.diffcache, minacccountkey)
+        endif
+        let a:repo.diffcache[cachekey]=cache
+    endif
+    "▲2
+    return r
+endfunction
+"▶1 svn.diffre :: _, opts → Regex
+function s:svn.diffre(repo, opts)
+    return '\m^Index: \v(.*)'
 endfunction
 "▶1 svn.getrepoprop :: repo, propname → a
 function s:svn.getrepoprop(repo, prop)
@@ -864,6 +832,7 @@ function s:F.checkdir(dir)
     return s:_r.os.path.isdir(s:_r.os.path.join(a:dir, '.svn'))
 endfunction
 let s:svn.checkdir=s:F.checkdir
+" TODO Support remote repositories
 "▶1 svn.getroot :: dir → Maybe dir
 function s:svn.getroot(dir)
     let checkeddirs=[]
@@ -886,6 +855,35 @@ function s:svn.getroot(dir)
     endfor
     return a:dir
 endfunction
+"▶1 iterfuncs.ancestors
+let s:iterfuncs.ancestors={}
+function s:iterfuncs.ancestors.start(repo, opts)
+    let cslist=copy(a:repo.functions.revrange(a:repo, '1', a:opts.revision))
+    return {'cslist': cslist}
+endfunction
+function s:iterfuncs.ancestors.next(d)
+    while !empty(a:d.cslist)
+        let cs=remove(a:d.cslist, -1)
+        if !empty(cs.changes)
+            return cs
+        endif
+    endwhile
+    return 0
+endfunction
+"▶1 iterfuncs.changesets
+let s:iterfuncs.changesets={}
+function s:iterfuncs.changesets.start(repo, opts)
+    return {'cslist': copy(a:repo.functions.getchangesets(a:repo))}
+endfunction
+let s:iterfuncs.changesets.next=s:iterfuncs.ancestors.next
+"▶1 iterfuncs.revrange
+let s:iterfuncs.revrange={}
+function s:iterfuncs.revrange.start(repo, opts)
+    let cslist=copy(a:repo.functions.revrange(a:repo, a:opts.revrange[0],
+                \                                     a:opts.revrange[1]))
+    return {'cslist': cslist}
+endfunction
+let s:iterfuncs.revrange.next=s:iterfuncs.ancestors.next
 "▶1 Register driver
 call s:_f.regdriver('Subversion', s:svn)
 "▶1

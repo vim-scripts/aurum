@@ -11,11 +11,11 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/repo': '2.0',
+execute frawor#Setup('0.0', {'@aurum/repo': '3.0',
             \             '@aurum/bufvars': '0.0',
             \             '@aurum/vimdiff': '0.2',
             \            '@aurum/annotate': '0.0',
-            \                '@aurum/edit': '1.0',
+            \                '@aurum/edit': '1.2',
             \                 '@/mappings': '0.0',
             \                       '@/os': '0.0',})
 let s:_messages={
@@ -91,8 +91,8 @@ function s:F.runmap(action, ...)
                     endif
                     execute 'silent edit' fnameescape(file1)
                 else
-                    let existed=s:_r.run('silent edit', 'file', bvar.repo, rev1,
-                                \                               file)
+                    let existed=s:_r.mrun('silent edit',
+                                \         'file', bvar.repo, rev1, file)
                 endif
                 if existed
                     setlocal bufhidden=wipe
@@ -114,8 +114,8 @@ function s:F.runmap(action, ...)
             else
                 let dfile=file
             endif
-            let existed=s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2,
-                        \        ((a:0 && a:1)?([]):([dfile])), {})
+            let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, rev1, rev2,
+                        \         ((a:0 && a:1)?([]):([dfile])), {})
         endif
     "▶2 `open' action
     elseif a:action is# 'open'
@@ -150,7 +150,7 @@ function s:F.runmap(action, ...)
             let newbvar=s:_r.bufvars[abuf]
             execute abwnr.'wincmd w'
         endif
-        let existed=s:_r.run('silent edit', 'file', bvar.repo, hex, file)
+        let existed=s:_r.mrun('silent edit', 'file', bvar.repo, hex, file)
         if exists('lnr')
             execute lnr
         elseif exists('line')
@@ -191,7 +191,7 @@ function s:F.runmap(action, ...)
             vertical resize 42
             wincmd p
         endif
-        let existed=s:_r.run('silent edit', 'file', bvar.repo, rev, bvar.file)
+        let existed=s:_r.mrun('silent edit', 'file', bvar.repo, rev, bvar.file)
         setlocal scrollbind
         call s:_r.annotate.setannbuf(newbvar, abuf, bufnr('%'))
     endif

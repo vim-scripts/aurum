@@ -3,9 +3,10 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
                 \                 '@aurum/bufvars': '0.0',
+                \               '@aurum/lineutils': '0.0',
                 \                 '@aurum/vimdiff': '0.0',
-                \                    '@aurum/repo': '2.0',
-                \                    '@aurum/edit': '1.0',
+                \                    '@aurum/repo': '3.0',
+                \                    '@aurum/edit': '1.2',
                 \                           '@/os': '0.0',
                 \                          '@/fwc': '0.0',
                 \                     '@/mappings': '0.0',
@@ -44,7 +45,7 @@ function s:filefunc.function(rev, file, opts)
         let rev=repo.functions.getrevhex(repo, a:rev)
     endif
     if get(a:opts, 'replace', 0)
-        call s:_r.setlines(repo.functions.readfile(repo, rev, file), 0)
+        call s:_r.lineutils.setlines(repo.functions.readfile(repo, rev, file),0)
         return
     endif
     if hasbuf
@@ -75,7 +76,7 @@ call add(s:filecomp,
 "▶1 docmd :: [String], read::0|1|2 → _ + ?
 function s:F.docmd(lines, read)
     if a:read==0 || a:read==1
-        return s:_r.setlines(a:lines, a:read)
+        return s:_r.lineutils.setlines(a:lines, a:read)
     elseif a:read==2
         let tmpname=tempname()
         if writefile(a:lines, tmpname, 'b')==-1
@@ -91,7 +92,7 @@ function s:F.docmd(lines, read)
     endif
 endfunction
 "▶1 file resource
-let s:file={'arguments': 2, 'sourceable': 1}
+let s:file={'arguments': 2, 'sourceable': 1, 'mgroup': 'AuFile'}
 function s:file.function(read, repo, rev, file)
     let rev=a:repo.functions.getrevhex(a:repo, a:rev)
     call s:F.docmd(a:repo.functions.readfile(a:repo, rev, a:file), a:read)
@@ -135,7 +136,7 @@ function s:F.runfilemap(action)
                         \       '['.string(file).", 0], {})\n:wincmd p\n"
         endif
     elseif a:action is# 'diff' || a:action is# 'revdiff'
-        let opts='repo '.fnameescape(bvar.repo.path)
+        let opts='repo '.escape(bvar.repo.path, ' ')
         if a:action is# 'diff'
             let opts.=' rev2 '.bvar.rev
         else

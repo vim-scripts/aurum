@@ -3,7 +3,7 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
-                \                '@aurum/repo': '2.0',
+                \                '@aurum/repo': '3.0',
                 \                '@aurum/edit': '1.0',
                 \               '@aurum/cache': '0.0',
                 \             '@aurum/bufvars': '0.0',}, 0)

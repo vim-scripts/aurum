@@ -1,7 +1,8 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',}, 0)
+    execute frawor#Setup('0.0', {'@/resources': '0.0',
+                \                       '@/os': '0.2'}, 0)
     finish
 elseif s:_pluginloaded
     finish
@@ -26,28 +27,9 @@ endfunction
 "▶1 utils.run :: sh, hasnulls::0|1|2 → [String] + shell
 function s:utils.run(cmd, hasnulls, cdpath)
     if a:hasnulls==2 && !empty(&shellredir)
-        let tempfile=tempname()
-        let etempfile=shellescape(tempfile, 1)
-        let cmd=a:cmd
-        if stridx(&shellredir, '%s')!=-1
-            let cmd.=printf(&shellredir, etempfile)
-        else
-            let cmd.=&shellredir.etempfile
-        endif
-        if !empty(a:cdpath)
-            let cmd='cd '.shellescape(a:cdpath).' && '.cmd
-        endif
-        try
-            execute 'silent! !'.cmd
-            if !filereadable(tempfile)
-                return s:utils.run(a:cmd, 1, a:cdpath)
-            endif
-            return readfile(tempfile, 'b')
-        finally
-            if filereadable(tempfile)
-                call delete(tempfile)
-            endif
-        endtry
+        return call(s:_r.os.readsystem, [a:cmd]+(empty(a:cdpath)?
+                    \                               ([]):
+                    \                               ([a:cdpath])), {})
     elseif a:hasnulls
         let savedlazyredraw=&lazyredraw
         let savedeventignore=&eventignore

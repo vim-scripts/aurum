@@ -10,7 +10,7 @@ if !exists('s:_pluginloaded')
                 \                      '@/os': '0.1',
                 \           '@aurum/cmdutils': '0.0',
                 \                     '@/fwc': '0.2',
-                \               '@aurum/repo': '2.0',
+                \               '@aurum/repo': '3.0',
                 \               '@aurum/edit': '1.0',
                 \            '@aurum/bufvars': '0.0',}, 0)
     "▶2 Команды
@@ -385,9 +385,9 @@ function s:hypfunc.function(opts)
         call s:_r.cmdutils.checkrepo(repo)
         if utype is# 'bundle' || utype is# 'changeset' || utype is# 'log'
             if has_key(a:opts, 'rev')
-                let hex=repo.functions.getworkhex(repo)
-            else
                 let hex=repo.functions.getrevhex(repo, a:opts.rev)
+            else
+                let hex=repo.functions.getworkhex(repo)
             endif
         endif
     endif

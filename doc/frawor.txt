@@ -70,7 +70,8 @@ FraworRegister({version}, {sid}, {file}, {dependencies}, {oneload}, {g})
         type         First component of plugin file path that is not part of 
                      runtimepath (or `/unknown' if frawor failed to detect 
                      it).
-        It also sets s:_pluginloaded to either 1 for oneload plugins or 0.
+        It sets s:_pluginloaded to 1 for oneload plugins and 0 for other. Also 
+        see |s:_loading|.
                                                        *frawor-plid-expansion*
         If some key in {dependencies} dictionary starts with `@', then it is 
         transformed:
@@ -161,6 +162,13 @@ throw : function ({msgid}, ...) → exception                   *frawor-f-throw*
         `Frawor:{plid}:{msgid}:{message}' where {message} is a value returned 
         by |frawor-f-warn|. Semicolon and backslash in {plid} and {msgid} will 
         be escaped.
+require : function ({plid}, {dversion}, {throw}) → 0..2     *frawor-f-require*
+        Loads plugin {plid} and makes it dependency of the caller, also 
+        running all its features. {throw} argument determines what should be 
+        done if frawor failed to load requested plugin: if it is 1, then 
+        `Frawor:plugin/frawor:reqfailed' exception will be thrown, otherwise 
+        0 will be returned. 2 is returned when requested dependency was 
+        already added and 1 indicates that dependency was successfully loaded.
 newfeature : function ({fid}, {fopts})                   *frawor-f-newfeature*
            + unload
         Registers plugin feature with id {fid} ({fid} must contain only 
@@ -217,6 +225,11 @@ newfeature : function ({fid}, {fopts})                   *frawor-f-newfeature*
                                                          *frawor-fk-unloadpre*
         unloadpre  Just like unload, but function will be called when plugin 
                    is queued for unloading, but nothing was yet unloaded.
+                                                            *frawor-fk-depadd*
+        depadd     Reference to a function that will be called when dependency 
+                   was added using |frawor-f-require| feature. Receives 
+                   |frawor-t-plugdict|, feature dictionary and plugin id of 
+                   the added dependency as its arguments.
                                                         *frawor-fk-ignoredeps*
         ignoredeps If this key is present, then register, load, unload and 
                    unloadpre keys will be called for all plugins even if they 
@@ -609,7 +622,7 @@ postresource : function ({rid}, {resource}[, {copyfunc}])
            passed by references, so it won't have any affect when you share 
            strings, numbers or function references.
 
-addresource : load + s:_r                               *frawor-f-addresource*
+addresource : load, depadd + s:_r                       *frawor-f-addresource*
         Automatically adds resources that are defined by plugins listed in 
         dependencies to s:_r dictionary. It is |frawor-fk-ignoredeps| feature, 
         so you don't need anything to get it working.
@@ -806,12 +819,20 @@ os.walk :: path + FS -> [(path, [ component ], [ component ])]
         subdirectories' names and {filenames} is a list of regular file names.
         Note that symbolic links to existing directories are considered to be 
         directories themselves.
-os.run :: [command[, arg1[, arg2[, ...]]]][, path]           *frawor-r-os.run*
-        Runs command with given arguments and returns its exit code. Optional 
-        path argument designates working directory in which command should be 
-        run.
+os.run :: command[, path] -> shell_error|-1                  *frawor-r-os.run*
+        Runs command with given arguments and returns its exit code. “Command” 
+        may be either a list of strings (in this case they will get 
+        |shellescaped()| and joined with spaces) or a plain string (note that 
+        you must use {special}=1 when using |shellescape()|). Optional path 
+        argument designates working directory in which command should be run. 
+        If path is not accessible it may return -1.
         Note that os.run depends on 'shell', 'shellquote', 'shellxquote' and 
         'shellcmdflag' options being set correctly.
+os.readsystem :: command[, path] -> [ String ] | -1   *frawor-r-os.readsystem*
+        Like |frawor-r-os.run|, but returns command outputs instead in the 
+        same format as |readfile()| does. Additionally depends on 'shellredir' 
+        option being set correctly and |tempname()| returning writable file 
+        name.
 os.path.abspath :: path + FS -> path                *frawor-r-os.path.abspath*
         Returns an absolute path.
 os.path.realpath :: path + FS -> path              *frawor-r-os.path.realpath*
@@ -1351,6 +1372,9 @@ mapping :: {}                                               *frawor-t-mapping*
 *s:_pluginloaded*  plugin/frawor    Integer. Is set to 0 after plugin is 
                                   registered and then to 1 after plugin is 
                                   loaded.
+*s:_loading*       plugin/frawor    Integer. Is set to 1 when frawor started 
+                                  to load non-oneload plugin and unset after 
+                                  plugin was loaded.
 *s:_frawor*        plugin/frawor    Dictionary. Is set by |FraworRegister()|.
 *s:_messages*      plugin/frawor    Dictionary that contains strings as 
                                   values. Required for |frawor-f-warn| and 
@@ -1385,6 +1409,9 @@ mapping :: {}                                               *frawor-t-mapping*
 Only API changes are listed here. See commit log in order to get other 
 changes.
 
+@frawor:
+    0.1: Added |frawor-f-require| and |frawor-fk-depadd|
+    0.2: Added |s:_loading| variable
 @/mappings:
     0.1: Added possibility to specify dictionaries in `strfunc' and `func' 
          keys.
@@ -1396,9 +1423,15 @@ changes.
     0.3: (intfuncs-0.3) Added -onlystrings support for |FWC-c-range|
     0.4: (intfuncs-0.4) Made |FWC-f-isfunc| transform argument to a function 
                         reference
+@/fwc/constructor:
+    0.1: Added more functions
+    1.0: Renamed some functions so that they now have “_” at the start of 
+         their names
 @/os:
     0.1: Added |frawor-r-os.path.relpath|
          Made |frawor-r-os.path.normpath| also simplify its argument
+    0.2: Added |frawor-r-os.readsystem|, made |frawor-r-os.run| also accept 
+         plain strings as the first argument
 @/decorators/altervars:
     0.1: Added folds |frawor-av-special|
 

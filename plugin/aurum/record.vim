@@ -9,7 +9,8 @@ if !exists('s:_pluginloaded')
                 \                   '@/functions': '0.0',
                 \                 '@aurum/commit': '1.0',
                 \               '@aurum/cmdutils': '0.0',
-                \                   '@aurum/repo': '2.0',
+                \              '@aurum/lineutils': '0.0',
+                \                   '@aurum/repo': '3.0',
                 \                   '@aurum/edit': '1.0',
                 \                     '@/options': '0.0',}, 0)
     call FraworLoad('@/commands')
@@ -476,7 +477,7 @@ function s:F.runstatmap(action, ...)
                 let diff=&diff
                 if exists('fcontents')
                     silent %delete _
-                    call s:_r.setlines(fcontents, 0)
+                    call s:_r.lineutils.setlines(fcontents, 0)
                     if diff
                         diffupdate
                     endif

@@ -140,5 +140,5 @@ endfunction
 call s:_f.postresource('printtable', s:F.printtable)
 call s:_f.postresource('strdisplaywidth', s:F.strdisplaywidth)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded')
+call frawor#Lockvar(s:, '')
 " vim: fmr=▶,▲ sw=4 ts=4 sts=4 et tw=80

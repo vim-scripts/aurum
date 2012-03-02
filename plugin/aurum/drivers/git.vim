@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {   '@aurum/repo': '2.0',
+    execute frawor#Setup('0.1', {   '@aurum/repo': '3.0',
                 \                          '@/os': '0.1',
                 \   '@aurum/drivers/common/utils': '0.0',
                 \'@aurum/drivers/common/hypsites': '0.0',}, 0)
@@ -77,19 +77,6 @@ endfunction
 function s:F.gitm(...)
     return s:_r.utils.printm(call(s:F.git, a:000, {}))
 endfunction
-"▶1 git.getrevhex :: repo, rev → hex
-let s:prevrevhex={}
-function s:git.getrevhex(repo, rev)
-    if a:rev=~#'\v^[0-9a-f]{40}$'
-        if has_key(s:prevrevhex, a:repo.path)
-            unlet s:prevrevhex[a:repo.path]
-        endif
-        return a:rev
-    endif
-    let r=s:F.git(a:repo, 'rev-parse', [a:rev], {}, 0, 'hexf', a:rev)[0]
-    let s:prevrevhex[a:repo.path]=[a:rev, r]
-    return r
-endfunction
 "▶1 parsecs :: csdata, lstart::UInt → (cs, line::UInt)
 " hash-parent hashes-timestamp
 "  (refs)
@@ -124,6 +111,19 @@ function s:F.parsecs(csdata, lstart)
     endif
     "▲2
     return [cs, line]
+endfunction
+"▶1 git.getcs :: repo, rev → cs
+function s:git.getcs(repo, rev)
+    let cs=s:F.parsecs(s:F.git(a:repo, 'log', ['-n1', a:rev], s:logkwargs,
+                \              0, 'csf', a:rev),
+                \      0)[0]
+    " XXX This construct is used to preserve information like “allfiles” etc
+    let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex, {}), cs)
+    return a:repo.changesets[cs.hex]
+endfunction
+"▶1 git.getwork :: repo → cs
+function s:git.getwork(repo)
+    return a:repo.functions.getcs(a:repo, 'HEAD')
 endfunction
 "▶1 git.getchangesets :: repo → []
 function s:git.getchangesets(repo, ...)
@@ -167,26 +167,22 @@ function s:git.getchangesets(repo, ...)
     "▲2
     return cslist
 endfunction
-"▶1 git.updatechangesets :: repo → _
-let s:git.updatechangesets=s:git.getchangesets
 "▶1 git.revrange :: repo, rev1, rev2 → [cs]
 let s:git.revrange=s:git.getchangesets
-"▶1 git.getcs :: repo, rev → cs
-function s:git.getcs(repo, rev)
-    let cs=s:F.parsecs(s:F.git(a:repo, 'log', ['-n1', a:rev], s:logkwargs,
-                \              0, 'csf', a:rev),
-                \      0)[0]
-    " XXX This construct is used to preserve information like “allfiles” etc
-    let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex, {}), cs)
-    return a:repo.changesets[cs.hex]
-endfunction
-"▶1 git.getwork :: repo → cs
-function s:git.getwork(repo)
-    return a:repo.functions.getcs(a:repo, 'HEAD')
-endfunction
-"▶1 git.getworkhex :: repo → hex
-function s:git.getworkhex(repo)
-    return a:repo.functions.getrevhex(a:repo, 'HEAD')
+"▶1 git.updatechangesets :: repo → _
+let s:git.updatechangesets=s:git.getchangesets
+"▶1 git.getrevhex :: repo, rev → hex
+let s:prevrevhex={}
+function s:git.getrevhex(repo, rev)
+    if a:rev=~#'\v^[0-9a-f]{40}$'
+        if has_key(s:prevrevhex, a:repo.path)
+            unlet s:prevrevhex[a:repo.path]
+        endif
+        return a:rev
+    endif
+    let r=s:F.git(a:repo, 'rev-parse', [a:rev], {}, 0, 'hexf', a:rev)[0]
+    let s:prevrevhex[a:repo.path]=[a:rev, r]
+    return r
 endfunction
 "▶1 git.gettiphex
 " XXX Uses master or working directory revision instead of latest revision
@@ -196,6 +192,10 @@ function s:git.gettiphex(repo)
     catch
         return a:repo.functions.gettiphex(a:repo)
     endtry
+endfunction
+"▶1 git.getworkhex :: repo → hex
+function s:git.getworkhex(repo)
+    return a:repo.functions.getrevhex(a:repo, 'HEAD')
 endfunction
 "▶1 git.setcsprop :: repo, cs, propname → propvalue
 function s:git.setcsprop(repo, cs, prop)
@@ -267,75 +267,20 @@ function s:git.setcsprop(repo, cs, prop)
     let a:cs[a:prop]=r
     return r
 endfunction
-"▶1 git.readfile :: repo, rev, file → [String]
-function s:git.readfile(repo, rev, file)
-    return s:F.git(a:repo, 'cat-file', ['blob', a:rev.':'.a:file], {}, 2,
-                \  'filef', a:rev, a:file)
-endfunction
-"▶1 git.diff :: repo, rev, rev, files, opts → [String]
-let s:difftrans={
-            \  'reverse': 'R',
-            \ 'ignorews': 'ignore-all-space',
-            \'iwsamount': 'ignore-space-change',
-            \ 'numlines': 'unified',
-            \  'alltext': 'text',
-        \}
-function s:git.diff(repo, rev1, rev2, files, opts)
-    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
-    if has_key(diffopts, 'unified')
-        let diffopts.unified=''.diffopts.unified
-    endif
-    let kwargs=copy(diffopts)
-    let args=[]
-    if empty(a:rev2)
-        if !empty(a:rev1)
-            let args+=[a:rev1.'^..'.a:rev1]
-        endif
-    else
-        let args+=[a:rev2]
-        if !empty(a:rev1)
-            let args[-1].='..'.a:rev1
-        endif
-    endif
-    if !empty(a:files)
-        let args+=['--']+a:files
-    endif
-    let r=s:F.git(a:repo, 'diff', args, kwargs, 1,
-                \ 'difff', a:rev1, a:rev2, join(a:files, ', '))
-    return r
-endfunction
-"▶1 git.diffre :: _, opts → Regex
-let s:diffre='\m^diff --git \v((\")?%s\/.{-}\2) \2%s\/'
-function s:git.diffre(repo, opts)
-    if get(a:opts, 'reverse', 0)
-        return printf(s:diffre, 'b', 'a')
-    else
-        return printf(s:diffre, 'a', 'b')
-    endif
-endfunction
-"▶1 git.diffname :: _, line, diffre, _ → rpath
-function s:git.diffname(repo, line, diffre, opts)
-    let file=get(matchlist(a:line, a:diffre), 1, 0)
-    if file is 0
-        return 0
-    else
-        return s:F.refile(file)[2:]
-    endif
-endfunction
 "▶1 nullnl :: [String] → [String]
 " Convert between lines (NL separated strings with NULLs represented as NLs) and 
 " NULL separated strings with NLs represented by NLs.
 function s:F.nullnl(text)
-    let r=[]
-    for line in a:text
-        let nlsplit=split(line, "\n", 1)
-        if empty(r)
-            call extend(r, nlsplit)
-        else
-            let r[-1].="\n".nlsplit[0]
-            call extend(r, nlsplit[1:])
-        endif
+    let r=['']
+    for nlsplit in map(copy(a:text), 'split(v:val, "\n", 1)')
+        let r[-1].="\n".nlsplit[0]
+        call extend(r, nlsplit[1:])
     endfor
+    if empty(r[0])
+        call remove(r, 0)
+    else
+        let r[0]=r[0][1:]
+    endif
     return r
 endfunction
 "▶1 git.status :: repo[, rev1[, rev2[, files[, clean]]]]
@@ -423,23 +368,6 @@ function s:git.status(repo, ...)
     endif
     return r
 endfunction
-"▶1 git.annotate :: repo, rev, file → [(file, hex, linenumber)]
-function s:git.annotate(repo, rev, file)
-    let args=[a:rev, '--', a:file]
-    let kwargs={'porcelain': 1, 'C': 1, 'M': 1}
-    let lines=s:F.git(a:repo, 'blame', args, kwargs, 1, 'annf', a:rev, a:file)
-    call filter(lines, 'v:val=~#''\v^(\x{40}\ |filename\ )''')
-    let r=[]
-    let filename=a:file
-    while !empty(lines)
-        let line=remove(lines, 0)
-        if !empty(lines) && lines[0][:8] is# 'filename '
-            let filename=s:F.refile(remove(lines, 0)[9:])
-        endif
-        let r+=[[filename, line[:39], str2nr(line[41:])]]
-    endwhile
-    return r
-endfunction
 "▶1 git.commit :: repo, message[, files[, user[, date[, _]]]]
 function s:git.commit(repo, message, ...)
     let kwargs={'cleanup': 'verbatim'}
@@ -465,6 +393,34 @@ function s:git.commit(repo, message, ...)
     endif
     return s:_r.utils.usefile(a:repo, a:message, 'file', 'message',
                 \             s:F.gitm, args, kwargs, 0, 'cif')
+endfunction
+"▶1 git.branch :: repo, branchname, force → + FS
+function s:git.branch(repo, branch, force)
+    if a:force
+        return s:F.gitm(a:repo, 'checkout', [a:branch], {'B': 1}, 0,
+                    \   'chbf', a:branch)
+    else
+        call a:repo.functions.label(a:repo, 'branch', a:branch, 'HEAD', 0, 0)
+        call a:repo.functions.update(a:repo, a:branch, 0)
+    endif
+endfunction
+"▶1 git.label :: repo, type, label, rev, force, local → + FS
+function s:git.label(repo, type, label, rev, force, local)
+    if a:local
+        call s:_f.throw('nloc')
+    endif
+    let args=['--', a:label]
+    let kwargs={}
+    if a:force
+        let kwargs.force=1
+    endif
+    if a:rev is 0
+        let kwargs.d=1
+    else
+        let args+=[a:rev]
+    endif
+    return s:F.gitm(a:repo, a:type, args, kwargs, 0,
+                \   'lbf', a:type, a:label, a:rev)
 endfunction
 "▶1 git.update :: repo, rev, force → + FS
 " XXX This must not transform {rev} into hash: it will break rf-branch()
@@ -511,9 +467,9 @@ function s:git.move(repo, force, source, destination)
                 \   a:force ? {'force': 1} : {}, 0, 'mvf',
                 \   a:source, a:destination)
 endfunction
-"▶1 git.remove :: repo, file → + FS
-function s:git.remove(repo, file)
-    return s:F.gitm(a:repo, 'rm', ['--', a:file], {}, 0, 'rmf',
+"▶1 git.add :: repo, file → + FS
+function s:git.add(repo, file)
+    return s:F.gitm(a:repo, 'add', ['--', a:file], {}, 0, 'addf',
                 \   escape(a:file, '\'))
 endfunction
 "▶1 git.forget :: repo, file → + FS
@@ -521,9 +477,9 @@ function s:git.forget(repo, file)
     return s:F.gitm(a:repo, 'rm', ['--', a:file], {'cached': 1}, 0, 'fgf',
                 \   escape(a:file, '\'))
 endfunction
-"▶1 git.add :: repo, file → + FS
-function s:git.add(repo, file)
-    return s:F.gitm(a:repo, 'add', ['--', a:file], {}, 0, 'addf',
+"▶1 git.remove :: repo, file → + FS
+function s:git.remove(repo, file)
+    return s:F.gitm(a:repo, 'rm', ['--', a:file], {}, 0, 'rmf',
                 \   escape(a:file, '\'))
 endfunction
 "▶1 addtoignfile :: file, line → + FS
@@ -546,34 +502,6 @@ endfunction
 "▶1 git.ignoreglob :: repo, glob → + FS
 function s:git.ignoreglob(repo, glob)
     return s:F.addtoignfile(s:_r.os.path.join(a:repo.path,'.gitignore'), a:glob)
-endfunction
-"▶1 git.branch :: repo, branchname, force → + FS
-function s:git.branch(repo, branch, force)
-    if a:force
-        return s:F.gitm(a:repo, 'checkout', [a:branch], {'B': 1}, 0,
-                    \   'chbf', a:branch)
-    else
-        call a:repo.functions.label(a:repo, 'branch', a:branch, 'HEAD', 0, 0)
-        call a:repo.functions.update(a:repo, a:branch, 0)
-    endif
-endfunction
-"▶1 git.label :: repo, type, label, rev, force, local → + FS
-function s:git.label(repo, type, label, rev, force, local)
-    if a:local
-        call s:_f.throw('nloc')
-    endif
-    let args=['--', a:label]
-    let kwargs={}
-    if a:force
-        let kwargs.force=1
-    endif
-    if a:rev is 0
-        let kwargs.d=1
-    else
-        let args+=[a:rev]
-    endif
-    return s:F.gitm(a:repo, a:type, args, kwargs, 0,
-                \   'lbf', a:type, a:label, a:rev)
 endfunction
 "▶1 git.grep :: repo, files, revisions, ignorecase, wdfiles::Bool → qflist
 "▶2 parsegrep :: lines → [(file, lnum, String)]
@@ -628,6 +556,78 @@ function s:git.grep(repo, pattern, files, revisions, ic, wdfiles)
         endfor
     endif
     return r
+endfunction
+"▶1 git.readfile :: repo, rev, file → [String]
+function s:git.readfile(repo, rev, file)
+    return s:F.git(a:repo, 'cat-file', ['blob', a:rev.':'.a:file], {}, 2,
+                \  'filef', a:rev, a:file)
+endfunction
+"▶1 git.annotate :: repo, rev, file → [(file, hex, linenumber)]
+function s:git.annotate(repo, rev, file)
+    let args=[a:rev, '--', a:file]
+    let kwargs={'porcelain': 1, 'C': 1, 'M': 1}
+    let lines=s:F.git(a:repo, 'blame', args, kwargs, 1, 'annf', a:rev, a:file)
+    call filter(lines, 'v:val=~#''\v^(\x{40}\ |filename\ )''')
+    let r=[]
+    let filename=a:file
+    while !empty(lines)
+        let line=remove(lines, 0)
+        if !empty(lines) && lines[0][:8] is# 'filename '
+            let filename=s:F.refile(remove(lines, 0)[9:])
+        endif
+        let r+=[[filename, line[:39], str2nr(line[41:])]]
+    endwhile
+    return r
+endfunction
+"▶1 git.diff :: repo, rev, rev, files, opts → [String]
+let s:difftrans={
+            \  'reverse': 'R',
+            \ 'ignorews': 'ignore-all-space',
+            \'iwsamount': 'ignore-space-change',
+            \ 'numlines': 'unified',
+            \  'alltext': 'text',
+        \}
+function s:git.diff(repo, rev1, rev2, files, opts)
+    let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
+    if has_key(diffopts, 'unified')
+        let diffopts.unified=''.diffopts.unified
+    endif
+    let kwargs=copy(diffopts)
+    let args=[]
+    if empty(a:rev2)
+        if !empty(a:rev1)
+            let args+=[a:rev1.'^..'.a:rev1]
+        endif
+    else
+        let args+=[a:rev2]
+        if !empty(a:rev1)
+            let args[-1].='..'.a:rev1
+        endif
+    endif
+    if !empty(a:files)
+        let args+=['--']+a:files
+    endif
+    let r=s:F.git(a:repo, 'diff', args, kwargs, 1,
+                \ 'difff', a:rev1, a:rev2, join(a:files, ', '))
+    return r
+endfunction
+"▶1 git.diffre :: _, opts → Regex
+let s:diffre='\m^diff --git \v((\")?%s\/.{-}\2) \2%s\/'
+function s:git.diffre(repo, opts)
+    if get(a:opts, 'reverse', 0)
+        return printf(s:diffre, 'b', 'a')
+    else
+        return printf(s:diffre, 'a', 'b')
+    endif
+endfunction
+"▶1 git.diffname :: _, line, diffre, _ → rpath
+function s:git.diffname(repo, line, diffre, opts)
+    let file=get(matchlist(a:line, a:diffre), 1, 0)
+    if file is 0
+        return 0
+    else
+        return s:F.refile(file)[2:]
+    endif
 endfunction
 "▶1 git.getrepoprop :: repo, propname → a
 function s:git.getrepoprop(repo, prop)

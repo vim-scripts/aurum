@@ -49,9 +49,10 @@ function s:F.diffrestore(buf, onenter)
         elseif !has_key(dbvar, 'diffsaved')
             return
         endif
-        augroup AurumDiff
+        augroup AuVimDiff
             autocmd! BufEnter <buffer>
         augroup END
+        unlet t:auvimdiff_origbufvar
         if b:changedtick!=dbvar.diffsaved.changedtick
             return
         endif
@@ -67,11 +68,6 @@ function s:F.diffrestore(buf, onenter)
             endtry
         endfor
         call setpos('.', curpos)
-        unlet dbvar.diffsaved
-        unlet t:auvimdiff_origbufvar
-        augroup AuVimDiff
-            autocmd! BufEnter <buffer>
-        augroup END
     else
         for option in s:diffsaveopts
             call setbufvar(a:buf, '&'.option, dbvar.diffsaved[option])

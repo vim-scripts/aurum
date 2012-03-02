@@ -3,9 +3,10 @@ scriptencoding utf-8
 if !exists('s:_pluginloaded')
     execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
                 \                 '@aurum/bufvars': '0.0',
+                \               '@aurum/lineutils': '0.0',
                 \                 '@aurum/vimdiff': '0.2',
-                \                    '@aurum/repo': '2.0',
-                \                    '@aurum/edit': '1.0',
+                \                    '@aurum/repo': '3.0',
+                \                    '@aurum/edit': '1.2',
                 \                           '@/os': '0.0',
                 \                          '@/fwc': '0.0',
                 \                     '@/mappings': '0.0',
@@ -19,6 +20,9 @@ if !exists('s:_pluginloaded')
                 \                             'complete': s:diffcomp})
     finish
 elseif s:_pluginloaded
+    finish
+elseif !exists('s:_loading')
+    call FraworLoad(s:_frawor.id)
     finish
 endif
 let s:_messages={
@@ -203,6 +207,7 @@ let s:diff= {'arguments': 2,
             \ 'listargs': 1,
             \  'options': {'num': s:_r.repo.diffoptslst},
             \ 'filetype': 'diff',
+            \   'mgroup': 'AuDiff',
             \}
 function s:diff.function(read, repo, rev1, rev2, files, opts)
     "▶2 Get revisions
@@ -219,8 +224,9 @@ function s:diff.function(read, repo, rev1, rev2, files, opts)
     endif
     "▲2
     if a:read
-        call s:_r.setlines(a:repo.functions.diff(a:repo, rev1, rev2, a:files,
-                    \                            a:opts), 1)
+        call s:_r.lineutils.setlines(
+                    \a:repo.functions.diff(a:repo, rev1, rev2, a:files, a:opts),
+                    \1)
         return {}
     else
         call a:repo.functions.difftobuffer(a:repo, bufnr('%'), rev1, rev2,

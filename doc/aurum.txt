@@ -596,7 +596,7 @@ aurum://diff:{repo}:{rev1}:{rev2}:{files}:{diffopts}            *aurum://diff*
     FVdiff    gD  View the whole diff in a multiple tabs using |vimdiff|.
 
     Note These mappings are defined only when buffer is created using 
-         |:AuDiff| command or Prev/Next above mappings.
+         |:AuDiff| command or from most mappings.
 
 aurum://file:{repo}:{rev}:{file}                                *aurum://file*
     Open file {file} from repository {repo} as it was at revision {rev}.
@@ -629,7 +629,7 @@ aurum://file:{repo}:{rev}:{file}                                *aurum://file*
                   {repo} and {file} arguments
 
     Note These mappings are defined only when buffer is created using 
-         |:AuFile| command or Prev/Next above mappings.
+         |:AuFile| command or from most mappings.
 
 aurum://log:{repo}:{opts}                                        *aurum://log*
     Open log for given repo. {opts} are the same as used by |:AuLog|.
@@ -854,9 +854,14 @@ procinput                                                  *g:aurum_procinput*
     Note: Input is processed between generating two revisions. As generator is 
           normally much faster then you, then you are limited to single 
           character commands. There is a hack though that allows you to bypass 
-          this problem: if you input “g” or “z” logger won’t execute your 
-          command until it receives next character, it will also wait for <CR> 
-          ("\r" or "\n") or <Esc> after you input “/”, “?” or “:”.
+          this problem:
+            Input    Action ~
+            g, z, y, `, ', m, [, ], @, q, Z, <C-w>, t, T, f, F
+                     Waits until you type next character
+            /, ?, :, !
+                     Waits until you type <CR> ("\r" or "\n") or <Esc>
+            1-9      Waits until you type next non-digit
+            "        Waits until you type two characters
 
 recheight                                                  *g:aurum_recheight*
     VimL |expression| that evaluates to unsigned integer or unsigned integer. 
@@ -958,9 +963,11 @@ flbeg      For multiline template strings: determine what string should be
            prepended to the first line.
 expr       Use this expression instead of default to get resulting string. 
            Inside an expression “@@@” refers to original data, “@N@” - to Nth 
-           positional parameter (count starts from zero), “@<@” - to string 
-           that should be prepended to every line (valid for complex multiline 
-           template strings).
+           positional parameter (count starts from zero), “@-@” - to number of 
+           leading columns taken by graph lines, “@.@” - to current 
+           |aurum-changeset| object, “@<@” - to string that should be 
+           prepended to every line (valid for complex multiline template 
+           strings).
 synreg     Pass this regular expression to “syn match”. Useful if you override 
            output of the {word} using “expr” keyword.
 pref, suf  For some single-line statements (currently: rev, parents, children, 
@@ -1107,6 +1114,13 @@ Note that in all styles handling of “stat” and “patch” |:AuLog| options 
      shown using local time. I won’t fix this: Vim built-in |strftime()| 
      function does not accept timezone argument and I do not think it is worth 
      implementing in vimscript.
+
+svn                                                          *aurum-style-svn*
+    Svn-like style: >
+      r1 | Bob <bob@example.com> | 2011-01-01 00:00:00 (Sun, 01 Jan 2011) | 3 lines
+
+      Guess bar is better name for baz
+      And barbaz is not worse
 
 ==============================================================================
 7. Record mode                                                  *aurum-record*
@@ -1282,7 +1296,7 @@ iterfuncs :: {String : {"start": startfunc, "next": nextfunc}}
                required to do the job (see below). It will be done in any case 
                by log generator function.
     2. "next" function must accept value returned by "start" function and 
-       return |aurum-cs| object. Returned objects must be sorted in 
+       return |aurum-changeset| object. Returned objects must be sorted in 
        topological order like described under |aurum-rf-getchangesets|.
 
     Value of "changesets" key will be used to view full repository history.
@@ -1298,6 +1312,64 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     except |aurum-rf-repo|, |aurum-rf-checkdir| and |aurum-rf-checkremote| 
     accept repository object as its first argument, so it is not mentioned in 
     function descriptions. Here is the list:
+  getcs :: hex -> cs                                          *aurum-rf-getcs*
+    Returns |aurum-changeset| object which has given hash. See also 
+    |aurum-cs.hex|.
+  getwork :: () -> cs                                       *aurum-rf-getwork*
+    Get changeset object for the working directory revision.
+  getnthparent :: hex, n -> [ cs ]                     *aurum-rf-getnthparent*
+    Get nth generation grand-parent of given revision. Use negative n to get 
+    nth generation child instead.
+  getchangesets :: () -> [ cs ]                       *aurum-rf-getchangesets*
+    Pull all changesets contained in repository into |aurum-repo.changesets| 
+    dictionary. If this function is not called, then |aurum-repo.changesets| 
+    dictionary contains only changesets that were used at least ones. Returns 
+    list of pulled changesets. This list should be sorted in topological order 
+    (thus meaning that every changeset appears before every its parent) or 
+    |aurum-repo.requires_sort| should be set to true.
+  revrange :: hex, hex -> [ cs ]                           *aurum-rf-revrange*
+    Get revision range (inclusive).
+  updatechangesets :: () -> _                      *aurum-rf-updatechangesets*
+    Updates data stored in repository. Is called automatically if 
+    |aurum-repo.cslist| is not empty when you get the repository object unless 
+    this object is obtained from cash used by |aurum#repository()|.
+  getrevhex :: csdescr -> hex                             *aurum-rf-getrevhex*
+    Given some changeset description (it may be tag, bookmark, branch name, 
+    revision number, ... - whatever VCS supports) get changeset hash.
+    Note that functions mentioned above may support not only revision hashes 
+         in place of {hex} arguments, but also whatever “getrevhex” supports, 
+         but this is not guaranteed. For example, status() accepts revision 
+         number in both mercurial drivers, but though zero is a valid 
+         revision, it is used to indicate absence of an argument and thus you 
+         have to write "0" (String) where you want to write just 0 (Number).
+  gettiphex :: () -> hex                                  *aurum-rf-gettiphex*
+    Get changeset hash of the last revision in a repository.
+  getworkhex :: () -> hex                                *aurum-rf-getworkhex*
+    Get changeset hash of the working directory revision.
+  setcsprop :: cs, propname -> _                          *aurum-rf-setcsprop*
+    Function that adds requested property to given changeset. Is used by 
+    default |aurum-rf-getcsprop| if changeset dictionary does not contain 
+    property with given name.
+  getcsprop :: cs | hex, propname -> propvalue            *aurum-rf-getcsprop*
+    Returns requested changeset property. Can accept either |aurum-changeset| 
+    object or changeset hash. “propname” can be a name of any property 
+    described in |aurum-changeset| section, but it should be normally used for 
+    pulling properties that are not obtained by |aurum-rf-getcs| by default: 
+    “files”, “changes”, “renames”, “copies”, “allfiles”, “chidlren”.
+                                                             *aurum-rf-status*
+  status :: [hex[, hex[, [ file ][, requiresclean]]]] -> {status : [ file ]}
+    Returns dictionary where values are lists of files and keys are 
+    "modified", "added" (new tracked files), "removed" (made untracked, not 
+    necessary deleted from filesystem), "deleted" (just deleted from 
+    filesystem without making files untracked), "unknown" (new untracked 
+    files), "ignored" and "clean" (unmodified).
+    Specifying 0 instead of any optional argument acts like not specifying 
+    this argument.
+    Note: “clean” may be empty unless {requiresclean} argument is present and 
+          true.
+  dirty :: file -> Bool                                       *aurum-rf-dirty*
+    Check whether file is “dirty” (meaning that it has changes that can be 
+    committed).
                                                              *aurum-rf-commit*
   commit :: message[, [ file ][, user[, date[, closebranch]]]] -> _
     Commit changes made to specified files (default depends on VCS, normally 
@@ -1305,6 +1377,13 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     removes))”. “closebranch” and “force” arguments have Bool type, “user” and 
     “date” are strings. Neither “user” nor “date” argument should have any 
     normalized form, they just should be accepted by VCS.
+  branch :: branch, force -> _                               *aurum-rf-branch*
+    Create new branch.
+  label :: type, label, hex, force, local -> _                *aurum-rf-label*
+    Label specific revision (if rev is 0 then remove label).
+    Note: if this function accepts label with type {type}, 
+          |aurum-rf-getrepoprop| must be able to list labels of this type in 
+          property "{type}slist".
   update :: hex, force                                       *aurum-rf-update*
     Update working directory to changeset {hex}.
   move :: force, fdir, file -> _                               *aurum-rf-move*
@@ -1312,9 +1391,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     Move or copy given file or directory (second argument) to given 
     destination (third argument).
     Note: directories are always passed with trailing forward slash.
+  add    :: fdir -> _                                        *aurum-rf-add*
   forget :: fdir -> _                                        *aurum-rf-forget*
   remove :: fdir -> _                                        *aurum-rf-remove*
-  add    :: fdir -> _                                        *aurum-rf-add*
   ignore :: fdir -> _                                        *aurum-rf-ignore*
     Forget, remove, add (make tracked) or ignore (add to .hgignore or 
     something similar) given file or directory. “ignore” function properly 
@@ -1335,20 +1414,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
           “filename” key may contain either an absolute filename or pair 
           (revision, filename (relative to repository root)). Second is to be 
           transformed into |aurum://file| path.
-                                                             *aurum-rf-status*
-  status :: [hex[, hex[, [ file ][, requiresclean]]]] -> {status : [ file ]}
-    Returns dictionary where values are lists of files and keys are 
-    "modified", "added" (new tracked files), "removed" (made untracked, not 
-    necessary deleted from filesystem), "deleted" (just deleted from 
-    filesystem without making files untracked), "unknown" (new untracked 
-    files), "ignored" and "clean" (unmodified).
-    Specifying 0 instead of any optional argument acts like not specifying 
-    this argument.
-    Note: “clean” may be empty unless {requiresclean} argument is present and 
-          true.
-  dirty :: file -> Bool                                       *aurum-rf-dirty*
-    Check whether file is “dirty” (meaning that it has changes that can be 
-    committed).
+  readfile :: repo, hex, file -> [ String ]                *aurum-rf-readfile*
+    Returns a list of strings (similar to |readfile()| output with "b" flag 
+    set) that contains file contents as it was at given revision.
   annotate :: repo, hex, file -> [ rev ]                   *aurum-rf-annotate*
     Returns a list of 3-tuples: ({hex}, {file}, {line-number}), one 3-tuple 
     for each line of the file as it was at given changeset. {hex} must be 
@@ -1395,57 +1463,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
                    can be created/revision can be named.
     url            Remote repository URL. For mercurial it is either 
                    paths.default-push or paths.default whichever is defined.
-  getchangesets :: () -> [ cs ]                       *aurum-rf-getchangesets*
-    Pull all changesets contained in repository into |aurum-repo.changesets| 
-    dictionary. If this function is not called, then |aurum-repo.changesets| 
-    dictionary contains only changesets that were used at least ones. Returns 
-    list of pulled changesets. This list should be sorted in topological order 
-    (thus meaning that every changeset appears before every its parent) or 
-    |aurum-repo.requires_sort| should be set to true.
-  revrange :: hex, hex -> [ cs ]                           *aurum-rf-revrange*
-    Get revision range (inclusive).
-  getcs :: hex -> cs                                          *aurum-rf-getcs*
-    Returns |aurum-changeset| object which has given hash. See also 
-    |aurum-cs.hex|.
-  getcsprop :: cs | hex, propname -> propvalue            *aurum-rf-getcsprop*
-    Returns requested changeset property. Can accept either |aurum-changeset| 
-    object or changeset hash. “propname” can be a name of any property 
-    described in |aurum-changeset| section, but it should be normally used for 
-    pulling properties that are not obtained by |aurum-rf-getcs| by default: 
-    “files”, “changes”, “renames”, “copies”, “allfiles”, “chidlren”.
-  setcsprop :: cs, propname -> _                          *aurum-rf-setcsprop*
-    Function that adds requested property to given changeset. Is used by 
-    default |aurum-rf-getcsprop| if changeset dictionary does not contain 
-    property with given name.
-  getrevhex :: csdescr -> hex                             *aurum-rf-getrevhex*
-    Given some changeset description (it may be tag, bookmark, branch name, 
-    revision number, ... - whatever VCS supports) get changeset hash.
-    Note that functions mentioned above may support not only revision hashes 
-         in place of {hex} arguments, but also whatever “getrevhex” supports, 
-         but this is not guaranteed. For example, status() accepts revision 
-         number in both mercurial drivers, but though zero is a valid 
-         revision, it is used to indicate absence of an argument and thus you 
-         have to write "0" (String) where you want to write just 0 (Number).
-  gettiphex :: () -> hex                                  *aurum-rf-gettiphex*
-    Get changeset hash of the last revision in a repository.
-  getworkhex :: () -> hex                                *aurum-rf-getworkhex*
-    Get changeset hash of the working directory revision.
-  getwork :: () -> cs                                       *aurum-rf-getwork*
-    Get changeset object for the working directory revision.
-  updatechangesets :: () -> _                      *aurum-rf-updatechangesets*
-    Updates data stored in repository. Is called automatically if 
-    |aurum-repo.cslist| is not empty when you get the repository object unless 
-    this object is obtained from cash used by |aurum#repository()|.
   reltorepo :: path -> path                               *aurum-rf-reltorepo*
     Turn absolute or relative to current directory path into relative to 
     repository root one.
-  branch :: branch, force -> _                               *aurum-rf-branch*
-    Create new branch.
-  label :: type, label, hex, force, local -> _                *aurum-rf-label*
-    Label specific revision (if rev is 0 then remove label).
-    Note: if this function accepts label with type {type}, 
-          |aurum-rf-getrepoprop| must be able to list labels of this type in 
-          property "{type}slist".
 The following functions do not accept repo argument:
   repo :: path -> repo                                         *aurum-rf-repo*
     Creates new repository object using repository located at given path.
@@ -1510,32 +1530,22 @@ dictionary with repository functions (only function references are allowed):
 Required functions: |aurum-rf-repo|, |aurum-rf-getcs|, |aurum-rf-checkdir|.
 Optional functions:
   Function               Default behavior ~
-  |aurum-rf-dirty|         Use |aurum-rf-status| and check whether file has 
-                         status different from “ignored” or “clean”
   |aurum-rf-getnthparent|  Use |aurum-rf-getcs| and |aurum-rf-getcsprop| 
                          (properties "parents" or "children")
   |aurum-rf-getcsprop|     Checks whether requested key is present in the 
                          changeset object. If yes returns its value, otherwise 
                          calls |aurum-rf-setcsprop|.
-  |aurum-rf-reltorepo|     Uses |aurum-repo.path| to get requested path.
-  |aurum-rf-revrange|      Gets sublist of cslist (uses |aurum-repo.cslist| or 
-                         |aurum-rf-getchangesets| if repo.cslist is empty), 
-                         using values of |aurum-cs.rev| as indexes.
-  |aurum-rf-difftobuffer|  Wrapper around |aurum-rf-diff|.
-  |aurum-rf-diffname|      Uses value of first capturing group of given 
-                         regular expression.
-  |aurum-rf-getstats|      Parses git-like unified diff, depends on 
-                         |aurum-rf-diffre| and |aurum-rf-diffname|.
+  |aurum-rf-dirty|         Use |aurum-rf-status| and check whether file has 
+                         status different from “ignored” or “clean”
+  |aurum-rf-move|          Uses |aurum-rf-copy| and |aurum-rf-remove| to 
+                         emulate renaming command.
   |aurum-rf-copy|          Copies file to destination (using command-line “cp” 
                          (cp -- source target), “copy” (copy source target) or 
                          |readfile()| + |writefile()| (in last case 
                          permissions are not copied)), then uses 
                          |aurum-rf-add| to make destination tracked.
-  |aurum-rf-move|          Uses |aurum-rf-copy| and |aurum-rf-remove| to 
-                         emulate renaming command.
   |aurum-rf-remove|        Uses |aurum-rf-forget| to untrack file and then 
                          |delete()|s it.
-  |aurum-rf-checkremote|   Returns 0.
   |aurum-rf-grep|          Does just the same what git grep does: iterates 
                          over given revisions and searches for given regular 
                          expression (in this case: vim |regexp|) in each file. 
@@ -1545,6 +1555,13 @@ Optional functions:
                          argument), |aurum-rf-revrange|, |aurum-rf-getcs| and 
                          |aurum-rf-readfile|.
                          Slow!
+  |aurum-rf-difftobuffer|  Wrapper around |aurum-rf-diff|.
+  |aurum-rf-diffname|      Uses value of first capturing group of given 
+                         regular expression.
+  |aurum-rf-getstats|      Parses git-like unified diff, depends on 
+                         |aurum-rf-diffre| and |aurum-rf-diffname|.
+  |aurum-rf-reltorepo|     Uses |aurum-repo.path| to get requested path.
+  |aurum-rf-checkremote|   Returns 0.
   |aurum-repo.iterfuncs|   "changeset": Uses |aurum-rf-getchangesets|
                          "revrange": Uses |aurum-rf-revrange|
                          "ancestors": Iterates recursively over 
@@ -1659,11 +1676,14 @@ Python driver was not tested under windows (wine) at all.
     2.2: Added |aurum-repo.initprops|.
     2.3: Added |aurum-rf-getroot| support.
     2.4: Added {requiresclean} argument to |aurum-rf-status|.
+    2.5: Added parsecmdarg and crnl resources
+    3.0: Moved setlines and some other functions to @aurum/lineutils
 @aurum:
     0.1: Added :AuBranch and :AuName.
 @aurum/edit:
     1.0: Removed setlines function (moved it to @aurum/repo).
     1.1: Added “requiresbvar” _f.newcommand option.
+    1.2: Added “mgroup” _f.newcommand option and mrun resource
 @aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
@@ -1672,6 +1692,7 @@ Python driver was not tested under windows (wine) at all.
          added skipping of $rev if |aurum-repo.hasrevisions| is false, made it 
          separate graph from content using non-breaking spaces.
     0.2: Added |:AuLog| procinput option.
+    0.3: Added @-@ and @.@ expr “variables”.
 @aurum/status:
     1.0: Renamed |:AuStatus| “rev1” and “rev2” options to “rev” and “wdrev” 
          respectively. Same for |aurum://status| “rev1” and “rev2” options.

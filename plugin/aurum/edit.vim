@@ -1,10 +1,11 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.1', {'@/autocommands': '0.0',
+    execute frawor#Setup('1.2', {'@/autocommands': '0.0',
                 \                   '@/functions': '0.0',
                 \                   '@/resources': '0.0',
-                \                   '@aurum/repo': '2.0',
+                \                   '@aurum/repo': '3.0',
+                \              '@aurum/lineutils': '0.0',
                 \                '@aurum/bufvars': '0.0',}, 0)
     call FraworLoad('@/autocommands')
     call FraworLoad('@/functions')
@@ -38,7 +39,10 @@ call extend(s:_messages, map({
             \'nstr': 'key “%s” is not a string',
             \ 'ift': 'invalid filetype: “%s” '.
             \        '(only lowercase latin letters allowed)',
+            \ 'img': 'invalid mgroup: “%s”',
             \ 'dup': 'string “%s” from key “%s” was already listed',
+            \'nmap': 'plugin dictionary does not contain '.
+            \        'g._f.mapgroup.map function',
         \}, '"Error while registering command %s for plugin %s: ".v:val'))
 "▶1 globtopat :: glob[, catchstars] → pattern
 function s:F.globtopat(glob, ...)
@@ -195,7 +199,7 @@ function s:F.encodeopts(opts)
 endfunction
 "▶1 copy
 function s:F.copy(read, file)
-    call s:_r.setlines(readfile(a:file, 'b'), a:read)
+    call s:_r.lineutils.setlines(readfile(a:file, 'b'), a:read)
     if !a:read
         let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'copy'}
         if exists('#filetypedetect#BufRead')
@@ -212,23 +216,7 @@ function s:F.edit(rw, file)
             let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'edit'}
         endif
     elseif a:rw==-1
-        let lines=getline(1, '$')
-        if &binary
-            if &endofline
-                let lines+=['']
-            endif
-        else
-            let lines+=['']
-            if &fileformat is# 'dos'
-                call map(lines, 'v:val."\n"')
-            elseif &fileformat is# 'mac'
-                let lines=[join(lines, "\r")]
-            endif
-        endif
-        if !empty(&fileencoding) && &encoding isnot# &fileencoding
-            call map(lines, 'iconv(v:val, "'.&encoding.'","'.&fileencoding.'")')
-        endif
-        call writefile(lines, a:file, 'b')
+        call writefile(s:_r.lineutils.wtransform(getline(1, '$')), a:file, 'b')
         setlocal nomodified
     endif
 endfunction
@@ -404,9 +392,11 @@ function s:auefunc.function(rw)
         setlocal modifiable noreadonly
     endif
     if a:rw<0
-        call call(cdescr.write, [call('getline', ((a:rw==-1)?([ 1,   '$' ]):
-                    \                                        (["'[", "']"])))]+
-                    \                            args, {})
+        call call(cdescr.write,
+                    \[s:_r.lineutils.wtransform(
+                    \            call('getline', ((a:rw==-1)?([ 1,   '$' ]):
+                    \                                        (["'[", "']"]))))]+
+                    \args, {})
     else
         let args=[a:rw]+args
         if a:rw==0
@@ -483,6 +473,18 @@ function s:F.newcommand(plugdict, fdict, cdescr)
         endif
         let cdescr.filetype=a:cdescr.filetype
     endif
+    "▶2 “mgroup” key
+    if has_key(a:cdescr, 'mgroup')
+        if type(a:cdescr.mgroup)!=type('')
+            call s:_f.throw('nstr', cname, a:plugdict.id, 'mgroup')
+        elseif a:cdescr.mgroup!~#'\v^\u[a-zA-Z0-9]*$'
+            call s:_f.throw('img', cname, a:plugdict.id, a:cdescr.mgroup)
+        elseif !exists('*a:plugdict.g._f.mapgroup.map')
+            call s:_f.throw('nmap', cname, a:plugdict.id)
+        endif
+        let cdescr.mgroup=a:cdescr.mgroup
+        let cdescr.mmap=a:plugdict.g._f.mapgroup.map
+    endif
     "▶2 Function keys: `write'
     if has_key(a:cdescr, 'write')
         if !exists('*a:cdescr.write')
@@ -548,8 +550,18 @@ function s:F.run(vcommand, command, repo, ...)
     endif
     return existed
 endfunction
+"▶1 mrun
+function s:F.mrun(...)
+    let r=call(s:F.run, a:000, {})
+    let cdescr=s:commands[a:2]
+    if has_key(cdescr, 'mgroup')
+        call cdescr.mmap(cdescr.mgroup, bufnr('%'))
+    endif
+    return r
+endfunction
 "▶1 Register resources
 call s:_f.postresource('run',       s:F.run)
+call s:_f.postresource('mrun',      s:F.mrun)
 call s:_f.postresource('fname',     s:F.fname)
 call s:_f.postresource('globtopat', s:F.globtopat)
 "▶1

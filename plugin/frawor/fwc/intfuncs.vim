@@ -358,25 +358,25 @@ function s:r.if.pipe(desc, idx, type)
     call        self.compilearg(a:desc[1], a:idx.'(cond)', 'check')
     call        self.popms()
     call        self.let(condstr, 1)
-    call    self.up()
+    call    self._up()
     call    self.catch(s:cfreg)
     call        self.let(condstr, 0)
-    call    self.up()
+    call    self._up()
     if len(a:desc[2])>1
         call self.addif(condstr)
         call    self.compilearg(a:desc[2], a:idx.'(if)', a:type)
-        call self.up()
+        call self._up()
         if len(a:desc[3])>1
             call self.addif()
             call        self.compilearg(a:desc[3], a:idx.'(else)', a:type)
-            call        self.up()
+            call        self._up()
         endif
     else
         call self.addif('!'.condstr)
         call        self.compilearg(a:desc[3], a:idx.'(else)', a:type)
-        call        self.up()
+        call        self._up()
     endif
-    return self.up()
+    return self._up()
 endfunction
 let s:r.if.complete=s:r.if.pipe
 "▶1 `run'
@@ -389,7 +389,7 @@ function s:r.run.pipe(desc, idx, type)
     call    self.try()
     call        self.let(curargstr, 'call('.curargstr.', '.
                 \                                self.getvar(a:desc[1]).', {})')
-    call    self.up()
+    call    self._up()
     call    self.catch()
     call        self.addthrow('runfail', 1, a:idx, 'v:exception')
     let self.typechanged=1
@@ -427,7 +427,7 @@ function s:r.earg.pipe(desc, idx, type)
     call self.addtypecond([type('')], a:idx)
     call self.try()
     call     self.let(curargstr, 'eval('.curargstr.')')
-    call self.up()
+    call self._up()
     call self.catch()
     call     self.addthrow('evalfail', 1, a:idx, 'v:exception')
     let self.typechanged=1
@@ -438,12 +438,12 @@ let s:r.not={'args': ['arg'], 'breakscomp': 1}
 "▶2 optimize
 " XXX low-level hacks here
 function s:r.not.optimize(idx, type)
-    call self.down(self.l[1])
+    call self._down(self.l[1])
     let conditions=self.optgetconds()
-    call self.up()
+    call self._up()
     if type(conditions)==type([])
         call remove(self.l, 0, -1)
-        call self.add('if', 0, [])
+        call self._add('if', 0, [])
         call self.nextthrow('!('.join(conditions, ' || ').')', 'notfail', a:idx)
         call remove(self.l, 1, 3)
     endif
@@ -456,7 +456,7 @@ function s:r.not.check(desc, idx, type)
                 \.compilearg(a:desc[1], a:idx.'(not)', 'check')
                 \.popms()
                 \.throw("'NOTFAIL'")
-            \.catch(s:cfreg).up()
+            \.catch(s:cfreg)._up()
             \.catch('\v^NOTFAIL$')
                 \.addthrow('notfail', 1, a:idx)
 endfunction
@@ -471,10 +471,10 @@ function s:r.either.check(desc, idx, type)
     if !empty(a:desc[1])
         call self.try()
         call        self.compilearg(a:desc[1][0], a:idx.'(either).0', 'check')
-        call self.up()
+        call self._up()
         call self.catch(s:cfreg)
         call        self.let(sucstr, 0)
-        call self.up()
+        call self._up()
     endif
     let i=1
     for arg in a:desc[1][1:]
@@ -482,21 +482,21 @@ function s:r.either.check(desc, idx, type)
         call        self.let(sucstr, 1)
         call        self.try()
         call            self.compilearg(arg, a:idx.'(either).'.i, 'check')
-        call        self.up()
+        call        self._up()
         call        self.catch(s:cfreg)
         call            self.let(sucstr, 0)
-        call        self.up()
-        call    self.up()
+        call        self._up()
+        call    self._up()
         let i+=1
     endfor
     call self.addif(sucstr)
     call self.addrestmsgs()
-    call self.up()
+    call self._up()
     call self.popms()
     call self.addif()
     call self.addthrow('eitherfail', 1, a:idx)
-    call self.up()
-    call self.up()
+    call self._up()
+    call self._up()
     return self
 endfunction
 function s:r.either.complete(desc, idx, type)
@@ -522,7 +522,7 @@ function s:r.first.complete(desc, idx, type)
     for arg in a:desc[1][1:]
         call self.if('empty('.self.vstrs[-1].')')
         call        self.compilearg(arg, a:idx.'(either).'.i, 'complete')
-        call self.up()
+        call self._up()
         call self.endif()
         let i+=1
     endfor
@@ -567,8 +567,8 @@ function s:F.addlist(list, idx, type)
     call self.while(istr.'<'.largstr)
     call            self.compilearg(a:list[1], a:idx.'(list)', a:type)
     call            self.increment(istr)
-    call self.up()
-    call self.up()
+    call self._up()
+    call self._up()
     call remove(self.subs, -1)
     return self
 endfunction
@@ -627,20 +627,20 @@ function s:F.adddict(dic, idx, type)
             call        self.let(foundstr, 1)
             call        self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
             call        self.popms()
-            call self.up()
+            call self._up()
             call self.catch(s:cfreg)
             call        self.addif(foundstr)
             call            self.fail()
             call        self.addrestmsgs(1)
-            call self.up()
+            call self._up()
             call self.addif(foundstr)
             call        self.continue()
-            call self.up()
+            call self._up()
             continue
         endif
         call self.compilearg(check[2], a:idx.'.'.i.'(val)', a:type)
         call self.continue()
-        call self.up()
+        call self._up()
     endfor
     if hascheck
         call remove(self.msgs.savevars, -1)
@@ -1049,16 +1049,16 @@ function s:r.path.addpathp(idx)
     call            self.addif('filewritable('.dirnamestr.')==2')
     call                self.let(foundstr, 1)
     call                self.break()
-    call                self.up()
+    call                self._up()
     call            self.addif(existsstr.'('.dirnamestr.')')
     call                self.break()
-    call                self.up()
+    call                self._up()
     call            self.let(prevdirstr, dirnamestr)
     call            self.let(dirnamestr, osdirnamestr.'('.dirnamestr.')')
-    call        self.up()
+    call        self._up()
     call        self.nextthrow('!'.foundstr, 'nowrite', a:idx, curargstr)
-    call self.up()
-    call self.up()
+    call self._up()
+    call self._up()
     return self
 endfunction
 "▶2 getpath    :: &self!
@@ -1328,7 +1328,7 @@ let s:r.isreg={'args': []}
 function s:r.isreg.check(desc, idx, type)
     let curargstr=self.argstr()
     return self.addtypecond([type('')], a:idx)
-                \.try().call('matchstr("", '.curargstr.')').up()
+                \.try().call('matchstr("", '.curargstr.')')._up()
                 \.catch().addthrow('nreg', 1, a:idx, curargstr, 'v:exception')
 endfunction
 "▶1 `bool'

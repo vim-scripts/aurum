@@ -6,7 +6,7 @@ setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
             \                '@aurum/vimdiff': '0.2',
             \               '@aurum/cmdutils': '0.0',
-            \                   '@aurum/edit': '1.0',
+            \                   '@aurum/edit': '1.2',
             \                 '@aurum/commit': '1.0',
             \                    '@/mappings': '0.0',
             \                          '@/os': '0.0',})
@@ -80,11 +80,11 @@ function s:F.runmap(action, ...)
     if a:action is# 'open'
         execute 'silent e' fnameescape(s:_r.os.path.join(bvar.repo.path, file))
     elseif a:action is# 'revopen'
-        call s:_r.run('silent edit', 'file', bvar.repo, rev1, file)
+        call s:_r.mrun('silent edit', 'file', bvar.repo, rev1, file)
     elseif a:action is# 'fulldiff'
-        call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, [], {})
+        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1, rev2, [], {})
     elseif a:action is# 'revfulldiff'
-        call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  [], {})
+        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1,  '',  [], {})
     elseif a:action is# 'fullvimdiff'
         execute 'AuVimDiff full '.((empty(rev2) || empty(rev1))?
                     \                   ('curfile '):
@@ -96,31 +96,39 @@ function s:F.runmap(action, ...)
         endif
         call s:_r.vimdiff.full(bvar.repo, [rev1, cs1.parents[0]], 1, [], 0)
     elseif !manyfiles && (a:action is# 'revvimdiff' || a:action is# 'vimdiff')
-        let file1=s:_r.fname('file', bvar.repo, rev1, file)
+        let fargs1=['file', bvar.repo, rev1, file]
         if a:action is# 'revvimdiff'
             let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)
             if empty(cs1.parents)
                 call s:_f.throw('nopars', cs1.hex)
             endif
-            let file2=s:_r.fname('file', bvar.repo, cs1.parents[0], file)
+            let fargs2=['file', bvar.repo, cs1.parents[0], file]
         elseif empty(rev2)
             let file2=s:_r.os.path.join(bvar.repo.path, file)
         else
-            let file2=s:_r.fname('file', bvar.repo, rev2, file)
+            let fargs2=['file', bvar.repo, rev2, file]
         endif
         if get(bvar.opts, 'record', 0)
-            execute 'silent view' fnameescape(file2)
+            if exists('file2')
+                execute 'silent view' fnameescape(file2)
+            else
+                call call(s:_r.mrun, ['silent view']+fargs2, {})
+            endif
             diffthis
             execute rwnr.'wincmd w'
-            execute 'silent view' fnameescape(file1)
+            call call(s:_r.mrun, ['silent view']+fargs1, {})
             diffthis
             wincmd p
         else
-            execute 'silent edit' fnameescape(file2)
-            call s:_r.vimdiff.split(file1, -1)
+            if exists('file2')
+                execute 'silent edit' fnameescape(file2)
+            else
+                call call(s:_r.run, ['silent view']+fargs2, {})
+            endif
+            call s:_r.vimdiff.split(call(s:_r.fname, fargs1, {}), -1)
         endif
     elseif a:action is# 'annotate'
-        call s:_r.run('silent edit', 'file', bvar.repo, rev1, file)
+        call s:_r.mrun('silent edit', 'file', bvar.repo, rev1, file)
         AuAnnotate
     endif
     if visual
@@ -163,9 +171,9 @@ function s:F.runmap(action, ...)
         call map(copy(files), 'bvar.repo.functions.forget(bvar.repo, v:val)')
         silent edit!
     elseif a:action is# 'diff'
-        call s:_r.run('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
+        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
     elseif a:action is# 'revdiff'
-        call s:_r.run('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
+        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
     elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
         let args=[bvar.repo]
         if a:action is# 'revvimdiff'
