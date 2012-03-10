@@ -2,7 +2,7 @@
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
     "▶2 frawor#Setup
-    execute frawor#Setup('0.1', {'@/commands': '0.0',
+    execute frawor#Setup('0.2', {'@/commands': '0.0',
                 \               '@/functions': '0.0',
                 \                   '@/table': '0.0',
                 \                '@/mappings': '0.0',
@@ -10,7 +10,7 @@ if !exists('s:_pluginloaded')
                 \                      '@/os': '0.1',
                 \           '@aurum/cmdutils': '0.0',
                 \                     '@/fwc': '0.2',
-                \               '@aurum/repo': '3.0',
+                \               '@aurum/repo': '3.1',
                 \               '@aurum/edit': '1.0',
                 \            '@aurum/bufvars': '0.0',}, 0)
     "▶2 Команды
@@ -20,9 +20,10 @@ if !exists('s:_pluginloaded')
     " TODO :AuMerge ?
     " TODO :AuExplore
     let s:addargs={'Update': {'bang': 1}, 'Move': {'bang': 1},
-                \  'Branch': {'bang': 1}, 'Name': {'bang': 1}}
+                \  'Branch': {'bang': 1}, 'Name': {'bang': 1},
+                \   'Other': {'bang': 1}}
     for s:cmd in ['Update', 'Move', 'Junk', 'Track', 'Hyperlink', 'Grep',
-                \ 'Branch', 'Name']
+                \ 'Branch', 'Name', 'Other']
         let s:part=tolower(s:cmd[:3])
         if len(s:cmd)>4 && stridx('aeiouy', s:part[-1:])!=-1
             let s:part=s:part[:-2]
@@ -591,6 +592,31 @@ let s:namefunc['@FWC']=['-onlystrings _ '.
             \           '} '.
             \           '+ type ""', 'filter']
 call add(s:namecomp, s:namefunc['@FWC'][0])
+"▶1 othfunc
+let s:pushactions=['push', 'outgoing']
+let s:pullactions=['pull', 'incoming']
+let s:ppactions=s:pushactions+s:pullactions
+function s:othfunc.function(bang, action, rev, url, repo)
+    let repo=s:_r.repo.get(a:repo)
+    call s:_r.cmdutils.checkrepo(repo)
+    if a:url isnot# ':' && stridx(a:url, '://')==-1 && isdirectory(a:url)
+        let url=s:_r.os.path.realpath(a:url)
+    else
+        let url=a:url
+    endif
+    let key=((index(s:pushactions, a:action)==-1)?('pull'):('push'))
+    return repo.functions[key](repo, (a:action[0] isnot# 'p'), a:bang,
+                \              ((  url is# ':')?(0):(  url)),
+                \              ((a:rev is# ':')?(0):(a:rev)))
+endfunction
+let s:othfunc['@FWC']=['-onlystrings _ '.
+            \          'in ppactions ~ smart '.
+            \          '[:":" type "" '.
+            \          '[:":" type "" '.
+            \          '['.s:_r.cmdutils.nogetrepoarg.']]]', 'filter']
+call add(s:othcomp, substitute(substitute(s:othfunc['@FWC'][0],
+            \'\V_ ',      '',            ''),
+            \'\Vtype ""', s:_r.comp.rev, ''))
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

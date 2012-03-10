@@ -769,7 +769,9 @@ function s:hg.grep(repo, pattern, files, revisions, ignore_case, wdfiles)
             \                   '("--rev=".join(v:val, "..")):'.
             \                   '("--rev=".v:val))')+
             \['--', a:pattern]+a:files
-    let kwargs={'follow': 1, 'line-number': 1}
+    let kwargs={'line-number': 1}
+    let allfiles=a:repo.functions.getcsprop(a:repo, '.', 'allfiles')
+    let kwargs.follow=empty(filter(copy(a:files), 'index(allfiles, v:val)==-1'))
     if a:ignore_case
         let kwargs['ignore-case']=1
     endif
@@ -988,6 +990,35 @@ function s:hg.getrepoprop(repo, prop)
     call s:_f.throw('nocfg', a:prop, a:repo.path)
 endfunction
 endif
+"▶1 pushpull :: cmd, repo, force[, URL[, rev]] → + ?
+function s:F.pushpull(cmd, repo, force, ...)
+    let kwargs={}
+    let args=[]
+    if a:0
+        if a:1 isnot 0
+            let args+=[a:1]
+        endif
+        if a:0>1 && a:2 isnot 0
+            let kwargs.rev=''.a:2
+        endif
+    endif
+    if a:force
+        let kwargs.force=1
+    elseif a:cmd is# 'push'
+        let kwargs['new-branch']=1
+    endif
+    return s:F.runcmd(a:repo, a:cmd, args, kwargs)
+endfunction
+"▶1 hg.push :: repo, dryrun, force[, URL[, rev]]
+function s:hg.push(repo, dryrun, ...)
+    return call(s:F.pushpull, [((a:dryrun)?('outgoing'):
+                \                          ('push')), a:repo]+a:000, {})
+endfunction
+"▶1 hg.pull :: repo, dryrun, force[, URL[, rev]]
+function s:hg.pull(repo, dryrun, ...)
+    return call(s:F.pushpull, [((a:dryrun)?('incoming'):
+                \                          ('pull')), a:repo]+a:000, {})
+endfunction
 "▶1 hg.repo :: path + ? → repo
 if s:usepythondriver "▶2
 function s:hg.repo(path)

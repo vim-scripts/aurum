@@ -117,7 +117,12 @@ function s:recfunc.function(opts, ...)
     let bvar.getwnrs=s:F.getwnrs
     let bvar.recrunmap=s:F.runstatmap
     let bvar.write=s:F.write
-    let bvar.savedundolevels=&undolevels
+    let bvar.savedopts={'undolevels': &undolevels,
+                \        'scrollopt': &scrollopt,
+                \        'autowrite': &autowrite,
+                \     'autowriteall': &autowriteall,
+                \         'autoread': &autoread,}
+    setglobal noautowrite noautowriteall noautoread
     if !bvar.startundo
         setglobal undolevels=-1
     endif
@@ -198,7 +203,9 @@ endfunction
 "▶1 unload
 function s:F.unload(bvar)
     let sbvar=get(a:bvar, 'sbvar', a:bvar)
-    let &g:undolevels=sbvar.savedundolevels
+    for [o, val] in items(sbvar.savedopts)
+        execute 'let &g:'.o.'=val'
+    endfor
     if bufexists(sbvar.bufnr)
         call setbufvar(sbvar.bufnr, '&modified', 0)
     endif
@@ -484,7 +491,7 @@ function s:F.runstatmap(action, ...)
                 endif
                 silent write
                 if isexe && s:_r.os.name is# 'posix'
-                    call s:_r.os.run(['chmod', '+x', fullpath])
+                    call system('chmod +x '.fnameescape(fullpath))
                 endif
             endif
             if !has_key(s:_r.bufvars, bufnr('%'))

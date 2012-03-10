@@ -356,6 +356,19 @@ AuName[!] {name} {opts} [{rev}]                                      *:AuName*
                 Default: disabled.
     repo        Path. Repository that should be operated upon.
 
+AuOther[!] {action} [{rev}[ {url}[ {repo}]]]                        *:AuOther*
+    Push, pull or view what will be pushed or pulled. {rev} determines 
+    revision to be pushed/pulled, {url} determines where it should be pushed 
+    to/pulled from. If bang is present, then push even to unrelated 
+    repositories. Use ":" instead of any optional argument to get the same 
+    behavior as if it was not specified.
+    Possible actions:
+    Action    Description ~
+    push      Push
+    pull      Pull
+    outgoing  View what will be pushed if you replace “outgoing” with “push”
+    incoming  View what will be pulled if you replace “incoming” with “pull”
+
 AuRecord {opts} [glob1 [...]]                                      *:AuRecord*
     Start record mode (|aurum-record|). Possible options are just the same as 
     |:AuCommit| has (except for “type” option that is absent).
@@ -1466,6 +1479,15 @@ functions :: {String : FRef}                            *aurum-repo.functions*
   reltorepo :: path -> path                               *aurum-rf-reltorepo*
     Turn absolute or relative to current directory path into relative to 
     repository root one.
+  push :: dryrun, force[, url[, rev]] -> _                     *aurum-rf-push*
+  pull :: dryrun, force[, url[, rev]] -> _                     *aurum-rf-pull*
+    Push or pull to given or default URL. If {rev} argument is present, then 
+    push/pull only this revision. {dryrun} designates that nothing should be 
+    actually done, only what will be done should be shown.
+    Note: unlike other functions, this should expect any possible revision 
+    specification.
+    Note 2: if URL is a directory, it is supposed to be related to repository 
+    root, not to current working directory.
 The following functions do not accept repo argument:
   repo :: path -> repo                                         *aurum-rf-repo*
     Creates new repository object using repository located at given path.
@@ -1678,8 +1700,10 @@ Python driver was not tested under windows (wine) at all.
     2.4: Added {requiresclean} argument to |aurum-rf-status|.
     2.5: Added parsecmdarg and crnl resources
     3.0: Moved setlines and some other functions to @aurum/lineutils
+    3.1: Added |aurum-rf-push| and |aurum-rf-pull|
 @aurum:
-    0.1: Added :AuBranch and :AuName.
+    0.1: Added |:AuBranch| and |:AuName|.
+    0.2: Added |:AuOther|.
 @aurum/edit:
     1.0: Removed setlines function (moved it to @aurum/repo).
     1.1: Added “requiresbvar” _f.newcommand option.

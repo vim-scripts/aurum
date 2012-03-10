@@ -230,8 +230,10 @@ def run_in_dir(dir, func, *args, **kwargs):
         pass
     except OSError:
         pass
-    func(*args, **kwargs)
-    os.chdir(workdir)
+    try:
+        func(*args, **kwargs)
+    finally:
+        os.chdir(workdir)
 
 def dodiff(ui, path, rev1, rev2, files, opts):
     repo=g_repo(path)
@@ -398,7 +400,12 @@ def call_cmd(path, attr, *args, **kwargs):
             kwargs['force']=bool(kwargs['force'])
         else:
             kwargs['force']=False
-        cargs=[PrintUI(), repo]
+        if 'bundle' not in kwargs:
+            kwargs['bundle']=None
+        for key in [key for key in kwargs if key.find('-')!=-1]:
+            newkey=key.replace('-', '_')
+            kwargs[newkey]=kwargs.pop(key)
+        cargs=[repo.ui, repo]
         cargs.extend(args)
         run_in_dir(repo.root, commands.__getattribute__(attr),
                    *cargs, **kwargs)
@@ -416,7 +423,9 @@ def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
         if not revisions:
             revisions=None
         kwargs={'rev': revisions, 'ignore_case': bool(ignore_case),
-                'line_number': True, 'follow': True, 'print0': True}
+                'line_number': True, 'print0': True}
+        cs=g_cs(repo, '.')
+        kwargs['follow']=not [f for f in files if f not in cs]
         run_in_dir(repo.root, commands.grep, *args, **kwargs)
         items=(ui._getCaptured(verbatim=True)).split("\0")
         # XXX grep uses "\0" as a terminator, thus last line ends with "\0"

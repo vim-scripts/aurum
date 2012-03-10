@@ -45,7 +45,10 @@ function s:filefunc.function(rev, file, opts)
         let rev=repo.functions.getrevhex(repo, a:rev)
     endif
     if get(a:opts, 'replace', 0)
+        let winview=winsaveview()
+        silent %delete _
         call s:_r.lineutils.setlines(repo.functions.readfile(repo, rev, file),0)
+        call winrestview(winview)
         return
     endif
     if hasbuf

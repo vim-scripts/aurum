@@ -49,6 +49,7 @@ let s:_messages={
             \  'nocfg': 'Failed to get property %s of repository %s',
             \ 'invrng': 'Range %s..%s is invalid for the repository %s, '.
             \           'as well as reverse',
+            \    'ppf': 'Failed to run “git %s” for the repository %s: %s',
         \}
 let s:git={}
 "▶1 s:hypsites
@@ -652,6 +653,40 @@ function s:git.getrepoprop(repo, prop)
         return []
     endif
     call s:_f.throw('nocfg', a:prop, a:repo.path)
+endfunction
+"▶1 pushpull :: cmd, repo, dryrun, force[, URL[, rev]] → + ?
+function s:F.pushpull(cmd, repo, dryrun, force, ...)
+    let kwargs={'all': 1}
+    let args=[]
+    if a:0
+        if a:1 isnot 0
+            let args+=['--', a:1]
+        endif
+        if a:0>1 && a:2 isnot 0
+            if empty(args)
+                let args+=['--', 'origin']
+            endif
+            let args+=[a:2]
+        endif
+    endif
+    if (a:cmd is# 'fetch' && !empty(args)) || len(args)>2
+        unlet kwargs.all
+    endif
+    if a:force
+        let kwargs.force=1
+    endif
+    if a:dryrun
+        let kwargs['dry-run']=1
+    endif
+    return s:F.git(a:repo, a:cmd, args, kwargs, 0, 'ppf', a:cmd)
+endfunction
+"▶1 git.push :: repo, dryrun, force[, URL[, rev]]
+function s:git.push(...)
+    return call(s:F.pushpull, ['push']+a:000, {})
+endfunction
+"▶1 git.pull :: repo, dryrun, force[, URL[, rev]]
+function s:git.pull(...)
+    return call(s:F.pushpull, ['fetch']+a:000, {})
 endfunction
 "▶1 git.repo :: path → repo
 function s:git.repo(path)
