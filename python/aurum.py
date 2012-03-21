@@ -418,8 +418,8 @@ def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
         ui=CaptureUI()
         args=[ui, repo, pattern]
         args.extend(files)
-        revisions=["..".join(rev) if type(rev) is list else rev
-                                                    for rev in revisions]
+        revisions=[":".join(rev) if type(rev) is list else rev
+                                 for rev in revisions]
         if not revisions:
             revisions=None
         kwargs={'rev': revisions, 'ignore_case': bool(ignore_case),
@@ -455,3 +455,27 @@ def grep(path, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
     except AurumError:
         pass
 
+def git_hash(path, rev):
+    try:
+        repo=g_repo(path)
+        hggitpath=None
+        for hggitname in ['hggit', 'hg-git', 'git']:
+            hggitpath=repo.ui.config('extensions', hggitname)
+            if hggitpath is not None:
+                break
+        if hggitpath is None:
+            vim_throw('nohggitc')
+        import sys
+        sys.path.append(hggitpath)
+        try:
+            try:
+                from hggit.git_handler import GitHandler
+            except ImportError:
+                vim_throw('nohggit')
+            git=GitHandler(repo, repo.ui)
+            r=git.map_git_get(g_cs(repo, rev).hex())
+            vim.command('return '+json.dumps(r))
+        finally:
+            sys.path.pop()
+    except AurumError:
+        pass

@@ -129,6 +129,39 @@ let s:kwreqs = {'stat': {'files': 1},
             \}
 call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : {v:val : 1}})')
 unlet s:kwreqseqkw
+"▶1 beatycode       :: function::[String] → function::[String]
+let s:indents={
+            \         'if': [ 0, 1],
+            \     'elseif': [-1, 1],
+            \       'else': [-1, 1],
+            \      'endif': [-1, 0],
+            \        'try': [ 0, 1],
+            \      'catch': [-1, 1],
+            \    'finally': [-1, 1],
+            \     'endtry': [-1, 0],
+            \   'function': [ 0, 1],
+            \'endfunction': [-1, 0],
+            \        'for': [ 0, 1],
+            \     'endfor': [-1, 0],
+            \      'while': [ 0, 1],
+            \   'endwhile': [-1, 0],
+        \}
+function s:F.beatycode(func)
+    let r=[]
+    let indent=0
+    for line in a:func
+        let line=substitute(line, '^\s\+', '', '')
+        let firstword=matchstr(line, '^\w\+')
+        if has_key(s:indents, firstword)
+            let indent+=s:indents[firstword][0]
+            call add(r, repeat('    ', indent).line)
+            let indent+=s:indents[firstword][1]
+        else
+            call add(r, repeat('    ', indent).line)
+        endif
+    endfor
+    return r
+endfunction
 "▶1 stat :: stats, idxlist, linebeg → ([String], sp)
 function s:F.stat(stats, idxlist, linebeg)
     let sitems=map(sort(keys(a:stats.files)),
@@ -319,7 +352,163 @@ function s:F.addlines(special, lnum)
                 \             mapexpr)
     return a:special
 endfunction
+"▶1 strappend :: func, String → + func
+let s:setlstrstr='let lstr=remove(text, -1)'
+let s:addexpr='((eval(submatch(1))!=0)?'.
+            \           '(printf("%+i", eval(submatch(1)))):'.
+            \           '(""))'
+function s:F.strappend(func, s)
+    let func=a:func
+    if func[-1][:13] is# 'let text[-1].='
+        let func[-1].='.'.a:s
+    elseif func[-1][:10] is# 'let text+=['
+        let func[-1]=func[-1][:-2].'.'.a:s.']'
+    else
+        let i=len(func)
+        let spsets=[]
+        while i
+            let i-=1
+            if func[i] is# s:setlstrstr || func[i][:1] is# 'if'
+                break
+            elseif func[i][:11] is# 'let special.'
+                let spsets+=[i-1]
+            elseif func[i] =~# '\V\^let text+=[''\v%([^'']|\''\'')*\V'']'
+                let str=remove(func, i)[11:-2]
+                let lstr=len(eval(str))
+                for i in spsets
+                    let func[i]=substitute(substitute(substitute(substitute(
+                                \func[i],
+                                \'\Vlen(text[-1])', lstr,  'g'),
+                                \'\v\ (\d+%([+\-]\d+)+)',
+                                \       '\='.tr(s:addexpr, '+', '1'),
+                                \                          'g'),
+                                \'\Vlen(text)',     '&+1', 'g'),
+                                \'\Vlen(text)\v(%([+\-]\d+)+)',
+                                \       '\="len(text)".'.s:addexpr,
+                                \                          'g')
+                endfor
+                let func+=['let text+=['.str.'.'.a:s.']']
+                return
+            endif
+        endwhile
+        let func+=['let text[-1].='.a:s]
+    endif
+endfunction
 "▶1 compile :: template, opts → Fref
+let s:add={}
+"▶2 add.ke2 : Add complex multiline statement
+function s:add.ke2(addedif, expr, kw, arg, func)
+    let addedif2=0
+    let func=a:func
+    let func+=[s:setlstrstr]
+    "▶3 Add missing if’s
+    if !a:addedif
+        if a:kw is# 'stat'
+            let addedif2=1
+            let func+=['if exists("diff")']
+        elseif a:kw is# 'files' || a:kw is# 'changes'
+            let addedif2=1
+            let func+=['if !empty(a:cs.'.a:kw.')']
+        elseif a:kw is# 'renames' || a:kw is# 'copies'
+            let addedif2=1
+            let func+=['if !empty(filter(values(a:cs.'.a:kw.'), '.
+                        \               '"v:val isnot 0"))']
+        endif
+    endif
+    "▲3
+    let expr=substitute(a:expr, '@<@', 'lstr', 'g')
+    let func+=['let [ntext, sp]='.expr]+
+                \   (has_key(a:arg, 'flbeg')?
+                \       ['let ntext[0]='.string(a:arg.flbeg).'.ntext[0]']:
+                \       [])+[
+                \'call s:F.addlines(sp, len(text))',
+                \'let text+=ntext',
+                \'call extend(special, sp)']
+    if addedif2
+        let func+=['endif']
+    endif
+endfunction
+"▶2 add.ke1 : Add simple multiline statements
+function s:add.ke1(addedif, expr, kw, arg, func)
+    let addedif2=0
+    let func=a:func
+    let func+=[s:setlstrstr]
+    "▶3 Add missing if’s
+    if !a:addedif && a:kw is# 'patch'
+        let addedif2=1
+        let func+=['if exists("diff")']
+    endif
+    "▲3
+    let func+=['let ntext='.a:expr,
+                \'call map(ntext, string(lstr).".v:val")']+
+                \   (has_key(a:arg, 'flbeg')?
+                \       ['let ntext[0]='.string(a:arg.flbeg).
+                \                                  '.ntext[0]']:
+                \       [])+[
+                \'let special.'.a:kw.'_R=[[len(text), 0], '.
+                \                '[len(text)+len(ntext)-1, 0]]',
+                \'let text+=ntext']
+    if addedif2
+        let func+=['endif']
+    endif
+endfunction
+"▶2 add.ke0 : Add single-line statement
+function s:add.ke0(addedif, expr, kw, arg, func)
+    let func=a:func
+    let add2if=(a:kw is# 'branch' && a:arg.0 isnot# 'keep' && !a:addedif)
+    if add2if
+        let func+=['if a:cs.branch isnot# "default"']
+    endif
+    let func+=['let estr='.a:expr]
+    "▶3 Determine condition on which suffix or prefix will be added
+    if index(s:kwpempt, a:kw)!=-1
+        let condition='!empty(estr)'
+    elseif a:kw is# 'branch'
+        let condition='estr isnot# "default"'
+    elseif a:kw is# 'rev'
+        let condition=0
+    endif
+    "▶3 Add suffix or prefix
+    if exists('condition')
+        let addif=(condition isnot 0 && !a:addedif && !add2if) &&
+                    \(has_key(a:arg, 'pref') ||
+                    \ has_key(a:arg, 'suf'))
+        if addif
+            let func+=['if '.condition]
+        endif
+        "▶4 Add prefix
+        if has_key(a:arg, 'pref')
+            if addif
+                let func+=['let estr='.string(a:arg.pref).'.estr']
+            else
+                let func[-1]=substitute(func[-1], '=\@<=',
+                            \           escape(string(a:arg.pref),
+                            \                  '\~&').'.', '')
+            endif
+        endif
+        "▶4 Add suffix
+        if has_key(a:arg, 'suf')
+            if has_key(a:arg, 'pref') || !addif
+                let func[-1].='.'.string(a:arg.suf)
+            else
+                let func+=['let estr.='.string(a:arg.suf)]
+            endif
+        endif
+        "▲4
+        if addif
+            let func+=['endif']
+        endif
+    endif
+    "▲3
+    let func+=['let special.'.a:kw.'_r='.
+                \  '[[len(text)-1, len(text[-1])], '.
+                \   '[len(text)-1, len(text[-1])-1+len(estr)]]',]
+    call s:F.strappend(func, 'estr')
+    if add2if
+        let func+=['endif']
+    endif
+endfunction
+"▲2
 let s:compilecache={}
 function s:F.compile(template, opts, repo)
     "▶2 Cache
@@ -394,7 +583,7 @@ function s:F.compile(template, opts, repo)
                 if i==0
                     let func[-1]='let text+=['.string(str).']'
                 else
-                    let func+=['let text[-1].='.string(str)]
+                    call s:F.strappend(func, string(str))
                 endif
             endif
             if lmeta>i
@@ -438,96 +627,8 @@ function s:F.compile(template, opts, repo)
                 if has_key(s:kwreqs, kw)
                     call extend(reqs, s:kwreqs[kw])
                 endif
-                "▶2 Add complex multiline statement
-                let addedif2=0
-                if ke[0]==2
-                    let func+=['let lstr=remove(text, -1)']
-                    "▶3 Add missing if’s
-                    if !addedif
-                        if kw is# 'stat'
-                            let addedif2=1
-                            let func+=['if exists("diff")']
-                        elseif kw is# 'files' || kw is# 'changes'
-                            let addedif2=1
-                            let func+=['if !empty(a:cs.'.kw.')']
-                        elseif kw is# 'renames' || kw is# 'copies'
-                            let addedif2=1
-                            let func+=['if !empty(filter(values(a:cs.'.kw.'), '.
-                                        \               '"v:val isnot 0"))']
-                        endif
-                    endif
-                    "▲3
-                    let expr=substitute(expr, '@<@', 'lstr', 'g')
-                    let func+=['let [ntext, sp]='.expr]+
-                                \   (has_key(arg, 'flbeg')?
-                                \       ['let ntext[0]='.string(arg.flbeg).
-                                \                                  '.ntext[0]']:
-                                \       [])+[
-                                \'call s:F.addlines(sp, len(text))',
-                                \'let text+=ntext',
-                                \'call extend(special, sp)']
-                "▶2 Add simple multiline statement
-                elseif ke[0]
-                    let func+=['let lstr=remove(text, -1)']
-                    "▶3 Add missing if’s
-                    if !addedif && kw is# 'patch'
-                        let addedif2=1
-                        let func+=['if exists("diff")']
-                    endif
-                    "▲3
-                    let func+=['let ntext='.expr,
-                                \'call map(ntext, string(lstr).".v:val")']+
-                                \   (has_key(arg, 'flbeg')?
-                                \       ['let ntext[0]='.string(arg.flbeg).
-                                \                                  '.ntext[0]']:
-                                \       [])+[
-                                \'let special.'.kw.'_R=[[len(text), 0], '.
-                                \                '[len(text)+len(ntext)-1, 0]]',
-                                \'let text+=ntext']
-                "▶2 Add single-line statement
-                else
-                    if kw is# 'branch' && arg.0 isnot# 'keep'
-                        let func+=['if a:cs.branch isnot# "default"']
-                    endif
-                    let func+=['let estr='.expr]
-                    "▶3 Add suffix or prefix
-                    if index(s:kwpempt, kw)!=-1
-                        let condition='!empty(estr)'
-                    elseif kw is# 'branch'
-                        let condition='estr isnot# "default"'
-                    elseif kw is# 'rev'
-                        let condition=0
-                    endif
-                    if exists('condition')
-                        let addif=(condition isnot 0) &&
-                                    \(has_key(arg, 'pref') ||
-                                    \ has_key(arg, 'suf'))
-                        if addif
-                            let func+=['if '.condition]
-                        endif
-                        if has_key(arg, 'pref')
-                            let func+=['let estr='.string(arg.pref).'.estr']
-                        endif
-                        if has_key(arg, 'suf')
-                            let func+=['let estr.='.string(arg.suf)]
-                        endif
-                        if addif
-                            let func+=['endif']
-                        endif
-                    endif
-                    "▲3
-                    let func+=['let special.'.kw.'_r='.
-                                \  '[[len(text)-1, len(text[-1])], '.
-                                \   '[len(text)-1, len(text[-1])+len(estr)-1]]',
-                                \'let text[-1].=estr',]
-                    if kw is# 'branch' && arg.0 isnot# 'keep'
-                        let func+=['endif']
-                    endif
-                endif
                 "▲2
-                if addedif2
-                    let func+=['endif']
-                endif
+                call s:add['ke'.ke[0]](addedif, expr, kw, arg, func)
             endif
         endfor
         if addedif
@@ -537,7 +638,7 @@ function s:F.compile(template, opts, repo)
     let func+=['return r',
                 \'endfunction']
     let d={}
-    execute join(func, "\n")
+    execute join(s:F.beatycode(func), "\n")
     let r=[reqs, d.template]
     let s:compilecache[cid]=r
     return r

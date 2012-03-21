@@ -64,7 +64,16 @@ let s:_messages={
             \ 'grepfail': 'Failed to search through the repository %s: %s',
             \   'scfail': 'Failed to show [paths] section '.
             \             'for the repository %s: %s',
+            \  'svnfail': 'Failed to run “hg svn info” '.
+            \             'for the repository %s: %s',
             \ 'stat1mis': 'You must specify first revision as well',
+            \ 'nosvnrev': 'Failed to find revision in “hg svn info” output '.
+            \             'in the repository %s. Output:%s',
+            \ 'nohggitc': 'It appears that hg-git is not enabled '.
+            \             '(tried options extensions.hggit, extensions.hg-git '.
+            \              'and extensions.git)',
+            \  'nohggit': 'It appears that hg-git is not installed '.
+            \             '(importing GitHandler threw ImportError)',
         \}
 let s:nullrev=repeat('0', 40)
 let s:_options={
@@ -77,13 +86,18 @@ let s:_options={
 let s:hypsites=[]
 let s:bookmarks='repo.functions.getcsprop(repo, hex, "bookmarks")'
 let s:tags='repo.functions.getcsprop(repo, hex, "tags")'
-let s:gitrev='((!empty('.s:bookmarks.'))?'.
-            \      '('.s:bookmarks.'[0]):'.
-            \   '((!empty('.s:tags.'))?'.
-            \      '(matchstr(get(filter(copy('.s:tags.'), "stridx(v:val, ''/'')!=-1"), 0, '.
-            \           '"master"), "\\v[^/]+$"))'.
-            \   ':'.
-            \      '("master")))'
+if s:usepythondriver
+    let s:gitrev='repo.functions.githex(repo, hex)'
+else
+    let s:gitrev='((!empty('.s:bookmarks.'))?'.
+                \      '('.s:bookmarks.'[0]):'.
+                \   '((!empty('.s:tags.'))?'.
+                \      '(matchstr(get(filter(copy('.s:tags.'), '.
+                \                           '"stridx(v:val, ''/'')!=-1"), 0, '.
+                \           '"master"), "\\v[^/]+$"))'.
+                \   ':'.
+                \      '("master")))'
+endif
 unlet s:bookmarks s:tags
 let s:hypsites+=map(copy(s:_r.hypsites.git), '["protocol[:2] is# ''git'' && (".v:val[0].")", '.
             \                                 'map(copy(v:val[1]), '.
@@ -92,7 +106,7 @@ let s:hypsites+=map(copy(s:_r.hypsites.git), '["protocol[:2] is# ''git'' && (".v
             \                                           '(substitute(v:val, "\\v<hex>", s:gitrev, "g"))'')]')
 unlet s:gitrev
 let s:hypsites+=s:_r.hypsites.mercurial
-let s:svnrev='"HEAD"'
+let s:svnrev='repo.functions.svnrev(repo, hex)'
 let s:hypsites+=map(copy(s:_r.hypsites.svn), '[v:val[0], map(copy(v:val[1]), '.
             \                                               '''substitute(v:val, "\\v<hex>", s:svnrev, "g")'')]')
 unlet s:svnrev
@@ -244,7 +258,7 @@ endfunction
 function s:F.getcslist(repo, start, end)
     let kwargs={'style': s:stylefile}
     let lines=s:F.hg(a:repo, 'log', [],
-                \    extend({'rev': a:start.'..'.a:end}, kwargs), 0, 'log')[:-2]
+                \    extend({'rev': a:start.':'.a:end}, kwargs), 0, 'log')[:-2]
     let css=[]
     if has_key(a:repo.changesets, s:nullrev)
         let cs0=a:repo.changesets[s:nullrev]
@@ -258,7 +272,7 @@ function s:F.getcslist(repo, start, end)
     let prevrev=-1
     while line<llines
         let [cs, line]=s:F.parsecs(lines, line)
-        if cs.rev-prevrev!=1
+        if cs.rev-prevrev!=1 && prevrev!=-1
             let css+=map(range(prevrev+1, cs.rev-1),
                         \'s:F.parsecs(s:F.hg(a:repo, "log", [], '.
                         \            'extend({"rev": "".v:val}, kwargs), 0, '.
@@ -267,7 +281,6 @@ function s:F.getcslist(repo, start, end)
         let css+=[cs]
         let prevrev=cs.rev
     endwhile
-    let cs0.rev=len(css)
     let css+=[cs0]
     return css
 endfunction
@@ -285,25 +298,25 @@ let s:F.runcmd=s:F.runshellcmd
 endif
 "▶1 getcs :: repo, rev → cs
 if s:usepythondriver "▶2
-function s:F.getcs(repo, rev)
-    let cs={}
-    try
-        execute s:_r.py.cmd 'aurum.get_cs(vim.eval("a:repo.path"), '.
-                    \                    'vim.eval("a:rev"))'
-    endtry
-    return cs
-endfunction
+    function s:F.getcs(repo, rev)
+        let cs={}
+        try
+            execute s:_r.py.cmd 'aurum.get_cs(vim.eval("a:repo.path"), '.
+                        \                    'vim.eval("a:rev"))'
+        endtry
+        return cs
+    endfunction
 else "▶2
-function s:F.getcs(repo, rev)
-    let csdata=s:F.hg(a:repo, 'log', [], {'rev': a:rev, 'style': s:stylefile},0,
-                \     'cs', a:rev)
-    let cs=s:F.parsecs(csdata, 0)[0]
-    call map(cs.parents,
-                \'type(v:val)=='.type(0).'? '.
-                \   'a:repo.functions.getrevhex(a:repo, v:val): '.
-                \   'v:val')
-    return cs
-endfunction
+    function s:F.getcs(repo, rev)
+        let csdata=s:F.hg(a:repo, 'log', [], {'rev': a:rev, 'style': s:stylefile},0,
+                    \     'cs', a:rev)
+        let cs=s:F.parsecs(csdata, 0)[0]
+        call map(cs.parents,
+                    \'type(v:val)=='.type(0).'? '.
+                    \   'a:repo.functions.getrevhex(a:repo, v:val): '.
+                    \   'v:val')
+        return cs
+    endfunction
 endif
 "▶1 hg.getcs :: repo, rev → cs
 function s:hg.getcs(repo, rev)
@@ -362,7 +375,7 @@ if s:usepythondriver
         endtry
         return d
     endfunction
-"▶2 no python
+    "▶2 no python
 else
     function s:F.getupdates(repo, start)
         let r={}
@@ -766,7 +779,7 @@ endfunction
 function s:hg.grep(repo, pattern, files, revisions, ignore_case, wdfiles)
     let args=map(copy(a:revisions),
             \                '((type(v:val)=='.type([]).')?'.
-            \                   '("--rev=".join(v:val, "..")):'.
+            \                   '("--rev=".join(v:val, ":")):'.
             \                   '("--rev=".v:val))')+
             \['--', a:pattern]+a:files
     let kwargs={'line-number': 1}
@@ -1103,6 +1116,23 @@ function s:iterfuncs.ancestors.next(d)
     endif
     return cs
 endfunction
+"▶1 hg.svnrev :: repo, rev → svnrev
+function s:hg.svnrev(repo, rev)
+    let lines=s:F.hg(a:repo, 'svn', ['info'], {'rev': ''.a:rev}, 0, 'svn')
+    for line in lines
+        if line[:9] is# 'Revision: '
+            return +line[10:]
+        endif
+    endfor
+    call s:_f.throw('nosvnrev', a:repo.path, "\n".join(lines, "\n"))
+endfunction
+"▶1 hg.gitrev :: repo, rev → githex
+if s:usepythondriver
+function s:hg.githex(repo, rev)
+    execute s:_r.py.cmd 'aurum.git_hash(vim.eval("a:repo.path"), '.
+                \                      'vim.eval("a:rev"))'
+endfunction
+endif
 "▶1 Register driver
 call s:_f.regdriver('Mercurial', s:hg)
 "▶1

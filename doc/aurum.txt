@@ -783,6 +783,7 @@ commands. Present mappings:
                       *g:frawormap_Aurum_Log*    *g:frawormap_Aurum_LogFile*
                       *g:frawormap_Aurum_URL*    *g:frawormap_Aurum_LineURL*
                       *g:frawormap_Aurum_Track*  *g:frawormap_Aurum_Forget*
+                      *g:frawormap_Aurum_Push*   *g:frawormap_Aurum_Pull*
                       *g:frawormap_Aurum_FVdiff*     *aurum-m-Aurum-FVdiff*
                           *aurum-m-Aurum_Commit*     *aurum-m-Aurum_CommitAll*
                           *aurum-m-Aurum_ROpen*      *aurum-m-Aurum_Revert*
@@ -792,9 +793,10 @@ commands. Present mappings:
                           *aurum-m-Aurum_Log*        *aurum-m-Aurum_LogFile*
                           *aurum-m-Aurum_URL*        *aurum-m-Aurum_LineURL*
                           *aurum-m-Aurum_Track*      *aurum-m-Aurum_Forget*
+                          *aurum-m-Aurum_Push*       *aurum-m-Aurum_Pull*
 Mapname    LHS  Command     Description ~
 Commit      i   AuCommit    Commit changes to current file
-CommitAll   I   AuCommit**  Commit changes to all files
+CommitAll   I   AuCommit ** Commit changes to all files
 ROpen       o   AuFile      View contents of the current file as it was at the 
                             the working directory revision
 Revert      O   AuFile . : replace
@@ -824,6 +826,11 @@ Track       A   AuTrack     Make current file be tracked by VCS
 Forget      R   AuJunk forget :
                             Make VCS forget current file (it won’t remove the 
                             file though)
+Push        P   AuOther push
+                            Push new commits to remote repository.
+Pull        p   AuOther push | AuUpdate
+                            Pull new commits from remote repository and 
+                            perform an update.
 
 ==============================================================================
 4. Options                                                     *aurum-options*
@@ -1613,6 +1620,11 @@ throw an "nimp" exception.
 |aurum-rf-grep|: For non-python driver filenames that look like 
     {smth}:{num>=0}:{num>0} are not supported and will lead to invalid 
     results.
+*aurum-rf-svnrev* exists and produces svn revision number out of repository 
+    object and mercurial revision specification.
+*aurum-rf-githex* exists and produces git sha1 out of repository object and 
+    mercurial revision specification. This function is present only when using 
+    python version of driver.
 Python driver was not tested under windows (wine) at all.
 
 ------------------------------------------------------------------------------
@@ -1722,5 +1734,7 @@ Python driver was not tested under windows (wine) at all.
          respectively. Same for |aurum://status| “rev1” and “rev2” options.
 @aurum/commit:
     1.0: Added fifth argument to _r.commit.commit()
+@aurum/annotate:
+    1.0: Removed one argument to _r.annotate.setannbuf()
 
 vim: ft=help:tw=78

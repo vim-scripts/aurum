@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/table': '0.1',
+    execute frawor#Setup('1.0', {'@/table': '0.1',
                 \        '@aurum/cmdutils': '0.0',
                 \         '@aurum/bufvars': '0.0',
                 \            '@aurum/edit': '1.0',
@@ -39,6 +39,20 @@ function s:F.formatann(repo, cs, lnum, numlen)
     endif
     return self[a:cs.hex]
 endfunction
+"▶1 unload
+function s:F.unload(bvar)
+    if has_key(a:bvar, 'annbuf') && bufexists(a:bvar.annbuf)
+        let annwin=s:F.findwin(a:bvar.annbuf)
+        if annwin==-1
+            let annwin=bufwinnr(a:bvar.annbuf)
+        endif
+        if annwin!=-1
+            for [o, v] in items(a:bvar.saved)
+                call setwinvar(annwin, '&'.o, v)
+            endfor
+        endif
+    endif
+endfunction
 "▶1 setup
 "▶2 getcs :: rev + self → cs + self
 function s:F.getcs(rev)
@@ -61,6 +75,7 @@ function s:F.setup(read, repo, rev, file)
     let bvar.files=map(copy(ann), 'v:val[0]')
     let bvar.linenumbers=map(copy(ann), 'v:val[2]')
     let bvar.revisions=map(copy(css), 'v:val.hex')
+    let bvar.bwfunc=s:F.unload
     let lines=map(copy(css), 'call(s:F.formatann, [a:repo, v:val, v:key, '.
                 \                                  nl.'],d)')
     if a:read
@@ -71,19 +86,39 @@ function s:F.setup(read, repo, rev, file)
     endif
     return bvar
 endfunction
-"▶1 setannbuf
-function s:F.setannbuf(bvar, buf, annbuf)
-    let a:bvar.annbuf=a:annbuf
-    if bufwinnr(a:annbuf)!=-1
-        execute bufwinnr(a:annbuf).'wincmd w'
-        augroup AuAnnotateBW
-            execute 'autocmd BufWipeOut,BufHidden <buffer='.a:annbuf.'> '.
-                        \':if bufexists('.a:buf.') | '.
-                        \   'call feedkeys("\<C-\>\<C-n>'.
-                        \                 ':silent! bw '.a:buf.'\n") | '.
-                        \ 'endif'
-        augroup END
+"▶1 findwin :: buf → win
+function s:F.findwin(buf)
+    let win=winnr()
+    if win>1 && winbufnr(win-1)==a:buf
+        return win-1
+    elseif winbufnr(win+1)==a:buf
+        return win+1
+    else
+        return -1
     endif
+endfunction
+"▶1 setannbuf
+function s:F.setannbuf(bvar, annbuf)
+    let a:bvar.annbuf=a:annbuf
+    let a:bvar.saved={}
+    let a:bvar.saved.scrollbind = &scrollbind
+    let a:bvar.saved.cursorbind = &cursorbind
+    let a:bvar.saved.wrap       = &wrap
+    setlocal scrollbind cursorbind nowrap
+    let buf=bufnr('%')
+    let annwin=s:F.findwin(a:annbuf)
+    if annwin==-1
+        return
+    endif
+    execute annwin.'wincmd w'
+    setlocal scrollbind cursorbind nowrap
+    augroup AuAnnotateBW
+        execute 'autocmd BufWipeOut,BufHidden <buffer='.a:annbuf.'> '.
+                    \':if bufexists('.buf.') | '.
+                    \   'call feedkeys("\<C-\>\<C-n>'.
+                    \                 ':silent! bw '.buf.'\n") | '.
+                    \ 'endif'
+    augroup END
 endfunction
 let s:_augroups+=['AuAnnotateBW']
 "▶1 foldopen
@@ -129,17 +164,15 @@ function s:annfunc.function(opts)
             setlocal bufhidden=wipe
         endif
     endif
+    let annwin=winnr()
     call s:F.foldopen()
-    setlocal scrollbind cursorbind nowrap
     let lnr=line('.')
     let anwidth=min([42, winwidth(0)/2-1])
     call s:_r.run('silent leftabove '.anwidth.'vsplit', 'annotate', repo,
                 \ rev, file)
     execute lnr
-    setlocal scrollbind cursorbind
     setlocal bufhidden=wipe
-    let buf=bufnr('%')
-    call s:F.setannbuf(s:_r.bufvars[buf], buf, annbuf)
+    call s:F.setannbuf(s:_r.bufvars[bufnr('%')], annbuf)
 endfunction
 let s:_augroups+=['AuAnnotateBW']
 let s:annfunc['@FWC']=['-onlystrings'.

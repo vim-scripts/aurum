@@ -232,6 +232,14 @@ let s:hyp.svn=[
 \   'filehist': s:svngcbase.'."/source/list?path=/".'.s:svngcfile.'."&r=".hex',
 \        'log': s:svngcbase.'."/source/list"',
 \      'clone': 'url',}],
+\['domain is? "svn.gna.org',
+\ {     'html': '"http://".domain."/viewvcs".path[4:]."/".file."?view=markup&revision=".hex',   'hline': '"l".line',
+\        'raw': '"http://".domain."/viewvcs/*checkout*".path[4:]."/".file."?view=markup&revision=".hex',
+\   'annotate': '"http://".domain."/viewvcs".path[4:]."/".file."?annotate=".hex',               'aline': '"l".line',
+\   'filehist': '"http://".domain."/viewvcs".path[4:]."/".file."?view=log"',
+\        'log': '"http://".domain."/viewvcs".path[4:]."?view=log"',
+\      'clone': '"svn://".domain.path',
+\       'push': '"svn+ssh://".user."@".domain.path',}],
 \]
 unlet s:svngcbase s:svngcfile
 "▶1 post resource

@@ -14,7 +14,7 @@ setlocal nomodeline
 execute frawor#Setup('0.0', {'@aurum/repo': '3.0',
             \             '@aurum/bufvars': '0.0',
             \             '@aurum/vimdiff': '0.2',
-            \            '@aurum/annotate': '0.0',
+            \            '@aurum/annotate': '1.0',
             \                '@aurum/edit': '1.2',
             \                 '@/mappings': '0.0',
             \                       '@/os': '0.0',})
@@ -49,14 +49,13 @@ endfunction
 "      wine
 function s:F.runmap(action, ...)
     "▶2 Initialize variables
-    let buf=bufnr('%')
-    let bvar=s:_r.bufvars[buf]
+    let bvar=s:_r.bufvars[bufnr('%')]
     let hex=bvar.revisions[line('.')-1]
     let file=bvar.files[line('.')-1]
     let hasannbuf=has_key(bvar, 'annbuf')
     if hasannbuf
-        let abwnr=bufwinnr(bvar.annbuf)
-        let hasannbuf=(abwnr!=-1)
+        let annwin=bufwinnr(bvar.annbuf)
+        let hasannbuf=(annwin!=-1)
     endif
     "▶2 Various *diff actions
     if a:action[-4:] is# 'diff'
@@ -73,9 +72,8 @@ function s:F.runmap(action, ...)
         endif
         let rev2=hex
         if hasannbuf
-            wincmd c
-            execute abwnr.'wincmd w'
-            setlocal noscrollbind
+            close
+            execute annwin.'wincmd w'
         endif
         if a:action[-7:-5] is# 'vim'
             if a:0 && a:1
@@ -136,7 +134,7 @@ function s:F.runmap(action, ...)
             let lnr=bvar.linenumbers[line('.')-1]
             if lnr is 0
                 let ablnr=line('.')
-                execute abwnr.'wincmd w'
+                execute annwin.'wincmd w'
                 let line=getline(ablnr)
                 unlet lnr
                 wincmd p
@@ -145,12 +143,11 @@ function s:F.runmap(action, ...)
             if exists('lnr')
                 execute lnr
             endif
-            setlocal scrollbind cursorbind
-            let abuf=bufnr('%')
-            let newbvar=s:_r.bufvars[abuf]
-            execute abwnr.'wincmd w'
+            let newbvar=s:_r.bufvars[bufnr('%')]
+            execute annwin.'wincmd w'
         endif
         let existed=s:_r.mrun('silent edit', 'file', bvar.repo, hex, file)
+        let annbuf=bufnr('%')
         if exists('lnr')
             execute lnr
         elseif exists('line')
@@ -164,9 +161,9 @@ function s:F.runmap(action, ...)
         if hasannbuf
             if exists('lnr')
                 call s:_r.annotate.foldopen()
-                setlocal scrollbind cursorbind nowrap
             endif
-            call s:_r.annotate.setannbuf(newbvar, abuf, bufnr('%'))
+            wincmd p
+            call s:_r.annotate.setannbuf(newbvar, annbuf)
         endif
     "▶2 `update' action
     elseif a:action is# 'update'
@@ -179,12 +176,9 @@ function s:F.runmap(action, ...)
             call s:_f.throw('no'.a:action[:3], hex)
         endif
         call s:_r.run('silent edit', 'annotate', bvar.repo, rev, bvar.file)
-        setlocal scrollbind
-        let abuf=bufnr('%')
-        let newbvar=s:_r.bufvars[abuf]
+        let newbvar=s:_r.bufvars[bufnr('%')]
         if hasannbuf
-            execute abwnr.'wincmd w'
-            setlocal noscrollbind
+            execute annwin.'wincmd w'
         else
             vsplit
             wincmd p
@@ -192,8 +186,9 @@ function s:F.runmap(action, ...)
             wincmd p
         endif
         let existed=s:_r.mrun('silent edit', 'file', bvar.repo, rev, bvar.file)
-        setlocal scrollbind
-        call s:_r.annotate.setannbuf(newbvar, abuf, bufnr('%'))
+        let annbuf=bufnr('%')
+        wincmd p
+        call s:_r.annotate.setannbuf(newbvar, annbuf)
     endif
     "▲2
     if exists('existed') && !existed
