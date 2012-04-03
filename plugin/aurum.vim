@@ -8,7 +8,7 @@ if !exists('s:_pluginloaded')
                 \                '@/mappings': '0.0',
                 \                 '@/options': '0.0',
                 \                      '@/os': '0.1',
-                \           '@aurum/cmdutils': '0.0',
+                \           '@aurum/cmdutils': '1.0',
                 \                     '@/fwc': '0.2',
                 \               '@aurum/repo': '3.1',
                 \               '@aurum/edit': '1.0',
@@ -443,6 +443,13 @@ call add(s:hypcomp,
             \'\Vcmd\s\+type ""',  'cmd '.s:_r.comp.cmd,  ''),
             \'\Vrev\s\+type ""',  'rev '.s:_r.comp.rev,  ''))
 "▶1 grepfunc
+function s:F.setlist(opts, list)
+    if has_key(a:opts, 'location')
+        return setloclist(a:opts.location, a:list)
+    else
+        return setqflist(a:list)
+    endif
+endfunction
 function s:grepfunc.function(pattern, opts)
     if has_key(a:opts, 'files') && a:opts.repo is# ':'
         let repo=s:_r.repo.get(a:opts.files[0])
@@ -497,8 +504,7 @@ function s:grepfunc.function(pattern, opts)
         endfor
         if empty(files)
             call s:_f.warn('nogf')
-            call setqflist([])
-            return
+            return s:F.setlist(a:opts, [])
         endif
     endif
     let wdfiles=((has_key(a:opts, 'wdfiles'))?(a:opts.wdfiles):
@@ -509,7 +515,7 @@ function s:grepfunc.function(pattern, opts)
         let item.filename=s:_r.fname('file', repo, item.filename[0],
                     \                item.filename[1])
     endfor
-    call setqflist(qf)
+    return s:F.setlist(a:opts, qf)
 endfunction
 let s:grepfunc['@FWC']=['-onlystrings '.
             \           'type "" '.
@@ -517,6 +523,7 @@ let s:grepfunc['@FWC']=['-onlystrings '.
             \           ' ?*+2 revrange   type ""  type ""'.
             \           ' ?*   revision   type ""'.
             \           ' ?*   files      type ""'.
+            \           ' ?    location   range 0 $=winnr("$")'.
             \           ' ?   !workmatch'.
             \           ' ?   !wdfiles'.
             \           ' ?   !ignorecase '.

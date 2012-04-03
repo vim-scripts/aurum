@@ -8,7 +8,7 @@ if !exists('s:_pluginloaded')
                 \                    '@/commands': '0.0',
                 \                   '@/functions': '0.0',
                 \                 '@aurum/commit': '1.0',
-                \               '@aurum/cmdutils': '0.0',
+                \               '@aurum/cmdutils': '1.0',
                 \              '@aurum/lineutils': '0.0',
                 \                   '@aurum/repo': '3.0',
                 \                   '@aurum/edit': '1.0',

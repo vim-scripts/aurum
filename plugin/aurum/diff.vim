@@ -1,10 +1,10 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
+    execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
                 \                 '@aurum/bufvars': '0.0',
                 \               '@aurum/lineutils': '0.0',
-                \                 '@aurum/vimdiff': '0.2',
+                \                 '@aurum/vimdiff': '1.0',
                 \                    '@aurum/repo': '3.0',
                 \                    '@aurum/edit': '1.2',
                 \                           '@/os': '0.0',
@@ -84,11 +84,9 @@ function s:difffunc.function(opts, ...)
     endif
     "▲2
     let opts=filter(copy(a:opts), 'index(s:_r.repo.diffoptslst, v:key)!=-1')
-    let prevbuf=s:_r.cmdutils.prevbuf()
     call s:_r.run(get(a:opts, 'cmd', 'silent edit'), 'diff', repo, rev1, rev2,
                 \ filelist, opts)
     if !has_key(a:opts, 'cmd')
-        let s:_r.bufvars[bufnr('%')].prevbuf=prevbuf
         setlocal bufhidden=wipe
         if has('folding')
             setlocal foldmethod=expr

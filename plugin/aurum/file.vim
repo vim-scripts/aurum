@@ -1,10 +1,10 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
+    execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
                 \                 '@aurum/bufvars': '0.0',
                 \               '@aurum/lineutils': '0.0',
-                \                 '@aurum/vimdiff': '0.0',
+                \                 '@aurum/vimdiff': '1.0',
                 \                    '@aurum/repo': '3.0',
                 \                    '@aurum/edit': '1.2',
                 \                           '@/os': '0.0',
@@ -54,13 +54,11 @@ function s:filefunc.function(rev, file, opts)
     if hasbuf
         let filetype=&filetype
     endif
-    let prevbuf=s:_r.cmdutils.prevbuf()
     call s:_r.run(get(a:opts, 'cmd', 'silent edit'), 'file', repo, rev, file)
     if exists('filetype') && &filetype isnot# filetype
         let &filetype=filetype
     endif
     if !has_key(a:opts, 'cmd')
-        let s:_r.bufvars[bufnr('%')].prevbuf=prevbuf
         setlocal bufhidden=wipe
     endif
     call s:_f.mapgroup.map('AuFile', bufnr('%'))

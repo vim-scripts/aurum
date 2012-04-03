@@ -16,11 +16,22 @@ let s:iterfuncs={}
 let s:usepythondriver=0
 if has_key(s:_r, 'py')
     try
+        " execute s:_r.py.cmd "try:\n".
+                    " \       "    if type(aurum).__name__=='module':\n".
+                    " \       "        reload(aurum)\n".
+                    " \       "except NameError:\n".
+                    " \       "    pass"
         execute s:_r.py.cmd 'import aurum'
         let s:usepythondriver=1
     catch
         " s:usepythondriver stays equal to 0, errors are ignored
     endtry
+    " FIXME Does not work in python3. Not very problematic as mercurial does not 
+    " do this either, but it will be necessary to review these lines after 
+    " python3 support in mercurial will be finished.
+    if s:usepythondriver
+        execute s:_r.py.cmd 'reload(aurum)'
+    endif
 endif
 let s:_messages={
             \ 'norepo': 'Repository %s not found',
@@ -70,10 +81,11 @@ let s:_messages={
             \ 'nosvnrev': 'Failed to find revision in “hg svn info” output '.
             \             'in the repository %s. Output:%s',
             \ 'nohggitc': 'It appears that hg-git is not enabled '.
-            \             '(tried options extensions.hggit, extensions.hg-git '.
-            \              'and extensions.git)',
+            \             '(tried options extensions.hggit and extensions.git)',
             \  'nohggit': 'It appears that hg-git is not installed '.
             \             '(importing GitHandler threw ImportError)',
+            \ 'nogitrev': 'No git revision associated with revision %s '.
+            \             'in repository %s',
         \}
 let s:nullrev=repeat('0', 40)
 let s:_options={

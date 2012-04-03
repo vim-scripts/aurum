@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',
+    execute frawor#Setup('1.0', {'@/resources': '0.0',
                 \                       '@/os': '0.0',
                 \                '@aurum/repo': '3.0',
                 \                '@aurum/edit': '1.0',
@@ -302,23 +302,12 @@ function s:F.closebuf(bvar)
     let buf=bufnr('%')
     return r.':if bufexists('.buf.')|bwipeout '.buf."|endif\n"
 endfunction
-"▶1 getprevbuf :: () + bufvars → buf
-function s:F.prevbuf()
-    let r=bufnr('%')
-    if has_key(s:_r.bufvars, r) && (&bufhidden is# 'wipe' ||
-                \                   &bufhidden is# 'delete') &&
-                \has_key(s:_r.bufvars[r], 'prevbuf')
-        let r=s:_r.bufvars[r].prevbuf
-    endif
-    return r
-endfunction
 "▶1 Post cmdutils resource
 call s:_f.postresource('cmdutils', {'globescape': s:F.globescape,
             \                           'getrrf': s:F.getrrf,
             \                      'getdifffile': s:F.getdifffile,
             \                        'checkrepo': s:F.checkrepo,
             \                         'closebuf': s:F.closebuf,
-            \                          'prevbuf': s:F.prevbuf,
             \                     'nogetrepoarg': s:nogetrepoarg,
             \})
 "▶1 Some completion-related globals

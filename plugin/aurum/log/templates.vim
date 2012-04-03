@@ -344,14 +344,6 @@ function s:F.getcid(template, opts)
     let r.=string(a:template)[2:-3]
     return r
 endfunction
-"▶2 addlines
-function s:F.addlines(special, lnum)
-    let mapexpr='[v:val[0]+'.a:lnum.']+v:val[1:]'
-    call map(a:special, 'v:key[-2:] is? "_r"?'.
-                \             'map(v:val, '.string(mapexpr).'):'.
-                \             mapexpr)
-    return a:special
-endfunction
 "▶1 strappend :: func, String → + func
 let s:setlstrstr='let lstr=remove(text, -1)'
 let s:addexpr='((eval(submatch(1))!=0)?'.
@@ -421,7 +413,9 @@ function s:add.ke2(addedif, expr, kw, arg, func)
                 \   (has_key(a:arg, 'flbeg')?
                 \       ['let ntext[0]='.string(a:arg.flbeg).'.ntext[0]']:
                 \       [])+[
-                \'call s:F.addlines(sp, len(text))',
+                \'let mapexpr="[v:val[0]+".len(text)."]+v:val[1:]"',
+                \'call map(sp, "v:key[-2:] is? ''_r'' ? map(v:val, mapexpr) '.
+                \                                    ': ".mapexpr)',
                 \'let text+=ntext',
                 \'call extend(special, sp)']
     if addedif2
@@ -440,7 +434,7 @@ function s:add.ke1(addedif, expr, kw, arg, func)
     endif
     "▲3
     let func+=['let ntext='.a:expr,
-                \'call map(ntext, string(lstr).".v:val")']+
+                \'call map(ntext, "lstr.v:val")']+
                 \   (has_key(a:arg, 'flbeg')?
                 \       ['let ntext[0]='.string(a:arg.flbeg).
                 \                                  '.ntext[0]']:

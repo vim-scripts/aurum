@@ -1,9 +1,9 @@
 "▶1 
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.2', {'@/os': '0.0',
-                \     '@aurum/cmdutils': '0.0',
-                \         '@aurum/edit': '1.0',
+    execute frawor#Setup('1.0', {'@/os': '0.0',
+                \     '@aurum/cmdutils': '1.0',
+                \         '@aurum/edit': '1.3',
                 \               '@/fwc': '0.0',
                 \          '@/mappings': '0.0',
                 \         '@/resources': '0.0',
@@ -21,7 +21,7 @@ elseif s:_pluginloaded
     finish
 endif
 let s:_options={
-            \   'usewin': {'default': 0, 'filter': 'bool'},
+            \'vimdiffusewin': {'default': 0, 'filter': 'bool'},
         \}
 let s:_messages={
             \'nodfile': 'Failed to deduce which file to diff with',
@@ -133,10 +133,11 @@ function s:F.diffsplit(difftarget, usewin)
     call s:_f.mapgroup.map('AuVimDiff', buf)
     "▶2 `usewin' option support
     " Uses left/right or upper/lower window if it has similar dimensions
-    if (a:usewin==-1 ? s:_f.getoption('usewin') : a:usewin) && winnr('$')>1
+    if (a:usewin==-1 ? s:_f.getoption('vimdiffusewin') : a:usewin)
+                \&& winnr('$')>1
         diffthis
         if s:F.findwindow()
-            let prevbuf=s:_r.cmdutils.prevbuf()
+            let prevbuf=s:_r.prevbuf()
             execute 'silent edit' fnameescape(a:difftarget)
             diffthis
         else
@@ -287,7 +288,7 @@ function s:F.openfile(usewin, hasbuf, repo, revs, file)
         let fbuf=bufnr('%')
     else
         let t:auvimdiff_prevbuffers={}
-        let prevbuf=s:_r.cmdutils.prevbuf()
+        let prevbuf=s:_r.prevbuf()
         if frev is 0
             execute 'silent edit' fnameescape(s:_r.os.path.join(a:repo.path,
                         \                     a:file))
@@ -316,7 +317,7 @@ function s:F.openfile(usewin, hasbuf, repo, revs, file)
             if !i && a:usewin && winnr('$')>1
                 diffthis
                 if s:F.findwindow()
-                    let prevbuf=s:_r.cmdutils.prevbuf()
+                    let prevbuf=s:_r.prevbuf()
                     execute 'silent edit' fnameescape(f)
                     diffthis
                     let t:auvimdiff_prevbuffers[bufnr('%')]=prevbuf
@@ -503,7 +504,7 @@ function s:vimdfunc.function(opts, ...)
             call s:_f.throw('nodfile')
         endif
         let usewin=get(a:opts, 'usewin', -1)
-        let usewin=(usewin==-1 ? s:_f.getoption('usewin') : usewin)
+        let usewin=(usewin==-1 ? s:_f.getoption('vimdiffusewin') : usewin)
         let fbuf=s:F.openfile(usewin, hasbuf, repo, revs, file)
         if bufwinnr(fbuf)!=-1
             execute bufwinnr(fbuf).'wincmd w'

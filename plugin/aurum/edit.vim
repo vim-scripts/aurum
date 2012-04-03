@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.2', {'@/autocommands': '0.0',
+    execute frawor#Setup('1.3', {'@/autocommands': '0.0',
                 \                   '@/functions': '0.0',
                 \                   '@/resources': '0.0',
                 \                   '@aurum/repo': '3.0',
@@ -314,6 +314,13 @@ function s:F.checkcmd(command)
         endif
     endif
 endfunction
+"▶1 addpats :: args → + args
+function s:F.addpats(cdescr, args)
+    let opts=a:args[-1]
+    for o in filter(copy(a:cdescr.options.pats), 'has_key(opts, v:val)')
+        let opts[o[:-2].'pats']=map(copy(opts[o]), 's:F.globtopat(v:val)')
+    endfor
+endfunction
 "▶1 auefunc
 let s:okeys={
             \'list': 'map(split(opts[o],";"), "s:F.ounescape(v:val)")',
@@ -374,12 +381,10 @@ function s:auefunc.function(rw)
                 let newopts[o]=eval(expr)
             endfor
         endfor
-        for o in filter(copy(get(cdescr.options, 'pats', [])),
-                    \   'has_key(newopts, v:val)')
-            let newopts[o[:-2].'pats']=map(newopts[o],
-                        \                  's:F.globtopat(v:val)')
-        endfor
         call add(args, newopts)
+        if has_key(cdescr.options, 'pats')
+            call s:F.addpats(cdescr, args)
+        endif
     endif
     "▶2 Get repository
     let repo=s:_r.repo.get(s:F.ounescape(args[0]))
@@ -532,7 +537,20 @@ function s:F.run(vcommand, command, repo, ...)
     let file=call(s:F.fname, [a:command, a:repo]+a:000, {})
     let existed=bufexists(file)
     call s:F.checkcmd(a:command)
-    if type(a:repo)==type({}) && a:vcommand=~#'\v%(sil%[ent]\ )?%(edit|view)'
+    if type(a:repo)==type({}) &&
+                \a:vcommand=~#'\v^%(%(sil%[ent]|vert%[ical]|lefta%[bove]|'.
+                \                    'abo%[veleft]|rightb%[elow]|'.
+                \                    'bel%[owright]|to%[pleft]|bo%[tright]|'.
+                \                    '\d*tab)\ )*'.
+                \                '%(%(tab)?%(e%[dit]|new)|view?|[ev]new?|'.
+                \                  'sp%[lit]|vs%[plit]|sv%[iew])$'
+        let args=copy(a:000)
+        let cdescr=s:commands[a:command]
+        if has_key(cdescr, 'options') && has_key(cdescr.options, 'pats')
+            let args[-1]=copy(args[-1])
+            call s:F.addpats(cdescr, args)
+        endif
+        let prevbuf=s:F.prevbuf()
         try
             let savedei=&eventignore
             set eventignore+=BufReadCmd
@@ -541,8 +559,11 @@ function s:F.run(vcommand, command, repo, ...)
             let &eventignore=savedei
         endtry
         setlocal modifiable noreadonly
-        silent call s:F.runcmd(s:commands[a:command], file, [0, a:repo]+a:000)
-        if a:vcommand[:2] isnot# 'sil'
+        silent call s:F.runcmd(s:commands[a:command], file, [0, a:repo]+args)
+        if bufexists(prevbuf)
+            let s:_r.bufvars[bufnr('%')].prevbuf=prevbuf
+        endif
+        if stridx(a:vcommand, 'sil')==-1
             file
         endif
     else
@@ -559,11 +580,22 @@ function s:F.mrun(...)
     endif
     return r
 endfunction
+"▶1 prevbuf :: () + bufvars → buf
+function s:F.prevbuf()
+    let r=bufnr('%')
+    if has_key(s:_r.bufvars, r) && (&bufhidden is# 'wipe' ||
+                \                   &bufhidden is# 'delete') &&
+                \has_key(s:_r.bufvars[r], 'prevbuf')
+        let r=s:_r.bufvars[r].prevbuf
+    endif
+    return r
+endfunction
 "▶1 Register resources
 call s:_f.postresource('run',       s:F.run)
 call s:_f.postresource('mrun',      s:F.mrun)
 call s:_f.postresource('fname',     s:F.fname)
 call s:_f.postresource('globtopat', s:F.globtopat)
+call s:_f.postresource('prevbuf',   s:F.prevbuf)
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r,commands')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

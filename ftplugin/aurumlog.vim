@@ -11,18 +11,21 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/cmdutils': '0.0',
+execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
             \                 '@aurum/bufvars': '0.0',
             \                    '@aurum/repo': '3.0',
             \                    '@aurum/edit': '1.0',
             \                           '@/os': '0.0',
-            \                 '@aurum/vimdiff': '0.0',
+            \                 '@aurum/vimdiff': '1.0',
             \                     '@/mappings': '0.0',})
 let s:_messages={
             \'nocontents': 'Log is empty',
             \    'noprev': 'Can’t find any revision before %s',
             \    'nonext': 'Can’t find any revision after %s',
             \    'nopars': 'Revision %s has no parents',
+            \  'novfiles': 'No viewable files found for revision %s',
+            \'novfilesff': 'No viewable files found for revision %s. '.
+            \              'Consider using “open” value of ignfiles option',
         \}
 let s:ignkeys=['crrestrict', 'filepats', 'revs', 'cmd', 'repo']
 "▶1 findCurSpecial :: bvar, hex, blockstart + cursor → special
@@ -152,6 +155,10 @@ function s:F.fvdiff(...)
     let bvar=s:_r.bufvars[bufnr('%')]
     let hex=bvar.getblock(bvar)[2]
     let cmd=':AuVimDiff full noonlymodified '
+    if has_key(bvar.opts, 'files') && !has_key(bvar.opts.ignorefiles, 'diff')
+        let cmd.=join(map(copy(bvar.opts.files),
+                    \     '"files ".escape(v:val, " ")')).' '
+    endif
     if !a:0
         return cmd.'curfile '.hex."\n"
     else
@@ -176,20 +183,26 @@ function s:F.gethexfile()
     " Above is not applicable if we don't know exactly whether such special 
     " exists
     elseif !empty(bvar.repo.functions.getcsprop(bvar.repo, cs, 'files'))
-        if len(cs.files)==1
-            let file=cs.files[0]
-        else
-            if has_key(bvar.opts, 'files') &&
-                        \!has_key(bvar.opts.ignorefiles, 'diff')
-                let files=copy(bvar.opts.csfiles[hex])
-                call filter(files, 'index(cs.files, v:val)!=-1')
-            else
-                let files=copy(cs.files)
+        if has_key(bvar.opts, 'files') &&
+                    \!has_key(bvar.opts.ignorefiles, 'open')
+            let files=copy(bvar.opts.csfiles[hex])
+            call filter(files, 'index(cs.files, v:val)!=-1')
+            if empty(files)
+                call s:_f.throw('novfilesff', hex)
             endif
+        else
+            let files=cs.files
+            if empty(files)
+                call s:_f.throw('novfiles', hex)
+            endif
+        endif
+        if len(files)==1
+            let file=files[0]
+        else
             let choice=inputlist(['Select file (0 to cancel):']+
-                        \        map(files, '(v:key+1).". ".v:val'))
+                        \        map(copy(files), '(v:key+1).". ".v:val'))
             if choice
-                let file=cs.files[choice-1]
+                let file=files[choice-1]
             endif
         endif
     endif

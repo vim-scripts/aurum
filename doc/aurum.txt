@@ -38,7 +38,9 @@ integration for your projects. Features:
     rollback (|g:aurum_remembermsg|).
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
-    attached: useful for sharing) (|:AuHyperlink|).
+    attached: useful for sharing) (|:AuHyperlink|). For mercurial it also 
+    supports git and subversion revisions (in case you are using hg-git and 
+    hgsubversion respectively).
   - |aurum#changeset()|, |aurum#repository()| and |aurum#status()| functions 
     that are to be used from modeline.
   - Frontends for various other VCS commands.
@@ -176,6 +178,10 @@ AuGrep {pattern} {opts}                                              *:AuGrep*
                    should be searched for. May be specified more then once.
     files          Glob. Determines which files should be searched. May be 
                    specified more then once.
+    location       Number from the range 0 .. winnr('$') (|winnr()|). If this 
+                   argument is specified, AuGrep will use |location-list| for 
+                   the given window (current in case it is 0) instead of the 
+                   quickfix list.
     repo           Path. Repository that should be searched.
     [no]wdfiles    Flag. Determines whether :AuGrep should output files in 
                    working directory if they have not changed since found 
@@ -259,8 +265,9 @@ AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
     user        Regex. If present, selects revisions where user matches given 
                 regular expression.
     branch      String. If present, selects revisions with given branch name.
-    limit       Number (1 to inf). Shows at most {limit} revisions, starting 
-                from the tip.
+    [no]limit   Number (1 to inf). Shows at most {limit} revisions, starting 
+                from the tip. Use “nolimit” to disable limit. Overrides 
+                |g:aurum_loglimit|.
     revision    Revision. Shows only specified revision.
     revrange    Two revisions. Shows revisions that are between specified 
                 ones.
@@ -270,15 +277,21 @@ AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
     template    Variable name. Specifies variable from which template should 
                 be loaded.
                                                            *aurum-lo-ignfiles*
-    ignfiles    One of “patch”, “renames”, “copies”, “files”. May be specified 
-                more then once. Overrides |g:aurum_ignorefiles|. Determines 
-                when “files” option will be ignored:
+    ignfiles    One of “patch”, “renames”, “copies”, “files”, “diff”, 
+                “mappings”. May be specified more then once. Overrides 
+                |g:aurum_ignorefiles|. Determines when “files” option will be 
+                ignored:
                   Value    Description ~
                   patch    “patch” and “stat” will always show full changeset 
                            patch or statistics.
                   renames  “showrenames” will always show all renamed files.
                   copies   “showcopies” will always show all copied files.
                   files    “showfiles” will always show all changed files.
+                  diff     AuLog Fdiff, RFdiff, FVdiff and RFVdiff mappings 
+                           will show changes done to all changed files.
+                  open     AuLog Diff, Rdiff, Vdiff, RVdiff, File, Open and 
+                           Annotate mappings will show all changed files in 
+                           file selection dialog.
     cmd         Command. Determines which command should be used to open log.
                 Default: “silent new”.
     [no]stat    Flag. Determines whether summary of changes should be shown.
@@ -422,14 +435,15 @@ AuVimDiff {opts} [rev1 [...]]                                     *:AuVimDiff*
                  Note: each pattern must contain at least one non-word 
                        character (|/\W|).
     [no]curfile  Determines whether current state of the file should be used.
-    [no]usewin   Overrides |g:aurum_usewin|. Determines whether new window 
-                 should be opened instead of using existing one. First file 
-                 will always be opened in current window unless “full” is 
+    [no]usewin   Overrides |g:aurum_vimdiffusewin|. Determines whether new 
+                 window should be opened instead of using existing one. First 
+                 file will always be opened in current window unless “full” is 
                  enabled.
     [no]full     If enabled, opens multiple tabs containing all files changed 
                  between selected revisions (revisions and working directory 
                  state if “curfile” is enabled). Overrides “file” option, 
-                 makes |g:aurum_usewin| and “usewin” options not applicable.
+                 makes |g:aurum_vimdiffusewin| and “usewin” options not 
+                 applicable.
     [no]onlymodified
                  Determines whether removed and added files should be included 
                  in the full diff (default: not included: option enabled).
@@ -854,7 +868,7 @@ ignorefiles                                              *g:aurum_ignorefiles*
     |:AuLog| (or to |aurum://log|) should be ignored. See |aurum-lo-ignfiles|.
     Default: empty.
 
-closewindow                                              *g:aurum_closewindow*
+closelogwindow                                        *g:aurum_closelogwindow*
     Bool. Determines whether log window should be closed when executing 
     mappings (except mappings that add a filter and exit mapping).
     Default: 1.
@@ -882,6 +896,16 @@ procinput                                                  *g:aurum_procinput*
                      Waits until you type <CR> ("\r" or "\n") or <Esc>
             1-9      Waits until you type next non-digit
             "        Waits until you type two characters
+            Part of {lhs} (|mapcheck()| returns non-empty for given character)
+                     Waits until |maparg()| also returns non-empty string, 
+                     |mapcheck()| returns empty string or 'timeoutlen' 
+                     milliseconds passed (latter only if 'timeout' is set and 
+                     vim is compiled with |+float| and |+reltime| features).
+
+loglimit                                                    *g:aurum_loglimit*
+    Natural number or 0. Determines, how many revisions should be shown by 
+    default (0 stands for “all”).
+    Default: 0.
 
 recheight                                                  *g:aurum_recheight*
     VimL |expression| that evaluates to unsigned integer or unsigned integer. 
@@ -921,7 +945,7 @@ bufleaveremembermsg                              *g:aurum_bufleaveremembermsg*
     commit is done. See note under |g:AuPreviousCommitMessage|.
     Default: 1.
 
-usewin                                                        *g:aurum_usewin*
+vimdiffusewin                                          *g:aurum_vimdiffusewin*
     Bool. Determines whether |:AuVimDiff| should use existing window. Existing 
     window will be used if it is located to the left or right ('diffopt' 
     contains “vertical”) or below or above ('diffopt' does not contain 
@@ -1720,15 +1744,20 @@ Python driver was not tested under windows (wine) at all.
     1.0: Removed setlines function (moved it to @aurum/repo).
     1.1: Added “requiresbvar” _f.newcommand option.
     1.2: Added “mgroup” _f.newcommand option and mrun resource
+    1.3: Added prevbuf function
 @aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
+    1.0: Renamed g:aurum_usewin option to |g:aurum_vimdiffusewin|.
 @aurum/log:
     0.1: Added |aurum-style-git| and |aurum-style-gitoneline| log styles, 
          added skipping of $rev if |aurum-repo.hasrevisions| is false, made it 
          separate graph from content using non-breaking spaces.
     0.2: Added |:AuLog| procinput option.
     0.3: Added @-@ and @.@ expr “variables”.
+    1.0: Added |g:aurum_loglimit| option, added ability to use “nolimit” in 
+         addition to “limit N”, renamed g:aurum_closewindow to 
+         |g:aurum_closelogwindow|.
 @aurum/status:
     1.0: Renamed |:AuStatus| “rev1” and “rev2” options to “rev” and “wdrev” 
          respectively. Same for |aurum://status| “rev1” and “rev2” options.
@@ -1736,5 +1765,7 @@ Python driver was not tested under windows (wine) at all.
     1.0: Added fifth argument to _r.commit.commit()
 @aurum/annotate:
     1.0: Removed one argument to _r.annotate.setannbuf()
+@aurum/cmdutils:
+    1.0: Removed cmdutils.prevbuf()
 
 vim: ft=help:tw=78
