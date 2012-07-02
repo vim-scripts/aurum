@@ -1,631 +1,383 @@
-"▶1 Первая загрузка
+"▶1 Setup
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    "▶2 frawor#Setup
-    execute frawor#Setup('0.2', {'@/commands': '0.0',
-                \               '@/functions': '0.0',
-                \                   '@/table': '0.0',
-                \                '@/mappings': '0.0',
-                \                 '@/options': '0.0',
-                \                      '@/os': '0.1',
-                \           '@aurum/cmdutils': '1.0',
-                \                     '@/fwc': '0.2',
-                \               '@aurum/repo': '3.1',
-                \               '@aurum/edit': '1.0',
-                \            '@aurum/bufvars': '0.0',}, 0)
-    "▶2 Команды
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    " TODO improve files completion
-    " TODO :AuMerge ?
-    " TODO :AuExplore
-    let s:addargs={'Update': {'bang': 1}, 'Move': {'bang': 1},
-                \  'Branch': {'bang': 1}, 'Name': {'bang': 1},
-                \   'Other': {'bang': 1}}
-    for s:cmd in ['Update', 'Move', 'Junk', 'Track', 'Hyperlink', 'Grep',
-                \ 'Branch', 'Name', 'Other']
-        let s:part=tolower(s:cmd[:3])
-        if len(s:cmd)>4 && stridx('aeiouy', s:part[-1:])!=-1
-            let s:part=s:part[:-2]
-        endif
-        let s:{s:part}func={}
-        let s:{s:part}comp=[]
-        let s:args={'nargs': '*', 'complete': s:{s:part}comp}
-        if has_key(s:addargs, s:cmd)
-            call extend(s:args, s:addargs[s:cmd])
-        endif
-        call s:_f.command.add('Au'.s:cmd, s:{s:part}func, s:args)
-    endfor
-    unlet s:cmd s:addargs s:args s:part
-    "▶2 Global mappings
-    call FraworLoad('@/mappings')
-    " TODO mapping that closes status window
-    call s:_f.mapgroup.add('Aurum', {
-                \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'               },
-                \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit **<CR>'            },
-                \'ROpen':     {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'                 },
-                \'Revert':    {'lhs':  'O', 'rhs': ':<C-u>AuFile . : replace<CR>'     },
-                \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'              },
-                \'FVdiff':    {'lhs': 'gD', 'rhs': ':<C-u>AuVimDiff full<CR>'         },
-                \'Diff':      {'lhs':  'd', 'rhs': ':<C-u>AuDiff :<CR>'               },
-                \'Fdiff':     {'lhs': 'gd', 'rhs': ':<C-u>AuDiff<CR>'                 },
-                \'Annotate':  {'lhs':  'a', 'rhs': ':<C-u>AuAnnotate<CR>'             },
-                \'Status':    {'lhs':  's', 'rhs': ':<C-u>AuStatus|wincmd p<CR>'      },
-                \'Record':    {'lhs':  'r', 'rhs': ':<C-u>AuRecord<CR>'               },
-                \'Log':       {'lhs':  'L', 'rhs': ':<C-u>AuLog<CR>'                  },
-                \'LogFile':   {'lhs':  'l', 'rhs': ':<C-u>AuLog : files :<CR>'        },
-                \'URL':       {'lhs':  'H', 'rhs': ':<C-u>AuHyperlink<CR>'            },
-                \'LineURL':   {'lhs':  'h', 'rhs': ':<C-u>AuHyperlink line 0<CR>'     },
-                \'Track':     {'lhs':  'A', 'rhs': ':<C-u>AuTrack<CR>'                },
-                \'Forget':    {'lhs':  'R', 'rhs': ':<C-u>AuJunk forget :<CR>'        },
-                \'Push':      {'lhs':  'P', 'rhs': ':<C-u>AuOther push<CR>'           },
-                \'Pull':      {'lhs':  'p', 'rhs': ':<C-u>AuOther pull | AuUpdate<CR>'},
-            \}, {'mode': 'n', 'silent': 1, 'leader': '<Leader>a'})
-    "▲2
-    finish
-elseif s:_pluginloaded
-    finish
-endif
-"▶1 Globals
+execute frawor#Setup('1.0', {'@/commands': '0.0',
+            \               '@/functions': '0.0',
+            \                '@/mappings': '0.0',
+            \                     '@/fwc': '0.3',
+            \            '@/autocommands': '0.0',
+            \               '@/resources': '0.0',
+            \              '@aurum/cache': '2.1',})
+"▶1 Messages
 let s:_messages={
-            \ 'uknurl': 'Failed to process url %s of repository %s',
-            \ 'uunsup': 'Url type “%s” is not supported for repository %s '.
-            \           'linked with %s',
-            \ 'ldirty': 'Cannot attach line number to a dirty file %s '.
-            \           'in the repository %s (dirty=having uncommited changes)',
-            \'nofiles': 'No files were specified',
-            \   'nogf': 'No files found',
-            \  'nrepo': 'Not a repository: %s',
-            \ 'bexsts': 'Error while creating branch %s for repository %s: '.
-            \           'branch already exists',
-            \ 'nunsup': 'Naming is not supported for repository %s',
-            \'ukntype': 'Unknown label type: %s. Supported types: %s',
-            \   'ldef': 'Label %s with type %s was alredy defined',
-            \   'nomv': 'No movable files found',
-            \'_mvheader': ['Source', 'Destination'],
+            \'afail': 'Failed to load aurum:// function from %s',
+            \'anofu': 'Plugin %s did not provide any functions for aurum://',
+            \'lfail': 'Failed to load Au%s’s function from %s',
+            \'nofun': 'Plugin %s did not provide any functions for Au%s',
         \}
+"▶1 Command descriptions
+" XXX Normally I use “type ""”. Things below are used to make these parts 
+"     unique.
+let s:revarg='type string'
+let s:filearg='type String'
+let s:cmdarg='type STRING'
+"XXX AuRecord notes:
+" options message, user, date and closebranch are used by com.commit
+" documentation says that options are the same as for `:AuCommit' except for 
+" `type' option
+let s:datereg='%(\d\d%(\d\d)?|[*.])'.
+            \ '%(\-%(\d\d?|[*.])'.
+            \ '%(\-%(\d\d?|[*.])'.
+            \ '%([ _]%(\d\d?|[*.])'.
+            \ '%(\:%(\d\d?|[*.]))?)?)?)?'
+let s:patharg='either (path d, match @\v^\w+%(\+\w+)*\V://\v|^\:$@)'
+let s:nogetrepoarg=':":" ('.s:patharg.')'
+unlet s:patharg
+let s:compbranchrevarg='in *F.branchlist'
+let s:comprevarg='in *F.revlist'
+let s:compcmdarg='first (in compcmds, idof cmd)'
+" XXX Some code relies on the fact that all options from s:diffoptslst are
+"     numeric
+let s:diffoptslst=['git', 'reverse', 'ignorews', 'iwsamount', 'iblanks',
+            \      'numlines', 'showfunc', 'alltext', 'dates']
+let s:diffoptsstr=join(map(copy(s:diffoptslst),
+            \          'v:val is# "numlines" ? '.
+            \               '" ?".v:val." range 0 inf" : '.
+            \               '"!?".v:val'))
+let s:allcachekeys=['branch', 'changeset', 'repository', 'status']
+let s:cmds={
+            \'Update':    {'opts': {'bang': 1},
+            \               'fwc': '[:=(0) '.s:revarg.
+            \                      '['.s:nogetrepoarg.']',
+            \              'wipe': ['branch', 'changeset', 'status'],
+            \             },
+            \'Move':      {'opts': {'bang': 1},
+            \               'fwc': '{  repo '.s:nogetrepoarg.
+            \                      ' ?!copy'.
+            \                      ' ?!rightrepl'.
+            \                      ' ?!leftpattern'.
+            \                      ' ?!pretend'.
+            \                      '} '.
+            \                      '+ '.s:filearg,
+            \              'wipe': ['status'],
+            \             },
+            \'Junk':      { 'fwc': '{?!forget '.
+            \                       '?!ignore '.
+            \                       '?!remove '.
+            \                       '?!ignoreglobs '.
+            \                      '} + '.s:filearg,
+            \              'wipe': ['status'],
+            \             },
+            \'Track':     { 'fwc': '+ '.s:filearg,
+            \              'wipe': ['status'],
+            \             },
+            \'Hyperlink': {'opts': {'range': '%'},
+            \               'fwc': '{   ?repo '.s:nogetrepoarg.
+            \                      '    ?rev   '.s:revarg.
+            \                      '    ?file  '.s:filearg.
+            \                      ' !+1?line  range 1 inf'.
+            \                      ' !+2?lines (range 1 inf)(range 1 inf)'.
+            \                      '    ?cmd   '.s:cmdarg.
+            \                      '    ?url   in utypes ~start'.
+            \                      '}',
+            \             },
+            \'Grep':      {'fwc': 'type "" '.
+            \                     '{     repo     '.s:nogetrepoarg.
+            \                     ' ?*+2 revrange   '.s:revarg.' '.s:revarg.
+            \                     ' ?*   revision   '.s:revarg.
+            \                     ' ?*   files      '.s:filearg.
+            \                     ' ?    location   range 0 $=winnr("$")'.
+            \                     ' ?   !workmatch'.
+            \                     ' ?   !wdfiles'.
+            \                     ' ?   !ignorecase '.
+            \                     '}',
+            \             },
+            \'Branch':    {'opts': {'bang': 1},
+            \               'fwc': 'type "" '.
+            \                      '{  repo '.s:nogetrepoarg.
+            \                      '}',
+            \              'wipe': ['branch', 'changeset'],
+            \             },
+            \'Name':      {'opts': {'bang': 1},
+            \               'fwc': 'type ""'.
+            \                      '{  repo '.s:nogetrepoarg.
+            \                      ' ? type   type ""'.
+            \                      ' ?!delete'.
+            \                      ' ?!local'.
+            \                      '} '.
+            \                      '+ type ""',
+            \              'wipe': ['branch', 'changeset'],
+            \             },
+            \'Other':     {'opts': {'bang': 1},
+            \               'fwc': 'in ppactions ~ smart '.
+            \                      '[:":" '.s:revarg.
+            \                      '[:":" '.s:filearg.
+            \                      '['.s:nogetrepoarg.']]]',
+            \              'wipe': s:allcachekeys,
+            \             },
+            \'Annotate':  { 'fwc': '{  repo  '.s:nogetrepoarg.
+            \                      '  ?file  '.s:filearg.
+            \                      '  ?rev   '.s:revarg.
+            \                      '}',
+            \             },
+            \'Commit':    { 'fwc': '{  repo '.s:nogetrepoarg.
+            \                      ' *?type      (either (in [modified added '.
+            \                                                'removed deleted '.
+            \                                                'unknown] ~start,'.
+            \                                            'match /\v^[MARDU?!]+$/))'.
+            \                      '  ?message   type ""'.
+            \                      '  ?user      type ""'.
+            \                      '  ?date      match /\v%(^%(\d*\d\d-)?'.
+            \                                               '%(%(1[0-2]|0?[1-9])-'.
+            \                                                 '%(3[01]|0?[1-9]|[12]\d)))?'.
+            \                                            '%(%(^|[ _])%(2[0-3]|[01]\d)'.
+            \                                                       '\:[0-5]\d'.
+            \                                                       '%(\:[0-5]\d)?)?$/'.
+            \                      ' !?closebranch'.
+            \                      '}'.
+            \                      '+ '.s:filearg,
+            \              'wipe': s:allcachekeys,
+            \             },
+            \'Diff':      { 'fwc': '{  repo     '.s:nogetrepoarg.
+            \                      '  ?rev1     '.s:revarg.
+            \                      '  ?rev2     '.s:revarg.
+            \                      '  ?changes  '.s:revarg.
+            \                      s:diffoptsstr.
+            \                      '  ?cmd      '.s:cmdarg.
+            \                      '}'.
+            \                      '+ '.s:filearg,
+            \             },
+            \'File':      { 'fwc': '[:=(0)   type ""'.
+            \                      '[:=(0)   either (match /\L/, path fr)]]'.
+            \                      '{  repo '.s:nogetrepoarg.
+            \                      ' !?replace'.
+            \                      '  ?cmd    '.s:cmdarg.
+            \                      '}',
+            \              'subs': [['\V:=(0)\s\+either (\[^)]\+)', 'path', ''],
+            \                       ['\V:=(0)\s\+type ""',
+            \                         'either (type "" '.s:comprevarg.')',  ''],
+            \                       ['\v\[(.{-})\]',                '\1',   ''],
+            \                      ],
+            \             },
+            \'Record':    { 'fwc': '{  repo '.s:nogetrepoarg.
+            \                      '  ?message           type ""'.
+            \                      '  ?date              type ""'.
+            \                      '  ?user              type ""'.
+            \                      ' !?closebranch'.
+            \                      '} '.
+            \                      '+ '.s:filearg,
+            \             },
+            \'Status':    { 'fwc': '['.s:nogetrepoarg.']'.
+            \                      '{ *?files     '.s:filearg.
+            \                      '   ?rev       '.s:revarg.
+            \                      '   ?wdrev     '.s:revarg.
+            \                      '   ?changes   '.s:revarg.
+            \                      '  *?show      (either (in [modified added '.
+            \                                                 'removed deleted '.
+            \                                                 'unknown ignored '.
+            \                                                 'clean all] ~start, '.
+            \                                             'match /\v^[MARDUIC!?]+$/))'.
+            \                      '   ?cmd       '.s:cmdarg.
+            \                      '}',
+            \             },
+            \'VimDiff':   { 'fwc': '{  repo  '.s:nogetrepoarg.
+            \                      '  ?file  '.s:filearg.
+            \                      ' *?files (match /\W/)'.
+            \                      ' !?full'.
+            \                      ' !?untracked'.
+            \                      ' !?onlymodified'.
+            \                      ' !?curfile'.
+            \                      ' !?usewin'.
+            \                      '}'.
+            \                      '+ '.s:revarg,
+            \              'subs': [['\V(match /\\W/)', '(path)', '']],
+            \             },
+            \'Log':       { 'fwc': '['.s:nogetrepoarg.']'.
+            \                      '{ *  ?files    '.s:filearg.
+            \                      '  *  ?ignfiles in ignfiles ~start'.
+            \                      '     ?date     match /\v[<>]?\=?'.s:datereg.'|'.
+            \                                             s:datereg.'\<\=?\>'.s:datereg.'/'.
+            \                      '     ?search   isreg'.
+            \                      '     ?user     isreg'.
+            \                      '     ?branch   type ""'.
+            \                      ' ! +1?limit    range 1 inf'.
+            \                      '     ?revision '.s:revarg.
+            \                      '   +2?revrange '.s:revarg.' '.s:revarg.
+            \                      '     ?style    in tlist'.
+            \                      '     ?template idof variable'.
+            \                      ' !   ?merges'.
+            \                      ' !   ?patch'.
+            \                      ' !   ?stat'.
+            \                      ' !   ?showfiles'.
+            \                      ' !   ?showrenames'.
+            \                      ' !   ?showcopies'.
+            \                      ' !   ?procinput'.
+            \                      ' !   ?autoaddlog'.
+            \                      ' !   ?progress'.
+            \                      s:diffoptsstr.
+            \                      '    ?cmd      '.s:cmdarg.
+            \                      '}',
+            \              'subs': [['\vbranch\s+\Vtype ""',
+            \                                'branch '.s:compbranchrevarg, '']],
+            \             },
+        \}
+unlet s:datereg s:nogetrepoarg s:compbranchrevarg
+"▶1 Related globals
 let s:utypes=['html', 'raw', 'annotate', 'filehist', 'bundle', 'changeset',
             \ 'log', 'clone', 'push']
-let s:_options={
-            \'workdirfiles': {'default': 1,
-            \                  'filter': 'bool',},
-            \'hypsites': {'default': [],
-            \             'checker': 'list tuple ((type ""), '.
-            \                                    'dict {?in utypes     type ""'.
-            \                                          '/\v^[ah]line$/ type ""'.
-            \                                         '})'
-            \            },
-        \}
-"▶1 getexsttrckdfiles
-function s:F.getexsttrckdfiles(repo, ...)
-    let cs=a:repo.functions.getwork(a:repo)
-    let r=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
-    let status=a:repo.functions.status(a:repo)
-    call filter(r, 'index(status.removed, v:val)==-1 && '.
-                \  'index(status.deleted, v:val)==-1')
-    let r+=status.added
-    if a:0 && a:1
-        let r+=status.unknown
-    endif
-    return r
-endfunction
-"▶1 getaddedermvdfiles
-function s:F.getaddedermvdfiles(repo)
-    let status=a:repo.functions.status(a:repo)
-    return status.unknown+filter(copy(status.removed),
-                \         'filereadable(s:_r.os.path.join(a:repo.path, v:val))')
-endfunction
-"▶1 filterfiles
-function s:F.filterfiles(repo, globs, files)
-    if empty(a:globs)
-        return []
-    endif
-    let r=[]
-    let dirs={}
-    for file in a:files
-        let fsplit=split(file, '\V/')
-        if empty(fsplit)
-            continue
-        endif
-        let d=dirs
-        for component in fsplit[:-2]
-            let component.='/'
-            if !has_key(d, component)
-                let d[component]={}
-            endif
-            let d=d[component]
-        endfor
-        let d[fsplit[-1]]=1
-    endfor
-    unlet! d
-    let patterns=map(copy(a:globs), 's:_r.globtopat('.
-                \                   'a:repo.functions.reltorepo(a:repo,v:val))')
-    let tocheck=map(items(dirs), '[v:val[1], v:val[0]]')
-    while !empty(tocheck)
-        let [d, f]=remove(tocheck, 0)
-        if !empty(filter(copy(patterns), 'f=~#v:val'))
-            let r+=[f]
-        elseif f[-1:] is# '/'
-            let tocheck+=map(items(d), '[v:val[1], f.v:val[0]]')
-        endif
-        unlet d
-    endwhile
-    return r
-endfunction
-"▶1 urlescape :: String → String
-function s:F.urlescape(str)
-    let r=''
-    let lstr=len(a:str)
-    let i=0
-    while i<lstr
-        let c=a:str[i]
-        if c=~#'^[^A-Za-z0-9\-_.!~*''()/]'
-            let r.=printf('%%%02X', char2nr(c))
-        else
-            let r.=c
-        endif
-        let i+=1
-    endwhile
-    return r
-endfunction
-"▶1 updfunc
-function s:updfunc.function(bang, rev, repopath)
-    let repo=s:_r.repo.get(a:repopath)
-    call s:_r.cmdutils.checkrepo(repo)
-    if a:rev is 0
-        let rev=repo.functions.gettiphex(repo)
-    else
-        let rev=repo.functions.getrevhex(repo, a:rev)
-    endif
-    return repo.functions.update(repo, rev, a:bang)
-endfunction
-let s:updfunc['@FWC']=['-onlystrings _ '.
-            \          '[:=(0) type ""'.
-            \          '['.s:_r.cmdutils.nogetrepoarg.']]', 'filter']
-call add(s:updcomp,
-            \substitute(substitute(substitute(s:updfunc['@FWC'][0],
-            \'\V _',                '',            ''),
-            \'\V|*_r.repo.get',     '',            ''),
-            \'\V:=(0)\s\+type ""', s:_r.comp.rev, ''))
-"▶1 movefunc
-" :AuM          — move current file to current directory
-" :AuM dir      — move current file to given directory
-" :AuM pat  pat — act like `zmv -W': use second pat to construct new file name
-" :AuM pat+ dir — move given file(s) to given directory
-" :AuM pat+     — move given file(s) to current directory
-function s:movefunc.function(bang, opts, ...)
-    if a:0 && !get(a:opts, 'leftpattern', 0) && a:opts.repo is# ':'
-        let repo=s:_r.repo.get(a:1)
-    else
-        let repo=s:_r.repo.get(a:opts.repo)
-    endif
-    call s:_r.cmdutils.checkrepo(repo)
-    let allfiles=s:F.getexsttrckdfiles(repo)
-    if get(a:opts, 'copy', 0)
-        let key='copy'
-    else
-        let key='move'
-    endif
-    let rrfopts={'repo': repo.path}
-    if a:0==0
-        let target='.'
-        let files=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
-    elseif a:0==1 && isdirectory(a:1)
-        let target=a:1
-        let files=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
-    elseif a:0>1 && get(a:opts, 'rightrepl', 0)
-        let patterns=map(a:000[:-2], 's:_r.globtopat('.
-                    \                'repo.functions.reltorepo(repo,v:val), 1)')
-        let moves={}
-        let repl=a:000[-1]
-        for pattern in patterns
-            for file in filter(copy(allfiles), 'v:val=~#pattern && '.
-                        \                      '!has_key(moves, v:val)')
-                let moves[file]=repo.functions.reltorepo(repo,
-                            \               substitute(file, pattern, repl, ''))
-            endfor
-        endfor
-    elseif a:0>1 && get(a:opts, 'leftpattern', 0)
-        let moves={}
-        let repl=a:000[-1]
-        for pattern in a:000[:-2]
-            for file in filter(copy(allfiles), 'v:val=~#pattern && '.
-                        \                      '!has_key(moves, v:val)')
-                let moves[file]=substitute(file, pattern, repl, '')
-            endfor
-        endfor
-    elseif a:0==2 && a:2=~#'[*?]' &&
-                \substitute(a:1, '\v%(^|$|\\.|[^*])[^*?]*', '-', 'g') is#
-                \substitute(a:2, '\v%(^|$|\\.|[^*])[^*?]*', '-', 'g')
-        let pattern=s:_r.globtopat(repo.functions.reltorepo(repo, a:1),
-                    \                       1)
-        let repl=split(a:2, '\V\(**\?\|?\)', 1)
-        let moves={}
-        for [file, match] in filter(map(copy(allfiles),
-                    \                   '[v:val, matchlist(v:val, pattern)]'),
-                    \               '!empty(v:val[1])')
-            let target=''
-            let i=1
-            for s in repl
-                let target .= s . get(match, i, '')
-                let i+=1
-            endfor
-            let moves[file]=repo.functions.reltorepo(repo, target)
-        endfor
-    elseif a:0==2 && !isdirectory(a:2) && filewritable(a:1)
-        let fst=a:1
-        if fst is# ':'
-            let fst=s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3]
-        endif
-        let moves = {repo.functions.reltorepo(repo, fst):
-                    \repo.functions.reltorepo(repo, a:2)}
-    else
-        let globs=filter(copy(a:000), 'v:val isnot# ":"')
-        let hascur=(len(globs)!=a:0)
-        if a:0==1 || !(isdirectory(globs[-1]) && globs[-1][-1:] isnot# '/')
-            let target='.'
-        else
-            let target=remove(globs, -1)
-            if !isdirectory(target)
-                call mkdir(target, 'p')
-            endif
-        endif
-        let files=s:F.filterfiles(repo, globs, allfiles)
-        if hascur
-            let files+=[s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3]]
-        endif
-    endif
-    if exists('files')
-        let target=repo.functions.reltorepo(repo, target)
-        if !exists('moves')
-            let moves={}
-        endif
-        for file in files
-            let dest=s:_r.os.path.basename(file)
-            if !empty(target)
-                let dest=s:_r.os.path.join(target, dest)
-            endif
-            let moves[file]=dest
-        endfor
-    endif
-    if empty(moves)
-        call s:_f.throw('nomv')
-    endif
-    if get(a:opts, 'pretend', 0)
-        call s:_r.printtable(items(moves), {'header': s:_messages._mvheader})
-    else
-        call map(moves,'repo.functions.'.key.'(repo, '.a:bang.', v:key, v:val)')
-    endif
-endfunction
-let s:movefunc['@FWC']=['-onlystrings _ '.
-            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
-            \           ' ?!copy ?!rightrepl ?!leftpattern ?!pretend } '.
-            \           '+ type ""', 'filter']
-call add(s:movecomp,
-            \substitute(substitute(s:movefunc['@FWC'][0],
-            \'\V _',        '',         ''),
-            \'\V+ type ""', '+ (path)', ''))
-"▶1 junkfunc
-function s:junkfunc.function(opts, ...)
-    if !a:0
-        call s:_f.throw('nofiles')
-    endif
-    let repo=s:_r.repo.get(a:1)
-    call s:_r.cmdutils.checkrepo(repo)
-    let forget=get(a:opts, 'forget',      0)
-    let ignore=get(a:opts, 'ignore',      0)
-    let igglob=get(a:opts, 'ignoreglobs', 0)
-    let remove=get(a:opts, 'remove',      !(forget || ignore || igglob))
-    let allfiles=s:F.getexsttrckdfiles(repo, ignore)
-    let globs=filter(copy(a:000), 'v:val isnot# ":"')
-    let hascur=(len(globs)!=a:0)
-    let files=s:F.filterfiles(repo, globs, allfiles)
-    if hascur
-        let rrfopts={'repo': repo.path}
-        let files+=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
-    endif
-    for key in filter(['forget', 'remove', 'ignore'], 'eval(v:val)')
-        call map(copy(files), 'repo.functions[key](repo, v:val)')
-    endfor
-    if igglob
-        call map(copy(globs), 'repo.functions.ignoreglob(repo, '.
-                    \         'repo.functions.reltorepo(repo, v:val))')
-    endif
-endfunction
-let s:junkfunc['@FWC']=['-onlystrings '.
-            \           '{?!forget '.
-            \            '?!ignore '.
-            \            '?!remove '.
-            \            '?!ignoreglobs '.
-            \           '} + type ""', 'filter']
-call add(s:junkcomp,
-            \substitute(s:junkfunc['@FWC'][0],
-            \'\V+ type ""', '+ (path)', ''))
-"▶1 tracfunc
-function s:tracfunc.function(...)
-    let globs=filter(copy(a:000), 'v:val isnot# ":"')
-    let hascur=!(a:0 && len(globs)==a:0)
-    let repo=s:_r.repo.get(a:0 ? a:1 : ':')
-    call s:_r.cmdutils.checkrepo(repo)
-    let allfiles=s:F.getaddedermvdfiles(repo)
-    let files=s:F.filterfiles(repo, globs, allfiles)
-    if hascur
-        let rrfopts={'repo': repo.path}
-        let files+=[repo.functions.reltorepo(repo,
-                    \s:_r.cmdutils.getrrf(rrfopts, 'nocurf', 'getfile')[3])]
-    endif
-    call map(copy(files), 'repo.functions.add(repo, v:val)')
-endfunction
-let s:tracfunc['@FWC']=['-onlystrings + type ""', 'filter']
-call add(s:traccomp,
-            \substitute(s:tracfunc['@FWC'][0],
-            \'\V+ type ""', '+ (path)', ''))
-"▶1 hypfunc
-" TODO diff ?
-function s:hypfunc.function(opts)
-    let opts=copy(a:opts)
-    let utype=get(opts, 'url', 'html')
-    if utype is# 'html' || utype is# 'annotate' || utype is# 'raw'
-                \       || utype is# 'filehist'
-        let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'nocurf',
-                    \                                      'get')
-        call s:_r.cmdutils.checkrepo(repo)
-        let file=s:F.urlescape(file)
-        if rev is 0
-            if has_key(opts, 'line') && repo.functions.dirty(repo, file)
-                call remove(opts, 'line')
-                call s:_f.warn('ldirty', file, repo.path)
-            endif
-            let hex=repo.functions.getworkhex(repo)
-        else
-            let hex=repo.functions.getrevhex(repo, rev)
-        endif
-    else
-        let repo=s:_r.repo.get(a:opts.repo)
-        call s:_r.cmdutils.checkrepo(repo)
-        if utype is# 'bundle' || utype is# 'changeset' || utype is# 'log'
-            if has_key(a:opts, 'rev')
-                let hex=repo.functions.getrevhex(repo, a:opts.rev)
-            else
-                let hex=repo.functions.getworkhex(repo)
-            endif
-        endif
-    endif
-    let url=repo.functions.getrepoprop(repo, 'url')
-    let [protocol, user, domain, port, path]=
-                \matchlist(url, '\v^%(([^:]+)\:\/\/)?'.
-                \                  '%(([^@/:]+)\@)?'.
-                \                   '([^/:]*)'.
-                \                  '%(\:(\d+))?'.
-                \                   '(.*)$')[1:5]
-    for [matcher, dict] in s:_f.getoption('hypsites')+repo.hypsites
-        if eval(matcher)
-            if !has_key(dict, utype)
-                call s:_f.throw('uunsup', utype, repo.path, url)
-            endif
-            let r=eval(dict[utype])
-            if (utype is# 'html' || utype is# 'annotate') &&
-                        \has_key(opts, 'line')
-                let lkey=utype[0].'line'
-                if has_key(dict, lkey)
-                    if opts.line
-                        let line=opts.line
-                    elseif hasbuf
-                        let line=line('.')
-                    endif
-                    if exists('line')
-                        let r.='#'.eval(dict[lkey])
-                    endif
-                else
-                    call s:_f.warn('uunsup', 'line', repo.path, url)
-                endif
-            endif
-            let cmd=get(opts, 'cmd', 'let @+=%s')
-            execute printf(cmd, string(r))
-            return
-        endif
-    endfor
-    call s:_f.throw('uknurl', url, repo.path)
-endfunction
-let s:hypfunc['@FWC']=['-onlystrings {?repo '.s:_r.cmdutils.nogetrepoarg.
-            \                       ' ?rev   type ""'.
-            \                       ' ?file  type ""'.
-            \                       ' ?line  range 0 inf'.
-            \                       ' ?cmd   type ""'.
-            \                       ' ?url   in utypes ~start'.
-            \                       '}', 'filter']
-call add(s:hypcomp,
-            \substitute(substitute(substitute(s:hypfunc['@FWC'][0],
-            \'\Vfile\s\+type ""', 'file path',           ''),
-            \'\Vcmd\s\+type ""',  'cmd '.s:_r.comp.cmd,  ''),
-            \'\Vrev\s\+type ""',  'rev '.s:_r.comp.rev,  ''))
-"▶1 grepfunc
-function s:F.setlist(opts, list)
-    if has_key(a:opts, 'location')
-        return setloclist(a:opts.location, a:list)
-    else
-        return setqflist(a:list)
-    endif
-endfunction
-function s:grepfunc.function(pattern, opts)
-    if has_key(a:opts, 'files') && a:opts.repo is# ':'
-        let repo=s:_r.repo.get(a:opts.files[0])
-    else
-        let repo=s:_r.repo.get(a:opts.repo)
-    endif
-    call s:_r.cmdutils.checkrepo(repo)
-    let revisions=copy(get(a:opts, 'revision', []))
-    let revrange=get(a:opts, 'revrange', [])
-    while !empty(revrange)
-        let [rev1, rev2; revrange]=revrange
-        let cs1=repo.functions.getcs(repo, rev1)
-        let cs2=repo.functions.getcs(repo, rev2)
-        if type(cs1.rev)==type(0) && cs1.rev>cs2.rev
-            let [cs1, cs2]=[cs2, cs1]
-        elseif cs1 is cs2
-            let revisions+=[cs1.hex]
-            continue
-        endif
-        let revisions+=[[cs1.hex, cs2.hex]]
-    endwhile
-    let files=[]
-    if has_key(a:opts, 'files')
-        if empty(revisions)
-            if get(a:opts, 'workmatch', 1)
-                let css=[repo.functions.getwork(repo)]
-            else
-                call repo.functions.getchangesets(repo)
-                let css=values(repo.changesets)
-            endif
-        else
-            let css=[]
-            for s in revisions
-                if type(s)==type([])
-                    let css+=repo.functions.revrange(a:repo, s[0], s[1])
-                else
-                    let css+=[repo.functions.getcs(repo, s)]
-                endif
-                unlet s
-            endfor
-        endif
-        let allfiless=map(copy(css), 'repo.functions.getcsprop(repo, v:val,'.
-                    \                                         '"allfiles")')
-        let allfiles=[]
-        call map(copy(allfiless),
-                    \'extend(allfiles, filter(v:val, '.
-                    \                        '"index(allfiles, v:val)==-1"))')
-        for pattern in map(copy(a:opts.files),
-                    \'s:_r.globtopat(repo.functions.reltorepo(repo, v:val))')
-            let files+=filter(copy(allfiles),
-                        \     'v:val=~#pattern && index(files, v:val)==-1')
-        endfor
-        if empty(files)
-            call s:_f.warn('nogf')
-            return s:F.setlist(a:opts, [])
-        endif
-    endif
-    let wdfiles=((has_key(a:opts, 'wdfiles'))?(a:opts.wdfiles):
-                \                             (s:_f.getoption('workdirfiles')))
-    let qf=repo.functions.grep(repo, a:pattern, files, revisions,
-                \              get(a:opts, 'ignorecase', 0), wdfiles)
-    for item in filter(copy(qf), 'type(v:val.filename)=='.type([]))
-        let item.filename=s:_r.fname('file', repo, item.filename[0],
-                    \                item.filename[1])
-    endfor
-    return s:F.setlist(a:opts, qf)
-endfunction
-let s:grepfunc['@FWC']=['-onlystrings '.
-            \           'type "" '.
-            \           '{     repo     '.s:_r.cmdutils.nogetrepoarg.
-            \           ' ?*+2 revrange   type ""  type ""'.
-            \           ' ?*   revision   type ""'.
-            \           ' ?*   files      type ""'.
-            \           ' ?    location   range 0 $=winnr("$")'.
-            \           ' ?   !workmatch'.
-            \           ' ?   !wdfiles'.
-            \           ' ?   !ignorecase '.
-            \           '}', 'filter']
-call add(s:grepcomp,
-            \substitute(substitute(s:grepfunc['@FWC'][0],
-            \'\Vfiles \+type ""', 'files (path)', ''),
-            \'\v(rev%(ision|range))\ +\Vtype ""', '\1 '.s:_r.comp.rev, 'g'))
-"▶1 branfunc
-function s:branfunc.function(bang, branch, opts)
-    let repo=s:_r.repo.get(a:opts.repo)
-    call s:_r.cmdutils.checkrepo(repo)
-    let force=a:bang
-    if !force && index(repo.functions.getrepoprop(repo, 'brancheslist'),
-                \      a:branch)!=-1
-        call s:_f.throw('bexsts', a:branch, repo.path)
-    endif
-    call repo.functions.branch(repo, a:branch, force)
-endfunction
-let s:branfunc['@FWC']=['-onlystrings _ '.
-            \           'type "" '.
-            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
-            \           '}', 'filter']
-call add(s:brancomp, s:branfunc['@FWC'][0])
-"▶1 namefunc
-function s:namefunc.function(bang, name, opts, ...)
-    let repo=s:_r.repo.get(a:opts.repo)
-    call s:_r.cmdutils.checkrepo(repo)
-    if !has_key(repo, 'labeltypes') || empty(repo.labeltypes)
-        call s:_f.throw('nunsup', repo.path)
-    endif
-    if get(a:opts, 'delete', 0)
-        let rev=0
-    elseif a:0
-        let rev=repo.functions.getrevhex(repo, a:1)
-    else
-        let rev=repo.functions.getworkhex(repo)
-    endif
-    if has_key(a:opts, 'type')
-        let type=a:opts.type
-        let lts=repo.labeltypes
-        if index(lts, type)==-1
-            let type=get(filter(copy(lts),
-                        \       'v:val[:'.(len(type)-1).'] is# type'), 0, 0)
-            if type is 0
-                call s:_f.throw('ukntype', a:opts.type, join(lts, ', '))
-            endif
-        endif
-    else
-        let type=repo.labeltypes[0]
-    endif
-    let force=a:bang
-    if rev isnot 0 && !force
-        try
-            let labels=repo.functions.getrepoprop(repo, type.'slist')
-            if index(labels, a:name)!=-1
-                let rev=0
-            endif
-        catch
-            let rev=0
-        endtry
-        if rev is 0
-            call s:_f.throw('ldef', a:name, type)
-        endif
-    endif
-    call repo.functions.label(repo, type, a:name, rev, force,
-                \             get(a:opts, 'local', 0))
-endfunction
-let s:namefunc['@FWC']=['-onlystrings _ '.
-            \           'type ""'.
-            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
-            \           ' ? type   type ""'.
-            \           ' ?!delete'.
-            \           ' ?!local'.
-            \           '} '.
-            \           '+ type ""', 'filter']
-call add(s:namecomp, s:namefunc['@FWC'][0])
-"▶1 othfunc
+call s:_f.postresource('utypes', s:utypes)
 let s:pushactions=['push', 'outgoing']
 let s:pullactions=['pull', 'incoming']
 let s:ppactions=s:pushactions+s:pullactions
-function s:othfunc.function(bang, action, rev, url, repo)
-    let repo=s:_r.repo.get(a:repo)
-    call s:_r.cmdutils.checkrepo(repo)
-    if a:url isnot# ':' && stridx(a:url, '://')==-1 && isdirectory(a:url)
-        let url=s:_r.os.path.realpath(a:url)
-    else
-        let url=a:url
-    endif
-    let key=((index(s:pushactions, a:action)==-1)?('pull'):('push'))
-    return repo.functions[key](repo, (a:action[0] isnot# 'p'), a:bang,
-                \              ((  url is# ':')?(0):(  url)),
-                \              ((a:rev is# ':')?(0):(a:rev)))
+call s:_f.postresource('otheractions', {'push': s:pushactions,
+            \                           'pull': s:pullactions})
+let s:ignfiles=['patch', 'renames', 'copies', 'files', 'diff', 'open']
+call s:_f.postresource('ignfiles', s:ignfiles)
+call s:_f.postresource('diffopts', s:diffoptslst)
+let s:tlist=['default', 'compact', 'git', 'svn', 'hgdef', 'hgdescr', 'cdescr',
+            \'gitoneline']
+call s:_f.postresource('tlist', s:tlist)
+call s:_f.postresource('allcachekeys', s:allcachekeys)
+"▶1 Completion helpers
+let s:compcmds=['new', 'vnew', 'edit',
+            \   'leftabove vnew', 'rightbelow vnew',
+            \   'topleft vnew',   'botright vnew',
+            \   'aboveleft new',  'belowright new',
+            \   'topleft new',    'botright new',]
+call map(s:compcmds, 'escape(v:val, " ")')
+function s:F.revlist(...)
+    let repo=aurum#repository()
+    return       repo.functions.getrepoprop(repo, 'tagslist')+
+                \repo.functions.getrepoprop(repo, 'brancheslist')+
+                \repo.functions.getrepoprop(repo, 'bookmarkslist')
 endfunction
-let s:othfunc['@FWC']=['-onlystrings _ '.
-            \          'in ppactions ~ smart '.
-            \          '[:":" type "" '.
-            \          '[:":" type "" '.
-            \          '['.s:_r.cmdutils.nogetrepoarg.']]]', 'filter']
-call add(s:othcomp, substitute(substitute(s:othfunc['@FWC'][0],
-            \'\V_ ',      '',            ''),
-            \'\Vtype ""', s:_r.comp.rev, ''))
+function s:F.branchlist()
+    let repo=aurum#repository()
+    return repo.functions.getrepoprop(repo, 'brancheslist')
+endfunction
+"▶1 Commands setup
+let s:plpref='autoload/aurum/'
+let s:d={}
+let s:cmdfuncs={}
+for [s:cmd, s:cdesc] in items(s:cmds)
+    let s:cdesc.opts=extend(get(s:cdesc, 'opts', {}), {'nargs': '*',
+                \                                   'complete': []})
+    "▶2 Completion substitutions
+    let s:cdesc.subs=get(s:cdesc, 'subs', [])
+    if stridx(s:cdesc.fwc, s:revarg)!=-1
+        let s:cdesc.subs+=[['\V'.s:revarg,    s:comprevarg, 'g']]
+    endif
+    if stridx(s:cdesc.fwc, s:filearg)!=-1
+        let s:cdesc.subs+=[['\V'.s:filearg,   '(path)',     'g']]
+    endif
+    if stridx(s:cdesc.fwc, s:cmdarg)!=-1
+        let s:cdesc.subs+=[['\V'.s:cmdarg,    s:compcmdarg, '' ]]
+    endif
+    "▲2
+    let s:compfwc='-onlystrings '.s:cdesc.fwc
+    for s:args in s:cdesc.subs
+        let s:compfwc=call('substitute', [s:compfwc]+s:args)
+        unlet s:args
+    endfor
+    let s:cdesc.opts.complete+=[s:compfwc]
+    unlet s:compfwc
+    " Number of arguments that should not be checked or completed
+    let s:skipcount=  has_key(s:cdesc.opts, 'bang')+
+                \   2*has_key(s:cdesc.opts, 'range')
+    let s:cdesc.fwc='-onlystrings '.repeat('_ ', s:skipcount).s:cdesc.fwc
+    unlet s:skipcount
+    let s:eplid=string((s:plpref).(tolower(s:cmd)))
+    execute      "function s:d.function(...)\n".
+                \"    if !has_key(s:cmdfuncs, ".s:eplid.")\n".
+                \"        if !has_key(s:cmddicts, ".s:eplid.")\n".
+                \"            call FraworLoad(".s:eplid.")\n".
+                \"            if !has_key(s:cmddicts, ".s:eplid.")\n".
+                \"                call s:_f.throw('lfail', '".s:cmd."', ".
+                \                                             s:eplid.")\n".
+                \"            endif\n".
+                \"        endif\n".
+                \"        if !has_key(s:cmddicts[".s:eplid."], ".
+                \                        "'function')\n".
+                \"            call s:_f.throw('nofun', ".s:eplid.", ".
+                \                                    "'".s:cmd."')\n".
+                \"        endif\n".
+                \"        let s:cmdfuncs[".s:eplid."]=s:_f.wrapfunc(".
+                \                  "extend({'@FWC': [".string(s:cdesc.fwc).", ".
+                \                                   "'filter']}, ".
+                \                         "s:cmddicts[".s:eplid."]))\n".
+                \"    endif\n".
+                \"    call call(s:cmdfuncs[".s:eplid."], a:000, {})\n".
+                \((has_key(s:cdesc, 'wipe'))?
+                \    ("    call map(".string(s:cdesc.wipe).", ".
+                \                  "'s:_r.cache.wipe(v:val)')\n"):
+                \    ("")).
+                \"endfunction"
+    unlet s:eplid
+    call s:_f.command.add('Au'.s:cmd, remove(s:d, 'function'), s:cdesc.opts)
+    unlet s:cmd s:cdesc
+endfor
+unlet s:d
+unlet s:comprevarg s:compcmdarg
+"▶1 aurumcmd feature
+let s:feature={}
+let s:cmddicts={}
+function s:feature.register(plugdict, fdict)
+    let a:plugdict.g.cmd={}
+    let s:cmddicts[a:plugdict.id]=a:plugdict.g.cmd
+endfunction
+function s:feature.unload(plugdict, fdict)
+    unlet s:cmddicts[a:plugdict.id]
+    if has_key(s:cmdfuncs, a:plugdict.id)
+        unlet s:cmdfuncs[a:plugdict.id]
+    endif
+endfunction
+call s:_f.newfeature('aurumcmd', s:feature)
+"▶1 Global mappings
+" TODO mapping that closes status window
+call s:_f.mapgroup.add('Aurum', {
+            \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'               },
+            \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit **<CR>'            },
+            \'Open':      {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'                 },
+            \'Revert':    {'lhs':  'O', 'rhs': ':<C-u>AuFile . : replace<CR>'     },
+            \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'              },
+            \'FVdiff':    {'lhs': 'gD', 'rhs': ':<C-u>AuVimDiff full<CR>'         },
+            \'Diff':      {'lhs':  'd', 'rhs': ':<C-u>AuDiff :<CR>'               },
+            \'Fdiff':     {'lhs': 'gd', 'rhs': ':<C-u>AuDiff<CR>'                 },
+            \'Annotate':  {'lhs':  'a', 'rhs': ':<C-u>AuAnnotate<CR>'             },
+            \'Status':    {'lhs':  's', 'rhs': ':<C-u>AuStatus|wincmd p<CR>'      },
+            \'Record':    {'lhs':  'r', 'rhs': ':<C-u>AuRecord<CR>'               },
+            \'Log':       {'lhs':  'L', 'rhs': ':<C-u>AuLog<CR>'                  },
+            \'LogFile':   {'lhs':  'l', 'rhs': ':<C-u>AuLog : files :<CR>'        },
+            \'URL':       {'lhs':  'H', 'rhs': ':<C-u>AuHyperlink<CR>'            },
+            \'LineURL':   {'lhs':  'h', 'rhs': ':<C-u>AuHyperlink line 0<CR>'     },
+            \'Track':     {'lhs':  'A', 'rhs': ':<C-u>AuTrack<CR>'                },
+            \'Forget':    {'lhs':  'R', 'rhs': ':<C-u>AuJunk forget :<CR>'        },
+            \'Push':      {'lhs':  'P', 'rhs': ':<C-u>AuOther push<CR>'           },
+            \'Pull':      {'lhs':  'p', 'rhs': ':<C-u>AuOther pull | AuUpdate<CR>'},
+        \}, {'mode': 'n', 'silent': 1, 'leader': '<Leader>a'})
+"▶1 Autocommands
+function s:F.aurun(...)
+    let plid='autoload/aurum/edit'
+    if !has_key(s:cmdfuncs, plid)
+        if !has_key(s:cmddicts, plid)
+            call FraworLoad(plid)
+            if !has_key(s:cmddicts, plid)
+                call s:_f.throw('afail', plid)
+            endif
+        endif
+        if !has_key(s:cmddicts[plid], 'function')
+            call s:_f.throw('anofu', plid)
+        endif
+        let s:cmdfuncs[plid]=s:cmddicts[plid].function
+    endif
+    return call(s:cmdfuncs[plid], a:000, {})
+endfunction
+call s:_f.augroup.add('Aurum',
+            \[['BufReadCmd',   'aurum://*', 1, [s:F.aurun,  0]],
+            \ ['FileReadCmd',  'aurum://*', 1, [s:F.aurun,  1]],
+            \ ['SourceCmd',    'aurum://*', 1, [s:F.aurun,  2]],
+            \ ['BufWriteCmd',  'aurum://*', 1, [s:F.aurun, -1]],
+            \ ['FileWriteCmd', 'aurum://*', 1, [s:F.aurun, -2]],
+            \])
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,_r')
+call frawor#Lockvar(s:, 'cmddicts,cmdfuncs')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

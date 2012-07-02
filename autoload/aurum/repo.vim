@@ -1,31 +1,18 @@
 "▶1
-scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('3.1', {'@/resources': '0.0',
-                \                       '@/os': '0.0',
-                \                  '@/options': '0.0',
-                \           '@aurum/lineutils': '0.0',
-                \             '@aurum/bufvars': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('5.1', {'@/resources': '0.0',
+            \                       '@/os': '0.0',
+            \                  '@/options': '0.0',
+            \          '@%aurum/lineutils': '0.0',
+            \            '@%aurum/bufvars': '0.0',
+            \                     '@aurum': '1.0',})
 let s:drivers={}
 let s:repos={}
 let s:bufrepos={}
 let s:_options={
             \'diffopts':  {'default': {},
             \              'checker': 'dict {numlines         range 0 inf '.
-            \                               '?in diffoptslst  bool}'},
+            \                               '?in _r.diffopts  bool}'},
         \}
-" XXX Some code relies on the fact that all options from s:diffoptslst are
-"     numeric
-let s:diffoptslst=['git', 'reverse', 'ignorews', 'iwsamount', 'iblanks',
-            \      'numlines', 'showfunc', 'alltext', 'dates']
-let s:diffoptsstr=join(map(copy(s:diffoptslst),
-            \          'v:val is# "numlines" ? '.
-            \               '" ?".v:val." range 0 inf" : '.
-            \               '"!?".v:val'))
 let s:_messages={
             \    'nrm': 'Failed to remove file %s from repository %s',
             \  'iname': 'Error while registering driver for plugin %s: '.
@@ -288,8 +275,7 @@ endfunction
 "▶1 iterfuncs: cs generators
 " startfunc (here)  :: repo, opts → d
 "▶2 ancestors
-let s:iterfuncs.ancestors={}
-function s:iterfuncs.ancestors.start(repo, opts)
+function s:iterfuncs.ancestors(repo, opts)
     let cs=a:repo.functions.getcs(a:repo,
                 \a:repo.functions.getrevhex(a:repo, a:opts.revision))
     let indegree={cs.hex : 1}
@@ -298,7 +284,9 @@ function s:iterfuncs.ancestors.start(repo, opts)
     endfor
     return {'addrevs': [cs], 'revisions': {}, 'repo': a:repo,
                 \'hasrevisions': get(a:repo, 'hasrevisions', 1),
-                \'indegree': indegree, 'incremented': {cs.hex : 1}}
+                \'hasphases': get(a:repo, 'hasphases', 0),
+                \'indegree': indegree, 'incremented': {cs.hex : 1},
+                \'next': s:F.ancestorsnext}
 endfunction
 function! s:RevCmp(cs1, cs2)
     let rev1=a:cs1.rev
@@ -306,36 +294,35 @@ function! s:RevCmp(cs1, cs2)
     return ((rev1==rev2)?(0):((rev1<rev2)?(1):(-1)))
 endfunction
 let s:_functions+=['s:RevCmp']
-function s:iterfuncs.ancestors.next(d)
-    if empty(a:d.addrevs)
+function s:F.ancestorsnext()
+    if empty(self.addrevs)
         return 0
     endif
     " XXX cs variables should be kept after cycle ends
     let i=-1
-    for cs in a:d.addrevs
+    for cs in self.addrevs
         let i+=1
-        if a:d.indegree[cs.hex]<=1
+        if self.indegree[cs.hex]<=1
             break
         endif
     endfor
-    call remove(a:d.addrevs, i)
-    let a:d.revisions[cs.hex]=cs
-    for parenthex in filter(copy(cs.parents), '!has_key(a:d.revisions, v:val)')
-        let parent=a:d.repo.functions.getcs(a:d.repo, parenthex)
-        let a:d.indegree[parenthex]=a:d.indegree[parenthex]-1
-        if !has_key(a:d.incremented, parenthex)
-            let a:d.incremented[parenthex]=1
+    call remove(self.addrevs, i)
+    let self.revisions[cs.hex]=cs
+    for parenthex in filter(copy(cs.parents), '!has_key(self.revisions, v:val)')
+        let parent=self.repo.functions.getcs(self.repo, parenthex)
+        let self.indegree[parenthex]=self.indegree[parenthex]-1
+        if !has_key(self.incremented, parenthex)
+            let self.incremented[parenthex]=1
             for pparhex in parent.parents
-                let a:d.indegree[pparhex]=get(a:d.indegree, pparhex, 1)+1
+                let self.indegree[pparhex]=get(self.indegree, pparhex, 1)+1
             endfor
-            let a:d.addrevs+=[parent]
+            let self.addrevs+=[parent]
         endif
     endfor
     return cs
 endfunction
 "▶2 revrange
-let s:iterfuncs.revrange={}
-function s:iterfuncs.revrange.start(repo, opts)
+function s:iterfuncs.revrange(repo, opts)
     if has_key(a:opts, 'revrange')
         call map(a:opts.revrange, 'a:repo.functions.getrevhex(a:repo, v:val)')
         let cslist=copy(call(a:repo.functions.revrange,
@@ -348,13 +335,13 @@ function s:iterfuncs.revrange.start(repo, opts)
     else
         call reverse(cslist)
     endif
-    return {'cslist': cslist}
+    return {'cslist': cslist, 'next': s:F.revrangenext}
 endfunction
-function s:iterfuncs.revrange.next(d)
-    if empty(a:d.cslist)
+function s:F.revrangenext()
+    if empty(self.cslist)
         return 0
     endif
-    return remove(a:d.cslist, 0)
+    return remove(self.cslist, 0)
 endfunction
 "▶2 changesets
 let s:iterfuncs.changesets=s:iterfuncs.revrange
@@ -369,9 +356,7 @@ function s:F.getdriver(path, ptype)
 endfunction
 "▶1 updaterepo :: repo → repo + repo
 function s:F.updaterepo(repo)
-    if !empty(a:repo.cslist)
-        call a:repo.functions.updatechangesets(a:repo)
-    endif
+    call a:repo.functions.updatechangesets(a:repo)
     return a:repo
 endfunction
 "▶1 getrepo :: path → Maybe repo
@@ -379,11 +364,11 @@ function s:F.getrepo(path)
     "▶2 Pull in drivers if there are no
     if empty(s:drivers)
         for src in s:_r.os.listdir(s:_r.os.path.join(s:_frawor.runtimepath,
-                    \              'plugin', 'aurum', 'drivers'))
+                    \              'autoload', 'aurum', 'drivers'))
             if len(src)<5 || src[-4:] isnot# '.vim'
                 continue
             endif
-            call FraworLoad('@aurum/drivers/'.src[:-5])
+            call FraworLoad('@%aurum/drivers/'.src[:-5])
         endfor
     endif
     "▶2 Get path
@@ -463,7 +448,7 @@ function s:F.getrepo(path)
                     \       'branch', 'time', 'user', 'description']
     endif
     lockvar! repo
-    unlockvar! repo.cslist
+    unlockvar! repo.mutable
     unlockvar! repo.changesets
     unlockvar 1 repo
     let s:repos[path]=repo
@@ -472,21 +457,8 @@ function s:F.getrepo(path)
     endif
     return repo
 endfunction
-"▶1 update
-" TODO Investigate whether this function should be moved to cmdutils, or to 
-" maputils which is probably to be created
-function s:F.update(repo, rev, count)
-    let rev=a:rev
-    if a:count>1
-        let rev=a:repo.functions.getnthparent(a:repo, rev, a:count-1).hex
-    endif
-    return a:repo.functions.update(a:repo, rev, 0)
-endfunction
 "▶1 Post resource
-call s:_f.postresource('repo', {'get': s:F.getrepo,
-            \                'update': s:F.update,
-            \           'diffoptslst': s:diffoptslst,
-            \           'diffoptsstr': s:diffoptsstr,})
+call s:_f.postresource('repo', {'get': s:F.getrepo,})
 "▶1 regdriver feature
 let s:requiredfuncs=['repo', 'getcs', 'checkdir']
 let s:optfuncs=['readfile', 'annotate', 'diff', 'status', 'commit', 'update',

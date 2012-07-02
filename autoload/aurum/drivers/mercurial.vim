@@ -1,38 +1,42 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.2', {      '@/python': '0.0',
-                \                   '@aurum/repo': '3.0',
-                \                          '@/os': '0.0',
-                \                     '@/options': '0.0',
-                \   '@aurum/drivers/common/utils': '0.0',
-                \'@aurum/drivers/common/hypsites': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.2', {'@%aurum/drivers/common/hypsites': '0.0',
+            \                                   '@%aurum/repo': '5.0',
+            \                   '@%aurum/drivers/common/utils': '0.1',
+            \                                       '@/python': '0.0',
+            \                                           '@/os': '0.0',
+            \                                      '@/options': '0.0',})
 let s:hg={}
 let s:iterfuncs={}
 let s:usepythondriver=0
-if has_key(s:_r, 'py')
+if has('python')
+    let s:py='python'
     try
-        " execute s:_r.py.cmd "try:\n".
-                    " \       "    if type(aurum).__name__=='module':\n".
-                    " \       "        reload(aurum)\n".
-                    " \       "except NameError:\n".
-                    " \       "    pass"
-        execute s:_r.py.cmd 'import aurum'
+        " execute s:py "try:\n".
+                    " \"    if type(aurum).__name__=='module':\n".
+                    " \"        reload(aurum)\n".
+                    " \"except NameError:\n".
+                    " \"    pass"
+        execute s:py 'import aurum'
         let s:usepythondriver=1
     catch
         " s:usepythondriver stays equal to 0, errors are ignored
     endtry
-    " FIXME Does not work in python3. Not very problematic as mercurial does not 
-    " do this either, but it will be necessary to review these lines after 
-    " python3 support in mercurial will be finished.
     if s:usepythondriver
-        execute s:_r.py.cmd 'reload(aurum)'
+        " FIXME Does not work in python3. Not very problematic as mercurial does 
+        "       not do this either, but it will be necessary to review these 
+        "       lines after python3 support in mercurial will be finished.
+        execute s:py 'reload(aurum)'
+        if s:_r.utils.using_ansi_esc_echo
+            if exists('*pyeval')
+                execute s:py 'aurum.register_ansi_esc_echo_func('.
+                            \       'vim.bindeval("s:_r.utils.printm"))'
+            endif
+        endif
     endif
 endif
+let s:nullrev=repeat('0', 40)
+"▶1 Messages
 let s:_messages={
             \ 'norepo': 'Repository %s not found',
             \ 'norev' : 'No revision %s in repository %s',
@@ -51,7 +55,8 @@ let s:_messages={
             \ 'destex': 'Cannot copy %s to %s: destination already exists',
             \ 'nhgiwr': 'File %s is either a directory or not writeable',
             \'reponwr': 'Unable to write to repository root (%s)',
-            \  'nocfg': 'Failed to get property %s of repository %s',
+            \  'nocfg': 'No such property of repository %s: %s',
+            \'failcfg': 'Failed to get property %s of repository %s',
             \'nlocbms': 'Bookmarks can’t be local',
             \'parsefail': 'Failed to parse changeset information',
             \ 'filefail': 'Failed to get file %s '.
@@ -67,6 +72,8 @@ let s:_messages={
             \  'logfail': 'Failed to get log for the repository %s: %s',
             \  'keyfail': 'Failed to get %s for the repository %s: %s',
             \   'csfail': 'Failed to get changeset %s '.
+            \             'from the repository %s: %s',
+            \    'bfail': 'Failed to get current branch '.
             \             'from the repository %s: %s',
             \  'renfail': 'Failed to get renames list for revision %s '.
             \             'in the repository %s: %s',
@@ -86,14 +93,17 @@ let s:_messages={
             \             '(importing GitHandler threw ImportError)',
             \ 'nogitrev': 'No git revision associated with revision %s '.
             \             'in repository %s',
+            \ 'uknphase': 'Unknown phase: %s. Known phases: %s.',
         \}
-let s:nullrev=repeat('0', 40)
+"▶1 Options
 let s:_options={
-            \'hg_useshell': {'default': [],
-            \                 'filter':
-            \                   '(if type "" (|=split(@.@,''\L\+'')) any '.
-            \                    'list match /\v^\l+$/)'},
+            \'hg_useshell':  {'default': [],
+            \                  'filter':
+            \                    '(if type "" (|=split(@.@,''\L\+'')) any '.
+            \                     'list match /\v^\l+$/)'},
         \}
+            " \'hg_itercsnum': {'default': ((s:usepythondriver)?(0):(1000)),
+            " \                 'checker': 'range 0 inf'},
 "▶1 s:hypsites
 let s:hypsites=[]
 let s:bookmarks='repo.functions.getcsprop(repo, hex, "bookmarks")'
@@ -125,7 +135,7 @@ unlet s:svnrev
 "▶1 removechangesets :: repo, start_rev_num → + repo
 function s:F.removechangesets(repo, start)
     let changesets=a:repo.changesets
-    for cs in remove(a:repo.cslist, a:start, -1)
+    for cs in remove(a:repo.mutable.cslist, a:start, -1)
         let hex=cs.hex
         for parenthex in filter(cs.parents, 'has_key(changesets, v:val)')
             call filter(changesets[parenthex].children, 'v:val isnot# cs.hex')
@@ -171,15 +181,16 @@ function s:F.addchangesets(repo, css)
         endfor
     endfor
 endfunction
-"▶2 runcmd :: repo, attr, args, kwargs → + ?
-function s:F.runcmd(repo, attr, args, kwargs)
+"▶2 runcmd :: repo, attr, args, kwargs[, bkwargs] → + ?
+function s:F.runcmd(repo, attr, args, kwargs, ...)
     if index(s:_f.getoption('hg_useshell'), a:attr)!=-1
         return s:F.runshellcmd(a:repo, a:attr, a:args, a:kwargs)
     endif
-    execute s:_r.py.cmd 'aurum.call_cmd(vim.eval("a:repo.path"), '.
-                \                      'vim.eval("a:attr"), '.
-                \                      '*vim.eval("a:args"), '.
-                \                      '**vim.eval("a:kwargs"))'
+    execute s:py 'aurum.call_cmd(vim.eval("a:repo.path"), '.
+                \               'vim.eval("a:attr"), '.
+                \               ((a:0)?(string(a:1)):('None')).', '.
+                \               '*vim.eval("a:args"), '.
+                \               '**vim.eval("a:kwargs"))'
 endfunction
 "▲2
 else "▶1
@@ -188,7 +199,7 @@ function s:F.addchangesets(repo, css)
     call map(copy(a:css), 'extend(a:repo.changesets, {v:val.hex : v:val})')
     for cs in a:css
         call map(cs.parents, 'type(v:val)=='.type(0).' ? '.
-                    \           'a:repo.cslist[v:val].hex : '.
+                    \           'a:repo.mutable.cslist[v:val].hex : '.
                     \           'v:val')
         for parenthex in cs.parents
             call add(a:repo.changesets[parenthex].children, cs.hex)
@@ -221,9 +232,13 @@ function s:F.parsecs(csdata, lstart)
     "▶3 Simple keys: rev, hex, branch, time, user
     let cs.rev    = str2nr(a:csdata[line])    | let line+=1
     let cs.hex    = a:csdata[line]            | let line+=1
+    let cs.phase  = a:csdata[line]            | let line+=1
     let cs.branch = s:F.unesc(a:csdata[line]) | let line+=1
     let cs.time   = str2nr(a:csdata[line])    | let line+=1
     let cs.user   = s:F.unesc(a:csdata[line]) | let line+=1
+    if empty(cs.phase)
+        let cs.phase='unknown'
+    endif
     "▶3 List keys: parents, tags, bookmarks, changes, removes
     for [char, key] in s:chars
         let cs[key]=[]
@@ -313,8 +328,8 @@ if s:usepythondriver "▶2
     function s:F.getcs(repo, rev)
         let cs={}
         try
-            execute s:_r.py.cmd 'aurum.get_cs(vim.eval("a:repo.path"), '.
-                        \                    'vim.eval("a:rev"))'
+            execute s:py 'aurum.get_cs(vim.eval("a:repo.path"), '.
+                        \             'vim.eval("a:rev"))'
         endtry
         return cs
     endfunction
@@ -332,25 +347,24 @@ else "▶2
 endif
 "▶1 hg.getcs :: repo, rev → cs
 function s:hg.getcs(repo, rev)
-    if !empty(a:repo.cslist)
-        if type(a:rev)==type('') && has_key(a:repo.changesets, a:rev)
-            return a:repo.changesets[a:rev]
-        elseif type(a:rev)==type(0) && a:rev<a:repo.csnum
-            return a:repo.cslist[a:rev]
+    if type(a:rev)==type('') && has_key(a:repo.changesets, a:rev)
+        return a:repo.changesets[a:rev]
+    elseif type(a:rev)==type(0)
+        if !empty(a:repo.mutable.cslist) && a:rev<a:repo.csnum
+            return a:repo.mutable.cslist[a:rev]
         endif
     endif
     if a:rev=~#'\v^[0-9a-f]{40}$'
         let hex=a:rev
     else
         let hex=a:repo.functions.getrevhex(a:repo, a:rev)
+        if has_key(a:repo.changesets,hex)
+            return a:repo.changesets[hex]
+        endif
     endif
-    if has_key(a:repo.changesets, hex) && !empty(a:repo.cslist)
-        return a:repo.changesets[hex]
-    else
-        let cs=s:F.getcs(a:repo, hex)
-        let a:repo.changesets[cs.hex]=cs
-        return cs
-    endif
+    let cs=s:F.getcs(a:repo, hex)
+    let a:repo.changesets[cs.hex]=cs
+    return cs
 endfunction
 "▶1 hg.getwork :: repo → hex
 function s:hg.getwork(repo)
@@ -358,15 +372,15 @@ function s:hg.getwork(repo)
 endfunction
 "▶1 hg.getchangesets :: repo → changesets + repo.changesets
 function s:hg.getchangesets(repo)
-    call a:repo.functions.updatechangesets(a:repo)
-    return a:repo.cslist[:-2]
+    call a:repo.functions.updatechangesets(a:repo, 1)
+    return a:repo.mutable.cslist[:-2]
 endfunction
 "▶1 hg.revrange :: repo, rev, rev → [cs]
 function s:hg.revrange(repo, rev1, rev2)
-    if empty(a:repo.cslist)
+    if empty(a:repo.mutable.cslist)
         let cslist=a:repo.functions.getchangesets(a:repo)
     else
-        let cslist=a:repo.cslist
+        let cslist=a:repo.mutable.cslist
     endif
     let rev1=a:repo.functions.getcs(a:repo, a:rev1).rev
     let rev2=a:repo.functions.getcs(a:repo, a:rev2).rev
@@ -376,18 +390,52 @@ function s:hg.revrange(repo, rev1, rev2)
     return cslist[(rev1):(rev2)]
 endfunction
 "▶1 hg.updatechangesets :: repo → + repo
+"▶2 updatewithtagsdict
+function s:F.updatewithtagsdict(csmap, d)
+    for key in ['tags', 'bookmarks']
+        if has_key(a:d, key) && !empty(a:d[key])
+            let cd=a:d[key]
+            let expr='get(cd, v:key, [])'
+        else
+            let expr='[]'
+        endif
+        call map(copy(a:csmap), 'extend(v:val, {"'.key.'": '.expr.'})')
+    endfor
+endfunction
 "▶2 python
 if s:usepythondriver
     function s:F.getupdates(repo, start)
         let d={}
         try
             " XXX get_updates also modifies a:repo
-            execute s:_r.py.cmd 'aurum.get_updates(vim.eval("a:repo.path"), '.
-                        \                          a:start.')'
+            " execute s:py 'import cProfile as profile'
+            " execute s:py 'profile.run("aurum.get_updates(vim.eval(''a:repo.path''), '.a:start.')", "python.profile")'
+            execute s:py 'aurum.get_updates(vim.eval("a:repo.path"), '.
+                        \                   a:start.')'
         endtry
         return d
     endfunction
-    "▶2 no python
+    function s:F.updatetags(repo)
+        if empty(a:repo.changesets)
+            return
+        endif
+        let d={}
+        try
+            execute s:py 'aurum.get_tags(vim.eval("a:repo.path"))'
+        endtry
+        call s:F.updatewithtagsdict(a:repo.changesets, d)
+        if a:repo.hasphases
+            try
+                execute s:py 'aurum.get_phases(vim.eval("a:repo.path"))'
+            endtry
+            " XXX empty() is here in order to prevent “using dictionary as 
+            "     a Number” error
+            call map(d.phasemap, 'has_key(a:repo.changesets, v:key) && '.
+                        \           'empty(extend(a:repo.changesets[v:key], '.
+                        \                        '{"phase": v:val}))')
+        endif
+    endfunction
+"▶2 no python
 else
     function s:F.getupdates(repo, start)
         let r={}
@@ -411,32 +459,69 @@ else
             let list=s:F.getkeylist(a:repo, key)
             let r[key]={}
             for [name, rev] in filter(copy(list), 'v:val[1]<'.a:start)
-                let r[key][name]=a:repo.cslist[rev].hex
+                let r[key][name]=a:repo.mutable.cslist[rev].hex
             endfor
         endfor
+        if a:repo.hasphases
+            let r.phases=map(s:F.hg(a:repo, 'phase', [],
+                        \           {'rev': '0:'.(a:start-1)}, 0),
+                        \           'v:val[stridx(v:val, " ")+1:]')
+        endif
         let a:repo.csnum=a:start+len(r.css)
         return r
+    endfunction
+    function s:F.updatetags(repo)
+        if empty(a:repo.changesets)
+            return
+        endif
+        let revmap={}
+        call map(copy(a:repo.changesets), 'extend(revmap, {v:val.rev : v:val})')
+        let d={}
+        for key in ['tags', 'bookmarks']
+            try
+                let list=s:F.getkeylist(a:repo, key)
+            catch
+                continue
+            endtry
+            let d[key]={}
+            let cd=d[key]
+            call map(copy(list), 'has_key(cd, v:val[1])?'.
+                        \           'add(cd[v:val[1]], v:val[0]):'.
+                        \           'extend(cd, {v:val[1] : [v:val[0]]})')
+            call map(values(cd), 'sort(v:val)')
+        endfor
+        call s:F.updatewithtagsdict(revmap, d)
+        if a:repo.hasphases
+            call map(s:F.hg(a:repo, 'phase', [], {'rev': ':'}, 0),
+                        \'has_key(revmap, v:key) && '.
+                        \   'empty(extend(revmap[v:key], '.
+                        \                '{"phase": '.
+                        \                     'v:val[stridx(v:val, " ")+1:]}))')
+        endif
     endfunction
 endif
 "▶2 hg.updatechangesets
 " TODO test updating in cases of rollback
-function s:hg.updatechangesets(repo)
+function s:hg.updatechangesets(repo, ...)
+    if !(a:0 && a:1) && empty(a:repo.mutable.cslist)
+        return s:F.updatetags(a:repo)
+    endif
     let d={}
-    let start=len(a:repo.cslist)-2
+    let start=len(a:repo.mutable.cslist)-2
     if start<0
         let start=0
     endif
     " XXX getupdates may also modify repo
     let d=s:F.getupdates(a:repo, start)
     if empty(d)
-        return a:repo
+        return
     endif
     call map(d.css, 'extend(v:val, {"children": []})')
-    if !empty(a:repo.cslist)
+    if !empty(a:repo.mutable.cslist)
         call s:F.removechangesets(a:repo, d.startrev)
     endif
     for key in ['tags', 'bookmarks']
-        call map(a:repo.cslist, 'extend(v:val, {key : []})')
+        call map(a:repo.mutable.cslist, 'extend(v:val, {key : []})')
         for [name, hex] in filter(items(d[key]),
                     \             'has_key(a:repo.changesets, v:val[1])')
             let cs=a:repo.changesets[hex]
@@ -444,17 +529,22 @@ function s:hg.updatechangesets(repo)
             call sort(cs[key])
         endfor
     endfor
-    let a:repo.cslist+=d.css
+    if has_key(d, 'phases')
+        let i=0
+        for phase in d.phases
+            let a:repo.mutable.cslist[i].phase=phase
+            let i+=1
+        endfor
+    endif
+    let a:repo.mutable.cslist+=d.css
     call s:F.addchangesets(a:repo, d.css)
-    return a:repo
 endfunction
 "▶1 hg.getrevhex :: repo, rev → rev(hex)
 if s:usepythondriver "▶2
 function s:hg.getrevhex(repo, rev)
     try
-        execute s:_r.py.cmd
-                    \ 'vim.command(''return "''+'.
-                    \    'aurum.g_cs(aurum.g_repo(vim.eval("a:repo.path")), '.
+        execute s:py 'vim.command(''return "''+'.
+                    \      'aurum.g_cs(aurum.g_repo(vim.eval("a:repo.path")), '.
                     \               'vim.eval("a:rev")).hex()+''"'')'
     catch /\v^Frawor:/
         throw v:exception
@@ -468,8 +558,8 @@ function s:hg.getrevhex(repo, rev)
     if type(a:rev)==type('') && (has_key(a:repo.changesets, a:rev) ||
                 \                a:rev=~#'\v^[0-9a-f]{40}$')
         return a:rev
-    elseif type(a:rev)==type(0) && a:rev<len(a:repo.cslist)
-        return a:repo.cslist[a:rev].hex
+    elseif type(a:rev)==type(0) && a:rev<len(a:repo.mutable.cslist)
+        return a:repo.mutable.cslist[a:rev].hex
     endif
     let hex=get(s:F.hg(a:repo, 'log', [], {'template': s:getrevhextemplate,
                 \                               'rev': ''.a:rev}, 0, 'log'),0,0)
@@ -491,9 +581,9 @@ endfunction
 if s:usepythondriver "▶2
 function s:hg.setcsprop(repo, cs, prop)
     try
-        execute s:_r.py.cmd 'aurum.get_cs_prop(vim.eval("a:repo.path"), '.
-                    \                         'vim.eval("a:cs.hex"), '.
-                    \                         'vim.eval("a:prop"))'
+        execute s:py 'aurum.get_cs_prop(vim.eval("a:repo.path"), '.
+                    \                  'vim.eval("a:cs.hex"), '.
+                    \                  'vim.eval("a:prop"))'
     endtry
 endfunction
 else "▶2
@@ -506,10 +596,10 @@ function s:hg.setcsprop(repo, cs, prop)
         let r=map(split(s:F.hg(a:repo, 'log', [],
                     \          {'rev': a:cs.hex, 'template': '{children}'},
                     \          0, 'csp', a:prop, a:cs.rev)[0]), 'str2nr(v:val)')
-        if empty(a:repo.cslist)
+        if empty(a:repo.mutable.cslist)
             call map(r, 'a:repo.functions.getrevhex(a:repo, v:val)')
         else
-            call map(r, 'a:repo.cslist[v:val].hex')
+            call map(r, 'a:repo.mutable.cslist[v:val].hex')
         endif
     endif
     let a:cs[a:prop]=r
@@ -522,12 +612,11 @@ endif
 if s:usepythondriver "▶2
 function s:hg.status(repo, ...)
     let revargs=join(map(copy(a:000), 'v:val is 0? "None": string(v:val)'), ',')
-    let r={}
+    let d={}
     try
-        execute s:_r.py.cmd 'aurum.get_status(vim.eval("a:repo.path"), '.
-                    \                         revargs.')'
+        execute s:py 'aurum.get_status(vim.eval("a:repo.path"), '.revargs.')'
     endtry
-    return r
+    return d
 endfunction
 else "▶2
 let s:statchars={
@@ -587,8 +676,8 @@ if s:usepythondriver "▶2
 function s:hg.dirty(repo, file)
     try
         let r=0
-        execute s:_r.py.cmd 'aurum.dirty(vim.eval("a:repo.path"), '.
-                    \                   'vim.eval("a:file"))'
+        execute s:py 'aurum.dirty(vim.eval("a:repo.path"), '.
+                    \            'vim.eval("a:file"))'
         return r
     endtry
 endfunction
@@ -617,14 +706,12 @@ function s:hg.commit(repo, message, ...)
 endfunction
 "▶1 hg.branch :: repo, branchname, force → + FS
 function s:hg.branch(repo, branch, force)
-    return s:F.runcmd(a:repo, 'branch', [a:branch], a:force ? {'force': 1} : {})
+    return s:F.runcmd(a:repo, 'branch', [a:branch], {'force': !!a:force})
 endfunction
 "▶1 hg.label :: repo, type, label, rev, force, local → + FS
 function s:hg.label(repo, type, label, rev, force, local)
     let kwargs={}
-    if a:force
-        let kwargs.force=1
-    endif
+    let kwargs.force=(!!a:force)
     if a:type is# 'tag'
         if a:local
             let kwargs.local=1
@@ -646,13 +733,29 @@ function s:hg.label(repo, type, label, rev, force, local)
     endif
     return s:F.runcmd(a:repo, a:type, [a:label], kwargs)
 endfunction
+"▶1 hg.phase :: repo, rev, phase[, force] → + FS
+let s:phaselist=['public', 'draft', 'secret']
+let s:phaseliststr=join(s:phaselist, ', ')
+function s:hg.phase(repo, rev, phase, ...)
+    let kwargs={}
+    let kwargs.force=(a:0 && a:1)
+    if index(s:phaselist, a:phase)==-1
+        call s:_f.throw('uknphase', a:phase, s:phaseliststr)
+    endif
+    for phase in s:phaselist
+        " XXX something inside mercurial expects
+        let kwargs[phase]=(a:phase is# phase)
+    endfor
+    let kwargs.rev=[a:rev]
+    return s:F.runcmd(a:repo, 'phase', [], kwargs, s:phaselist)
+endfunction
 "▶1 hg.update :: repo, rev, force
 if s:usepythondriver "▶2
 function s:hg.update(repo, rev, force)
     try
-        execute s:_r.py.cmd 'aurum.update(vim.eval("a:repo.path"), '.
-                    \                    'vim.eval("a:rev"), '.
-                    \                    'int(vim.eval("a:force")))'
+        execute s:py 'aurum.update(vim.eval("a:repo.path"), '.
+                    \             'vim.eval("a:rev"), '.
+                    \             'int(vim.eval("a:force")))'
     endtry
 endfunction
 else "▶2
@@ -665,11 +768,11 @@ endfunction
 endif
 "▶1 hg.move :: repo, force, source, target → + FS
 function s:hg.move(repo, force, ...)
-    return s:F.runcmd(a:repo, 'rename', a:000, a:force ? {'force': 1} : {})
+    return s:F.runcmd(a:repo, 'rename', a:000, {'force': (!!a:force)})
 endfunction
 "▶1 hg.copy :: repo, force, source, target → + FS
 function s:hg.copy(repo, force, ...)
-    return s:F.runcmd(a:repo, 'copy', a:000, a:force ? {'force': 1} : {})
+    return s:F.runcmd(a:repo, 'copy', a:000, {'force': (!!a:force)})
 endfunction
 "▶1 hg.add :: repo, file → + FS
 function s:hg.add(repo, ...)
@@ -736,7 +839,7 @@ endfunction
 let s:usepython=0
 if has_key(s:_r, 'py')
     try
-        execute s:_r.py.cmd 'import json, re'
+        execute s:py 'import json, re'
         let s:usepython=1
     catch
         " s:usepython stays equal to 0, errors are ignored
@@ -745,7 +848,7 @@ endif
 if s:usepython "▶2
 function s:hg.ignore(repo, file)
     let d={}
-    execute s:_r.py.cmd 'vim.eval("extend(d, {''pattern'': "+'.
+    execute s:py 'vim.eval("extend(d, {''pattern'': "+'.
                 \              'json.dumps(re.escape(vim.eval("a:file")))+"})")'
     let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
     let reline='^'.d.pattern.'$'
@@ -767,12 +870,12 @@ endfunction
 if s:usepythondriver "▶2
 function s:hg.grep(repo, pattern, files, revisions, ignore_case, wdfiles)
     let r=[]
-    execute s:_r.py.cmd 'aurum.grep(vim.eval("a:repo.path"), '.
-                \                  'vim.eval("a:pattern"), '.
-                \                  'vim.eval("a:files"), '.
-                \                  'vim.eval("a:revisions"), '.
-                \                  'bool(int(vim.eval("a:ignore_case"))), '.
-                \                  'bool(int(vim.eval("a:wdfiles"))))'
+    execute s:py 'aurum.grep(vim.eval("a:repo.path"), '.
+                \           'vim.eval("a:pattern"), '.
+                \           'vim.eval("a:files"), '.
+                \           'vim.eval("a:revisions"), '.
+                \           'bool(int(vim.eval("a:ignore_case"))), '.
+                \           'bool(int(vim.eval("a:wdfiles"))))'
     return r
 endfunction
 else "▶2
@@ -835,9 +938,9 @@ if s:usepythondriver "▶2
 function s:hg.readfile(repo, rev, file)
     let r=[]
     try
-        execute s:_r.py.cmd 'aurum.get_file(vim.eval("a:repo.path"), '.
-                    \                      'vim.eval("a:rev"), '.
-                    \                      'vim.eval("a:file"))'
+        execute s:py 'aurum.get_file(vim.eval("a:repo.path"), '.
+                    \               'vim.eval("a:rev"), '.
+                    \               'vim.eval("a:file"))'
     endtry
     return r
 endfunction
@@ -852,9 +955,9 @@ if s:usepythondriver "▶2
 function s:hg.annotate(repo, rev, file)
     let r=[]
     try
-        execute s:_r.py.cmd 'aurum.annotate(vim.eval("a:repo.path"), '.
-                    \                      'vim.eval("a:rev"), '.
-                    \                      'vim.eval("a:file"))'
+        execute s:py 'aurum.annotate(vim.eval("a:repo.path"), '.
+                    \               'vim.eval("a:rev"), '.
+                    \               'vim.eval("a:file"))'
     endtry
     return r
 endfunction
@@ -894,11 +997,11 @@ function s:hg.diff(repo, rev1, rev2, files, opts)
     let r=[]
     let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
     try
-        execute s:_r.py.cmd 'aurum.diff(vim.eval("a:repo.path"), '.
-                    \                  'vim.eval("a:rev1"), '.
-                    \                  'vim.eval("a:rev2"), '.
-                    \                  'vim.eval("a:files"), '.
-                    \                  'vim.eval("diffopts"))'
+        execute s:py 'aurum.diff(vim.eval("a:repo.path"), '.
+                    \           'vim.eval("a:rev1"), '.
+                    \           'vim.eval("a:rev2"), '.
+                    \           'vim.eval("a:files"), '.
+                    \           'vim.eval("diffopts"))'
     endtry
     return r
 endfunction
@@ -948,11 +1051,11 @@ function s:hg.difftobuffer(repo, buf, rev1, rev2, files, opts)
     endif
     try
         let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
-        execute s:_r.py.cmd 'aurum.diffToBuffer(vim.eval("a:repo.path"), '.
-                    \                          'vim.eval("a:rev1"), '.
-                    \                          'vim.eval("a:rev2"), '.
-                    \                          'vim.eval("a:files"), '.
-                    \                          'vim.eval("diffopts"))'
+        execute s:py 'aurum.diffToBuffer(vim.eval("a:repo.path"), '.
+                    \                   'vim.eval("a:rev1"), '.
+                    \                   'vim.eval("a:rev2"), '.
+                    \                   'vim.eval("a:files"), '.
+                    \                   'vim.eval("diffopts"))'
     finally
         if oldbuf!=a:buf
             execute 'buffer' oldbuf
@@ -991,15 +1094,17 @@ if s:usepythondriver "▶2
 function s:hg.getrepoprop(repo, prop)
     let d={}
     try
-        execute s:_r.py.cmd 'aurum.get_repo_prop(vim.eval("a:repo.path"), '.
-                    \                           'vim.eval("a:prop"))'
+        execute s:py 'aurum.get_repo_prop(vim.eval("a:repo.path"), '.
+                    \                    'vim.eval("a:prop"))'
     endtry
-    return a:repo[a:prop]
+    return d[a:prop]
 endfunction
 else "▶2
 function s:hg.getrepoprop(repo, prop)
-    if a:prop is# 'tagslist' || a:prop is# 'brancheslist' ||
-                \               a:prop is# 'bookmarkslist'
+    if a:prop is# 'branch'
+        return s:F.hg(a:repo, 'branch', [], {}, 0, 'b')[0]
+    elseif a:prop is# 'tagslist' || a:prop is# 'brancheslist' ||
+                \                   a:prop is# 'bookmarkslist'
         return map(copy(s:F.getkeylist(a:repo, a:prop[:-5])), 'v:val[0]')
     elseif a:prop is# 'url'
         let lines=s:F.hg(a:repo, 'showconfig', ['paths'], {}, 0, 'sc')[:-2]
@@ -1011,8 +1116,10 @@ function s:hg.getrepoprop(repo, prop)
         elseif has_key(confs, 'default')
             return confs.default
         endif
+    else
+        call s:_f.throw('nocfg', a:repo.path, a:prop)
     endif
-    call s:_f.throw('nocfg', a:prop, a:repo.path)
+    call s:_f.throw('failcfg', a:prop, a:repo.path)
 endfunction
 endif
 "▶1 pushpull :: cmd, repo, force[, URL[, rev]] → + ?
@@ -1049,9 +1156,9 @@ if s:usepythondriver "▶2
 function s:hg.repo(path)
     let repo={}
     try
-        " execute s:_r.py.cmd 'import cProfile as profile'
-        " execute s:_r.py.cmd 'profile.run("aurum.new_repo(vim.eval(''a:path''))", "python.profile")'
-        execute s:_r.py.cmd 'aurum.new_repo(vim.eval("a:path"))'
+        " execute s:py 'import cProfile as profile'
+        " execute s:py 'profile.run("aurum.new_repo(vim.eval(''a:path''))", "python.profile")'
+        execute s:py 'aurum.new_repo(vim.eval("a:path"))'
     catch /\V\^Frawor:\[^:]\+:norepo:/
         return 0
     endtry
@@ -1060,9 +1167,15 @@ function s:hg.repo(path)
     return repo
 endfunction
 else "▶2
+function s:F.trycmd(repo, cmd)
+    try
+        return !empty(s:F.hg(a:repo, 'help', [a:cmd], {}, 0))
+    catch
+        return 0
+    endtry
+endfunction
 function s:hg.repo(path)
-    " TODO remove bookmark label type if it is not available
-    let repo={'path': a:path, 'changesets': {}, 'cslist': [],
+    let repo={'path': a:path, 'changesets': {}, 'mutable': {'cslist': []},
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': ['tag', 'bookmark'],
                 \'has_octopus_merges': 0, 'requires_sort': 0,
@@ -1070,7 +1183,15 @@ function s:hg.repo(path)
                 \'hypsites': deepcopy(s:hypsites),
                 \'initprops': ['rev', 'hex', 'parents', 'tags', 'bookmarks',
                 \              'branch', 'time', 'user', 'changes', 'removes',
-                \              'copies', 'renames', 'files', 'description']}
+                \              'copies', 'renames', 'files', 'description',
+                \              'phase']}
+    let repo.hasphases=s:F.trycmd(repo, 'phase')
+    if !s:F.trycmd(repo, 'bookmark')
+        call filter(repo.labeltypes, 'v:val isnot# "bookmark"')
+        let repo.hasbookmarks=0
+    else
+        let repo.hasbookmarks=1
+    endif
     return repo
 endfunction
 endif
@@ -1091,20 +1212,20 @@ function s:F.getrev(repo, rev)
 endfunction
 "▶2 getgetcsfunc
 function s:F.getgetcsfunc(repo)
-    if empty(a:repo.cslist)
+    if empty(a:repo.mutable.cslist)
         return s:F.getrev
     else
         return s:F.getfromchangesets
     endif
 endfunction
 "▶2 iterfuncs.ancestors
-let s:iterfuncs.ancestors={}
-function s:iterfuncs.ancestors.start(repo, opts)
+function s:iterfuncs.ancestors(repo, opts)
     let cs=a:repo.functions.getcs(a:repo,
                 \a:repo.functions.getrevhex(a:repo, a:opts.revision))
     return {'addrevs': [cs], 'revisions': {}, 'repo': a:repo,
                 \'hasrevisions': get(a:repo, 'hasrevisions', 1),
-                \'getcs': s:F.getgetcsfunc(a:repo)}
+                \'getcs': s:F.getgetcsfunc(a:repo),
+                \'next': s:F.ancestorsnext,}
 endfunction
 function! s:RevCmp(cs1, cs2)
     let rev1=a:cs1.rev
@@ -1112,19 +1233,19 @@ function! s:RevCmp(cs1, cs2)
     return ((rev1==rev2)?(0):((rev1<rev2)?(1):(-1)))
 endfunction
 let s:_functions+=['s:RevCmp']
-function s:iterfuncs.ancestors.next(d)
-    if empty(a:d.addrevs)
+function s:F.ancestorsnext()
+    if empty(self.addrevs)
         return 0
     endif
-    let cs=remove(a:d.addrevs, 0)
-    if has_key(a:d.revisions, cs.hex)
-        return s:iterfuncs.ancestors.next(a:d)
+    let cs=remove(self.addrevs, 0)
+    if has_key(self.revisions, cs.hex)
+        return self.next()
     endif
-    let a:d.revisions[cs.hex]=cs
-    let parents=map(copy(cs.parents),'a:d.getcs(a:d.repo,v:val)')
-    call extend(a:d.addrevs, parents)
-    if a:d.hasrevisions
-        call sort(a:d.addrevs, 's:RevCmp')
+    let self.revisions[cs.hex]=cs
+    let parents=map(copy(cs.parents),'self.getcs(self.repo,v:val)')
+    call extend(self.addrevs, parents)
+    if self.hasrevisions
+        call sort(self.addrevs, 's:RevCmp')
     endif
     return cs
 endfunction
@@ -1141,8 +1262,8 @@ endfunction
 "▶1 hg.gitrev :: repo, rev → githex
 if s:usepythondriver
 function s:hg.githex(repo, rev)
-    execute s:_r.py.cmd 'aurum.git_hash(vim.eval("a:repo.path"), '.
-                \                      'vim.eval("a:rev"))'
+    execute s:py 'aurum.git_hash(vim.eval("a:repo.path"), '.
+                \               'vim.eval("a:rev"))'
 endfunction
 endif
 "▶1 Register driver

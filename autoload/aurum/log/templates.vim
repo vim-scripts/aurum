@@ -1,15 +1,7 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',
-                \                    '@/table': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-elseif !exists('s:_loading')
-    call FraworLoad(s:_frawor.id)
-    finish
-endif
+execute frawor#Setup('0.0', {'@/resources': '0.0',
+            \                    '@/table': '0.0',})
 let s:_messages={
             \'2multl': 'Two multiline statements on one line',
             \'argmis': 'Missing argument #%u for keyword %s',
@@ -88,6 +80,7 @@ let s:kwexpr.hide        = [0, '@0@', 0]
 let s:kwexpr.empty       = [0, '@@@']
 let s:kwexpr.hex         = [0, '@@@']
 let s:kwexpr.branch      = [0, '@@@', 'keep']
+let s:kwexpr.phase       = [0, '@@@', 'skip']
 let s:kwexpr.user        = [0, '@@@']
 let s:kwexpr.rev         = [0, '@@@', 'ignore']
 let s:kwexpr.time        = [0, 'strftime(@0@, @@@)', '%d %b %Y %H:%M']
@@ -120,9 +113,11 @@ let s:kwreg={
             \'rev' : '\d\+',
             \'parents': '\v\x{12,}( \x{12,})?',
             \'children': '\v\x{12,}( \x{12,})*',
+            \'phase': '\v(public|draft|secret)',
         \}
 let s:kwreqseqkw=['hex', 'branch', 'user', 'rev', 'time', 'parents', 'children',
-            \     'tags', 'bookmarks', 'description', 'files', 'changes']
+            \     'tags', 'bookmarks', 'description', 'files', 'changes',
+            \     'phase']
 let s:kwreqs = {'stat': {'files': 1},
             \'renames': {'files': 1, 'renames': 1},
             \ 'copies': {'files': 1, 'copies': 1},
@@ -449,9 +444,13 @@ endfunction
 "▶2 add.ke0 : Add single-line statement
 function s:add.ke0(addedif, expr, kw, arg, func)
     let func=a:func
-    let add2if=(a:kw is# 'branch' && a:arg.0 isnot# 'keep' && !a:addedif)
-    if add2if
+    let add2if=0
+    if a:kw is# 'branch' && a:arg.0 isnot# 'keep' && !a:addedif
+        let add2if=1
         let func+=['if a:cs.branch isnot# "default"']
+    elseif a:kw is# 'phase' && a:arg.0 isnot# 'keep' && !a:addedif
+        let add2if=1
+        let func+=['if a:cs.phase isnot# "public"']
     endif
     let func+=['let estr='.a:expr]
     "▶3 Determine condition on which suffix or prefix will be added
@@ -459,6 +458,8 @@ function s:add.ke0(addedif, expr, kw, arg, func)
         let condition='!empty(estr)'
     elseif a:kw is# 'branch'
         let condition='estr isnot# "default"'
+    elseif a:kw is# 'phase'
+        let condition='estr isnot# "public"'
     elseif a:kw is# 'rev'
         let condition=0
     endif
@@ -520,6 +521,7 @@ function s:F.compile(template, opts, repo)
         let func+=['let files=a:opts.csfiles[a:cs.hex]']
     endif
     let hasrevisions=get(a:repo, 'hasrevisions', 1)
+    let hasphases=get(a:repo, 'hasphases', 0)
     if get(a:opts, 'patch', 0) || get(a:opts, 'stat', 0)
         let filesarg=((hasfiles && !has_key(a:opts.ignorefiles, 'patch'))?
                     \   ('files'):
@@ -553,6 +555,13 @@ function s:F.compile(template, opts, repo)
             elseif kw is# 'branch'
                 let addedif=1
                 let func+=['if a:cs.branch isnot# "default"']
+            elseif kw is# 'phase'
+                if !hasphases
+                    continue
+                else
+                    let addedif=1
+                    let func+=['if a:cs.phase isnot# "public"']
+                endif
             elseif kw is# 'rev' && !hasrevisions
                 continue
             endif
@@ -615,6 +624,8 @@ function s:F.compile(template, opts, repo)
                 endfor
                 "▶2 Skip meta if required
                 if kw is# 'rev' && !hasrevisions && arg.0 isnot# 'keep'
+                    continue
+                elseif kw is# 'phase' && !hasphases
                     continue
                 endif
                 "▶2 Add requirements information
@@ -716,6 +727,7 @@ function s:F.syntax(template, opts, repo)
     let r=[]
     let topgroups=[]
     let hasrevisions=get(a:repo, 'hasrevisions', 1)
+    let hasphases=get(a:repo, 'hasphases', 0)
     "▲2
     let r+=['syn match auLogFirstLineStart =\v^[^ ]*[@o][^ ]* = '.
                 \'skipwhite nextgroup=']
@@ -752,7 +764,8 @@ function s:F.syntax(template, opts, repo)
                     let hasmult=1
                 endif
                 if kw is# 'empty' || (kw is# 'rev' && !hasrevisions &&
-                            \         arg.0 isnot# 'keep')
+                            \         arg.0 isnot# 'keep') ||
+                            \        (kw is# 'phase' && !hasphases)
                     let r[-1]=substitute(r[-1], '\v\w+$', '', '')
                 elseif has_key(arg, 'synreg')
                     call s:F.addgroup(r, nlgroups, 'auLog_'.kw)
@@ -821,7 +834,8 @@ function s:F.syntax(template, opts, repo)
                     let r+=['syn match '.sname.' /\V'.escape(arg[0], '\/').'/ '.
                                 \'contained nextgroup=']
                 elseif (index(s:kwpempt, kw)!=-1 || kw is# 'branch' ||
-                            \                       kw is# 'rev') &&
+                            \                       kw is# 'rev'    ||
+                            \                       kw is# 'phase') &&
                             \(has_key(arg, 'pref') || has_key(arg, 'suf'))
                     " Case kw=='rev' with !repo.hasrevisions is caught in the 
                     " first branch
@@ -913,7 +927,7 @@ endfunction
 call s:_f.postresource('template', {'syntax': s:F.syntax,
             \                      'compile': s:F.compile,
             \              'gettemplatelist': s:F.gettemplatelist,
-            \                        'tlist': sort(keys(s:templates))})
+            \                        'tlist': keys(s:templates)})
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded,compilecache,parsecache,syncache')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

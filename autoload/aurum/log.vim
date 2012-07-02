@@ -1,45 +1,36 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/table': '0.1',
-                \        '@aurum/cmdutils': '1.0',
-                \   '@aurum/log/templates': '0.0',
-                \       '@aurum/lineutils': '0.0',
-                \         '@aurum/bufvars': '0.0',
-                \            '@aurum/edit': '1.1',
-                \                  '@/fwc': '0.3',
-                \            '@aurum/repo': '3.0',
-                \             '@/commands': '0.0',
-                \            '@/functions': '0.0',
-                \              '@/options': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:logcomp=[]
-    let s:logfunc={}
-    call s:_f.command.add('AuLog', s:logfunc, {'nargs': '*',
-                \                           'complete': s:logcomp})
-    finish
-elseif s:_pluginloaded
-    finish
-elseif !exists('s:_loading')
-    call FraworLoad(s:_frawor.id)
-    finish
-endif
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '3.0',
+            \           '@%aurum/log/templates': '0.0',
+            \               '@%aurum/lineutils': '0.0',
+            \                 '@%aurum/bufvars': '0.0',
+            \                    '@%aurum/edit': '1.1',
+            \                          '@aurum': '1.0',
+            \                       '@/options': '0.0',
+            \                         '@/table': '0.1',})
 let s:F.glog={}
 let s:F.graph={}
-let s:ignfiles=['patch', 'renames', 'copies', 'files', 'diff', 'open']
 let s:_options={
-            \'ignorefiles':    {'default': [], 'checker': 'list in ignfiles'},
-            \'closelogwindow': {'default': 1,   'filter': 'bool'            },
-            \'procinput':      {'default': 1,  'checker': 'range 0 2'       },
-            \'loglimit':       {'default': 0,  'checker': 'range 0 inf'     },
+            \'ignorefiles':    {'default': [],'checker': 'list in _r.ignfiles'},
+            \'closelogwindow': {'default': 1,  'filter': 'bool'               },
+            \'procinput':      {'default': 1, 'checker': 'range 0 2'          },
+            \'loglimit':       {'default': 0, 'checker': 'range 0 inf'        },
+            \'autoaddlog':     {'default': 1,  'filter': 'bool'               },
         \}
 let s:_messages={
-            \  'ebuf': 'Switched to another buffer: exiting',
+            \'nocontents': 'Log is empty',
+            \      'ebuf': 'Switched to another buffer: exiting',
+            \   'tnmatch': 'Completion template list and '.
+            \              'actual template list do not match',
         \}
 " iterfuncs :: {fname: { "start": startfunc, "next": nextfunc }}
 " startfunc (always) :: repo, opts, * → d
 let s:iterfuncs={}
+" XXX Check that completion and actual template lists match. This is needed to 
+"     prevent @aurum from depending on aurum/log/templates
+if sort(s:_r.template.tlist) !=# sort(s:_r.tlist)
+    call s:_f.warn('tnmatch')
+endif
 "▶1 addcols
 function s:F.addcols(special, cnum)
     let mapexpr='[v:val[0], v:val[1]+'.a:cnum.']+v:val[2:]'
@@ -873,12 +864,11 @@ function s:iterfuncs.check.generate(repo, opts)
         let function+=map(['cs', 'tc'], '"    let ".v:val."files=[]"')
         let function+=['    let self.csfiles[a:cs.hex]=csfiles']
         let function+=['    if has_key(self.tocheck,a:cs.hex)',
-                    \  '        let tc=self.tocheck[a:cs.hex]',
+                    \  '        let tc=remove(self.tocheck, a:cs.hex)',
                     \  '        call filter(changes, '.
                     \                      '"(index(tc, v:val)==-1)?'.
                     \                         '(1):'.
                     \                         '([0, add(csfiles, v:val)][0])")',
-                    \  '        call filter(tc, "index(csfiles, v:val)==-1")',
                     \  '        if !empty(tc)',
                     \ '            let allfiles=self.repo.functions.getcsprop('.
                     \                            'self.repo, a:cs, "allfiles")',
@@ -930,7 +920,7 @@ endfunction
 let s:iterfuncs.glog={}
 let s:glogcache={}
 "▶2 iterfuncs.glog.generate
-function s:iterfuncs.glog.generate(repo, opts, csiterfuncs, bvar, read)
+function s:iterfuncs.glog.generate(repo, opts, bvar, read)
     let r={}
     "▶3 Get grapher
     if get(a:repo, 'has_octopus_merges', 1)
@@ -967,16 +957,31 @@ function s:iterfuncs.glog.generate(repo, opts, csiterfuncs, bvar, read)
     "▶3 Initialize iterator functions
     let r.ld=r.literfuncs.start(a:repo, a:opts,
                 \               [a:repo.functions.getworkhex(a:repo)])
-    let r.csiterfuncs=a:csiterfuncs
-    let r.csd=a:csiterfuncs.start(a:repo, a:opts)
+    let csiterfuncsname=((has_key(a:opts, 'revision'))?
+                \          ('ancestors'):
+                \       ((has_key(a:opts, 'revrange'))?
+                \          ('revrange')
+                \       :
+                \          ('changesets')))
+    let r.csd=a:repo.iterfuncs[csiterfuncsname](a:repo, a:opts)
     let r.checkd=s:iterfuncs.check.generate(a:repo, a:opts)
     let hascheck=(r.checkd isnot 0)
     if !hascheck
         unlet r.checkd
     endif
     let r.opts=a:opts
+    "▶3 Initialize variables used for progress bar
+    let hasprogress=(get(a:opts, 'progress', 0) &&
+                \    (has_key(r.csd, 'csnum') || a:opts.limit))
+    if hasprogress
+        let r.prevprogress=0
+        let r.prevbarwidth=-1
+        let r.csprocessed=0
+        let r.csnum=get(r.csd, 'csnum', a:opts.limit)
+        let r.oldstatusline=&l:statusline
+    endif
     "▶3 Try to use cache
-    let cid=hascheck.a:read.(join(reqprops, ';'))
+    let cid=hascheck.hasprogress.a:read.(join(reqprops, ';'))
     if has_key(s:glogcache, cid)
         let [r.next, r.ffnext]=s:glogcache[cid]
         return r
@@ -984,7 +989,7 @@ function s:iterfuncs.glog.generate(repo, opts, csiterfuncs, bvar, read)
     "▲3
     let fflines=[]
     let function=['function r.next()',
-                \ '    let cs=self.csiterfuncs.next(self.csd)',
+                \ '    let cs=self.csd.next()',
                 \ '    if cs is 0 | return -1 | endif',]
     if hascheck
         let function+=['    let skip=!self.checkd.check(cs)',
@@ -1033,6 +1038,25 @@ function s:iterfuncs.glog.generate(repo, opts, csiterfuncs, bvar, read)
                     \  '        endif',
                     \  '        call s:iterfuncs.csshow.next(self.sd)']
     endif
+    if hasprogress
+        let function+=['        let self.csprocessed+=1',
+                    \  '        let progress=self.csprocessed*1000/self.csnum',
+                    \  '        let barwidth=self.csprocessed*(winwidth(0)-9)/'.
+                    \                       'self.csnum',
+                    \  '        if progress!=self.prevprogress || '.
+                    \             'barwidth!=self.prevbarwidth',
+                    \  '            let &l:stl=printf("[%-*s] %3d.%s%%%%", '.
+                    \                                'winwidth(0)-9, '.
+                    \                                'substitute('.
+                    \                                  'repeat("=", barwidth),'.
+                    \                                  '".$", ">", ""),'.
+                    \                                'progress/10, '.
+                    \                                'progress[-1:])',
+                    \  '            let self.prevprogress=progress',
+                    \  '            let self.prevbarwidth=barwidth',
+                    \  '            redrawstatus',
+                    \  '        endif']
+    endif
     if hascheck
         let function+=['        unlet lines rectangle special',
                     \  '    endfor',
@@ -1057,10 +1081,45 @@ function s:iterfuncs.glog.iterate(...)
         let r=gd.next()
         let limit-=r
     endwhile
-    if !a:5
+    if has_key(gd, 'sd')
         call s:iterfuncs.csshow.finish(gd.sd)
     endif
+    if has_key(gd, 'oldstatusline')
+        let &l:stl=gd.oldstatusline
+        redrawstatus
+    endif
+    let bvar=a:3
+    if get(bvar, 'autoaddlog', 0) && r!=-1
+        let bvar.gd=gd
+    endif
     return get(gd, 'lines', [])
+endfunction
+"▶1 addlog :: self (bvar) → + buffer
+" Adds at least two screens with log messages. Returns 1 if more messages can be 
+" added
+function s:F.addlog()
+    let bvar=self
+    if !has_key(bvar, 'gd')
+        return 0
+    endif
+    " XXX Due to procinput screen size may be changed during iteration, as well 
+    " as last displayed line
+    let r=0
+    let gd=remove(bvar, 'gd')
+    setlocal   modifiable noreadonly
+    while r!=-1 && (line('$')<line('w0')+winheight(0)*2)
+        let r=gd.next()
+    endwhile
+    setlocal nomodifiable   readonly
+    if has_key(gd, 'sd')
+        call s:iterfuncs.csshow.finish(gd.sd)
+    endif
+    if r==-1
+        return 0
+    else
+        let bvar.gd=gd
+        return 1
+    endif
 endfunction
 "▶1 getblock :: bvar + cursor, bvar → block
 "▶2 bisect :: [a], function + self → a
@@ -1112,6 +1171,7 @@ function s:F.setup(read, repo, opts, ...)
     let opts=a:opts
     let bvar=get(a:000, 0, {'opts': opts})
     let bvar.getblock=s:F.getblock
+    let bvar.addlog=s:F.addlog
     "▶2 Add “limit”
     if !has_key(bvar.opts, 'limit')
         let bvar.opts.limit=s:_f.getoption('loglimit')
@@ -1123,14 +1183,6 @@ function s:F.setup(read, repo, opts, ...)
     let opts.ignorefiles={}
     call map(copy(ignorefiles), 'extend(opts.ignorefiles, {v:val : 1})')
     unlet ignorefiles
-    "▶2 Get cslist
-    let csiterfuncsname=((has_key(opts, 'revision'))?
-                \          ('ancestors'):
-                \       ((has_key(opts, 'revrange'))?
-                \          ('revrange')
-                \       :
-                \          ('changesets')))
-    let csiterfuncs=a:repo.iterfuncs[csiterfuncsname]
     "▶2 Get template
     call s:_r.template.gettemplatelist(bvar)
     let [opts.reqs, opts.templatefunc]=s:_r.template.compile(bvar.templatelist,
@@ -1144,18 +1196,30 @@ function s:F.setup(read, repo, opts, ...)
         if bvar.procinput==1 && getchar(1)
             let bvar.procinput=0
         endif
+        let bvar.autoaddlog=(has_key(a:opts, 'autoaddlog')?
+                    \           a:opts.autoaddlog :
+                    \           s:_f.getoption('autoaddlog')) && a:opts.limit
     endif
     let bvar.cw=s:_f.getoption('closelogwindow')
-    let text=s:iterfuncs.glog.iterate(a:repo, opts, csiterfuncs, bvar, a:read)
+    let text=s:iterfuncs.glog.iterate(a:repo, opts, bvar, a:read)
     if a:read
         call s:_r.lineutils.setlines(text, a:read)
     elseif bufnr('%')==buf
+        if bvar.autoaddlog
+            augroup AuLog
+                autocmd! CursorMoved <buffer>
+                            \ : if line('w$')>=line('$')-winheight(0)*2
+                            \ |     call s:_r.bufvars[bufnr('%')].addlog()
+                            \ | endif
+            augroup END
+        endif
         setlocal readonly nomodifiable
     endif
     return bvar
 endfunction
-"▶1 logfunc
-function s:logfunc.function(repopath, opts)
+let s:_augroups+=['AuLog']
+"▶1 AuLog
+function s:cmd.function(repopath, opts)
     let opts=copy(a:opts)
     if has_key(opts, 'files')
         if opts.files[0] is# ':'
@@ -1167,15 +1231,14 @@ function s:logfunc.function(repopath, opts)
             endif
         endif
         if a:repopath is# ':'
-            let repo=s:_r.repo.get(opts.files[0])
+            let repo=s:_r.cmdutils.checkedgetrepo(opts.files[0])
         else
-            let repo=s:_r.repo.get(a:repopath)
+            let repo=s:_r.cmdutils.checkedgetrepo(a:repopath)
         endif
         call map(opts.files, 'repo.functions.reltorepo(repo, v:val)')
     else
-        let repo=s:_r.repo.get(a:repopath)
+        let repo=s:_r.cmdutils.checkedgetrepo(a:repopath)
     endif
-    call s:_r.cmdutils.checkrepo(repo)
     if has_key(opts, 'cmd')
         let cmd=remove(opts, 'cmd')
     else
@@ -1186,52 +1249,14 @@ function s:logfunc.function(repopath, opts)
         setlocal bufhidden=wipe
     endif
 endfunction
-let s:datereg='%(\d\d%(\d\d)?|[*.])'.
-            \ '%(\-%(\d\d?|[*.])'.
-            \ '%(\-%(\d\d?|[*.])'.
-            \ '%([ _]%(\d\d?|[*.])'.
-            \ '%(\:%(\d\d?|[*.]))?)?)?)?'
-let s:logfunc['@FWC']=['-onlystrings '.
-            \          '['.s:_r.cmdutils.nogetrepoarg.']'.
-            \          '{ *  ?files    (type "")'.
-            \          '  *  ?ignfiles in ignfiles ~start'.
-            \          '     ?date     match /\v[<>]?\=?'.s:datereg.'|'.
-            \                                 s:datereg.'\<\=?\>'.s:datereg.'/'.
-            \          '     ?search   isreg'.
-            \          '     ?user     isreg'.
-            \          '     ?branch   type ""'.
-            \          ' ! +1?limit    range 1 inf'.
-            \          '     ?revision type ""'.
-            \          '   +2?revrange type "" type ""'.
-            \          '     ?style    in _r.template.tlist'.
-            \          '     ?template idof variable'.
-            \          ' !   ?merges'.
-            \          ' !   ?patch'.
-            \          ' !   ?stat'.
-            \          ' !   ?showfiles'.
-            \          ' !   ?showrenames'.
-            \          ' !   ?showcopies'.
-            \          ' !   ?procinput'.
-            \          s:_r.repo.diffoptsstr.
-            \          '    ?cmd      type ""'.
-            \          '}', 'filter']
-call add(s:logcomp, substitute(substitute(
-            \substitute(substitute(substitute(substitute(s:logfunc['@FWC'][0],
-            \'\V|*_r.repo.get',        '',                                  ''),
-            \'\vfiles\s+\([^)]*\)',    'files path',                        ''),
-            \'\Vcmd\s\+type ""',       'cmd first (in cmds, idof command)', ''),
-            \'\vrevision\s+\Vtype ""', 'revision '.s:_r.comp.rev,           ''),
-            \'\vbranch\s+\Vtype ""',   'branch '.s:_r.comp.branch,          ''),
-            \'\vrevrange\s+\Vtype "" type ""',
-            \                         'revrange '.s:_r.comp.rev.' '.
-            \                                     s:_r.comp.rev,            ''))
-"▶1 Create aurum://log
+"▶1 aurum://log
 call s:_f.newcommand({
             \'function': s:F.setup,
             \ 'options': {'list': ['files', 'revrange', 'ignfiles'],
             \             'bool': ['merges', 'patch', 'stat', 'showfiles',
-            \                      'showrenames', 'showcopies', 'procinput'],
-            \              'num': ['limit']+s:_r.repo.diffoptslst,
+            \                      'showrenames', 'showcopies', 'procinput',
+            \                      'autoaddlog'],
+            \              'num': ['limit']+s:_r.diffopts,
             \              'str': ['date', 'search', 'user', 'branch',
             \                      'revision', 'style', 'template',
             \                      'crrestrict'],

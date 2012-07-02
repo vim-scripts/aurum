@@ -1,23 +1,25 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',
-                \                       '@/os': '0.2'}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.2', {'@/resources': '0.0',
+            \                       '@/os': '0.2'})
 let s:utils={}
 "▶1 utils.getcmd :: cmd, args, kwargs, esc → sh
+let s:prefexpr='repeat("-", 1+(len(v:val[0])>1)).v:val[0]." ="[len(v:val[0])>1]'
 function s:utils.getcmd(cmd, args, kwargs, esc)
     let cmd=a:cmd
     if !empty(a:kwargs)
         let cmd.=' '.join(map(filter(items(a:kwargs), 'v:val[1] isnot 0'),
                 \             '((v:val[1] is 1)?'.
                 \               '(repeat("-", 1+(len(v:val[0])>1)).v:val[0]):'.
-                \               '(repeat("-", 1+(len(v:val[0])>1)).v:val[0].'.
-                \                              '" ="[len(v:val[0])>1].'.
-                \                              'shellescape(v:val[1],a:esc)))'))
+                \             '((v:val[1] is 0)?'.
+                \               '(""):'.
+                \             '((type(v:val[1])=='.type([]).')?'.
+                \               '(join(map(copy(v:val[1]), '.
+                \                         '"\"".'.s:prefexpr.'."\".'.
+                \                           'shellescape(v:val,    a:esc)"))):'.
+                \               '('.s:prefexpr.'.'.
+                \                           'shellescape(v:val[1], a:esc)))))'
+                \            ))
     endif
     if !empty(a:args)
         let cmd.=' '.join(map(copy(a:args), 'shellescape(v:val, a:esc)'))
@@ -36,7 +38,15 @@ function s:utils.run(cmd, hasnulls, cdpath)
         set eventignore=all
         set lazyredraw
         try
-            tabnew
+            try
+                tabnew
+            catch /^Vim(tabnew):E523:/
+                let r=s:utils.run(a:cmd, 2, a:cdpath)
+                if empty(r[-1])
+                    call remove(r, -1)
+                endif
+                return r
+            endtry
             setlocal buftype=nofile modifiable noreadonly
             if !empty(a:cdpath)
                 execute 'lcd' fnameescape(a:cdpath)
@@ -58,23 +68,6 @@ function s:utils.run(cmd, hasnulls, cdpath)
         let r=split(system(cmd), "\n", 1)
     endif
     return r
-endfunction
-"▶1 utils.printm :: sh, hasnulls::Bool → + :echom, shell
-function s:utils.printm(m)
-    let prevempty=0
-    for line in a:m
-        if empty(line)
-            let prevempty+=1
-        else
-            if prevempty
-                while prevempty
-                    echom ' '
-                    let prevempty-=1
-                endwhile
-            endif
-            echom line
-        endif
-    endfor
 endfunction
 "▶1 utils.diffopts :: opts, opts, difftrans → diffopts
 function s:utils.diffopts(opts, defaultdiffopts, difftrans)
@@ -116,9 +109,34 @@ function s:utils.usefile(repo, message, kwfile, kwmes, Func, args, kwargs, ...)
         endif
     endtry
 endfunction
+"▶1 utils.printm :: String → + :echo | :echom
+if s:_f.require('autoload/ansi_esc_echo', [0, 0], 0)
+    function s:utils.printm(str, ...)
+        return call(s:_r.ansi_esc.echo, [a:str]+a:000, {})
+    endfunction
+    let s:utils.using_ansi_esc_echo=1
+else
+    function s:utils.printm(m, ...)
+        let prevempty=0
+        for line in a:m
+            if empty(line)
+                let prevempty+=1
+            else
+                if prevempty
+                    while prevempty
+                        echom ' '
+                        let prevempty-=1
+                    endwhile
+                endif
+                echom line
+            endif
+        endfor
+        return 0
+    endfunction
+    let s:utils.using_ansi_esc_echo=0
+endif
 "▶1 post resource
 call s:_f.postresource('utils', s:utils)
-unlet s:utils
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

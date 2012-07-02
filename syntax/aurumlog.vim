@@ -38,8 +38,8 @@ if exists('s:_pluginloaded')
     call s:F.syndef()
     finish
 endif
-execute frawor#Setup('0.0', {'@aurum/log/templates': '0.0',
-            \                      '@aurum/bufvars': '0.0',})
+execute frawor#Setup('0.0', {'@%aurum/log/templates': '0.0',
+            \                      '@%aurum/bufvars': '0.0',})
 function s:F.syndef()
     let buf=bufnr('%')
     if !has_key(s:_r.bufvars, buf)

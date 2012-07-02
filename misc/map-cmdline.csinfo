@@ -1,4 +1,4 @@
-changeset = ':\n{rev}\n{node}\n{branch|json}\n{date}\n{author|json}\n{parents}{tags}{bookmarks}{files}{file_dels}{file_copies}\t{desc|json}\n'
+changeset = ':\n{rev}\n{node}\n{phase}\n{branch|json}\n{date}\n{author|json}\n{parents}{tags}{bookmarks}{files}{file_dels}{file_copies}\t{desc|json}\n'
 parent    = 'P{node|json}\n'
 tag       = 'T{tag|json}\n'
 bookmark  = 'B{bookmark|json}\n'

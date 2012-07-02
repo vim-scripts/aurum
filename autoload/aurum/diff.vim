@@ -1,41 +1,23 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
-                \                 '@aurum/bufvars': '0.0',
-                \               '@aurum/lineutils': '0.0',
-                \                 '@aurum/vimdiff': '1.0',
-                \                    '@aurum/repo': '3.0',
-                \                    '@aurum/edit': '1.2',
-                \                           '@/os': '0.0',
-                \                          '@/fwc': '0.0',
-                \                     '@/mappings': '0.0',
-                \                     '@/commands': '0.0',
-                \                    '@/functions': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:diffcomp=[]
-    let s:difffunc={}
-    call s:_f.command.add('AuDiff', s:difffunc, {'nargs': '*',
-                \                             'complete': s:diffcomp})
-    finish
-elseif s:_pluginloaded
-    finish
-elseif !exists('s:_loading')
-    call FraworLoad(s:_frawor.id)
-    finish
-endif
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '3.1',
+            \                 '@%aurum/bufvars': '0.0',
+            \               '@%aurum/lineutils': '0.0',
+            \                 '@%aurum/vimdiff': '1.0',
+            \                    '@%aurum/edit': '1.2',
+            \                          '@aurum': '1.0',
+            \                      '@/mappings': '0.0',
+            \                            '@/os': '0.0',})
 let s:_messages={
             \'nodfile': 'Failed to get file whose section is under the cursor',
         \}
 "▶1 difffunc
-function s:difffunc.function(opts, ...)
+function s:cmd.function(opts, ...)
     if a:0 && a:opts.repo is# ':'
-        let repo=s:_r.repo.get(a:1)
+        let repo=s:_r.cmdutils.checkedgetrepo(a:1)
     else
-        let repo=s:_r.repo.get(a:opts.repo)
+        let repo=s:_r.cmdutils.checkedgetrepo(a:opts.repo)
     endif
-    call s:_r.cmdutils.checkrepo(repo)
     let files=map(filter(copy(a:000), 'v:val isnot# ":"'),
                 \ 'repo.functions.reltorepo(repo, v:val)')
     let hascur = (len(a:000)!=len(files))
@@ -83,7 +65,7 @@ function s:difffunc.function(opts, ...)
         return
     endif
     "▲2
-    let opts=filter(copy(a:opts), 'index(s:_r.repo.diffoptslst, v:key)!=-1')
+    let opts=filter(copy(a:opts), 'index(s:_r.diffopts, v:key)!=-1')
     call s:_r.run(get(a:opts, 'cmd', 'silent edit'), 'diff', repo, rev1, rev2,
                 \ filelist, opts)
     if !has_key(a:opts, 'cmd')
@@ -94,21 +76,6 @@ function s:difffunc.function(opts, ...)
     endif
     call s:_f.mapgroup.map('AuDiff', bufnr('%'))
 endfunction
-let s:difffunc['@FWC']=['-onlystrings '.
-            \           '{  repo     '.s:_r.cmdutils.nogetrepoarg.
-            \           '  ?rev1     type ""'.
-            \           '  ?rev2     type ""'.
-            \           '  ?changes  type ""'.
-            \           s:_r.repo.diffoptsstr.
-            \           '  ?cmd      type ""'.
-            \           '}'.
-            \           '+ type ""', 'filter']
-call add(s:diffcomp,
-            \substitute(substitute(substitute(substitute(s:difffunc['@FWC'][0],
-            \'\V|*_r.repo.get',                 '',                   ''),
-            \'\V+ type ""',                     '+ (path)',           ''),
-            \'\Vcmd\s\+type ""',                'cmd '.s:_r.comp.cmd, ''),
-            \'\v(rev[12]|changes)\s+\Vtype ""', '\1 '. s:_r.comp.rev, 'g'))
 "▶1 aurum://diff mappings
 let s:mmgroup=':call <SNR>'.s:_sid.'_Eval("s:_f.mapgroup.map(''AuDiff'', '.
             \                                               "bufnr('%'))\")\n"
@@ -121,7 +88,7 @@ function s:F.rundiffmap(action)
         let cmd.=s:_r.cmdutils.closebuf(bvar)
     elseif a:action is# 'update'
         let rev=(empty(bvar.rev1)?(bvar.rev2):(bvar.rev1))
-        call s:_r.repo.update(bvar.repo, rev, v:count)
+        call s:_r.cmdutils.update(bvar.repo, rev, v:count)
         return ''
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))
@@ -200,10 +167,10 @@ call s:_f.mapgroup.add('AuDiff', {
             \'FVdiff': {'lhs': 'gD', 'rhs': ':call <SNR>'.s:_sid.'_Eval('.
             \                                            '"s:F.fvdiff()")<CR>'},
         \}, {'func': s:F.rundiffmap, 'silent': 1, 'mode': 'n', 'dontmap': 1,})
-"▶1 diff resource
+"▶1 aurum://diff
 let s:diff= {'arguments': 2,
             \ 'listargs': 1,
-            \  'options': {'num': s:_r.repo.diffoptslst},
+            \  'options': {'num': s:_r.diffopts},
             \ 'filetype': 'diff',
             \   'mgroup': 'AuDiff',
             \}

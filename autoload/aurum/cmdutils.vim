@@ -1,18 +1,10 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/resources': '0.0',
-                \                       '@/os': '0.0',
-                \                '@aurum/repo': '3.0',
-                \                '@aurum/edit': '1.0',
-                \               '@aurum/cache': '0.0',
-                \             '@aurum/bufvars': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
-let s:patharg='either (path d, match @\v^\w+%(\+\w+)*\V://\v|^\:$@)'
-let s:nogetrepoarg=':":" ('.s:patharg.')'
+execute frawor#Setup('3.1', {'@/resources': '0.0',
+            \                       '@/os': '0.0',
+            \               '@%aurum/repo': '5.0',
+            \               '@%aurum/edit': '1.0',
+            \            '@%aurum/bufvars': '0.0',})
 let s:_messages={
             \  'nrepo': 'Failed to find a repository',
             \'noafile': 'Failed to deduce which file to annotate',
@@ -118,7 +110,7 @@ function s:rrf.commit(bvar, opts, act, failmsg)
     let r.repo=a:bvar.repo
     if a:act is# 'getfiles'
         let r.files=a:bvar.files
-    else
+    elseif a:act isnot# 'getsilent'
         let r.file=s:F.getfile(a:bvar.files)
         if r.file is 0 && a:failmsg isnot 0
             return 0
@@ -230,6 +222,7 @@ function s:F.getrrf(opts, failmsg, act)
             let file=expand('%')
         else
             let repo=s:_r.repo.get(':')
+            call s:F.checkrepo(repo)
             let file=repo.functions.reltorepo(repo, expand('%'))
         endif
         let  rev=0
@@ -239,8 +232,7 @@ function s:F.getrrf(opts, failmsg, act)
         call s:_f.throw(a:failmsg)
     endif
     "▶2 Update repository if appropriate
-    if exists('repo') && exists('bvar.repo') &&
-                \repo is bvar.repo && !empty(repo.cslist)
+    if exists('repo') && exists('bvar.repo') && repo is bvar.repo
         call repo.functions.updatechangesets(repo)
     endif
     "▲2
@@ -248,9 +240,7 @@ function s:F.getrrf(opts, failmsg, act)
         "▶2 repo
         if !exists('repo')
             let repo=s:_r.repo.get(a:opts.repo)
-            if type(repo)!=type({})
-                call s:_f.throw('nrepo')
-            endif
+            call s:F.checkrepo(repo)
             if file isnot 0
                 let file=repo.functions.reltorepo(repo, file)
             endif
@@ -293,6 +283,12 @@ function s:F.checkrepo(repo)
     endif
     return 1
 endfunction
+"▶1 checkedgetrepo
+function s:F.checkedgetrepo(repopath)
+    let repo=s:_r.repo.get(a:repopath)
+    call s:F.checkrepo(repo)
+    return repo
+endfunction
 "▶1 closebuf :: bvar → + buf
 function s:F.closebuf(bvar)
     let r=''
@@ -302,46 +298,83 @@ function s:F.closebuf(bvar)
     let buf=bufnr('%')
     return r.':if bufexists('.buf.')|bwipeout '.buf."|endif\n"
 endfunction
+"▶1 getexsttrckdfiles
+function s:F.getexsttrckdfiles(repo, ...)
+    let cs=a:repo.functions.getwork(a:repo)
+    let r=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
+    let status=a:repo.functions.status(a:repo)
+    call filter(r, 'index(status.removed, v:val)==-1 && '.
+                \  'index(status.deleted, v:val)==-1')
+    let r+=status.added
+    if a:0 && a:1
+        let r+=status.unknown
+    endif
+    return r
+endfunction
+"▶1 getaddedermvdfiles
+function s:F.getaddedermvdfiles(repo)
+    let status=a:repo.functions.status(a:repo)
+    return status.unknown+filter(copy(status.removed),
+                \         'filereadable(s:_r.os.path.join(a:repo.path, v:val))')
+endfunction
+"▶1 filterfiles
+function s:F.filterfiles(repo, globs, files)
+    if empty(a:globs)
+        return []
+    endif
+    let r=[]
+    let dirs={}
+    for file in a:files
+        let fsplit=split(file, '\V/')
+        if empty(fsplit)
+            continue
+        endif
+        let d=dirs
+        for component in fsplit[:-2]
+            let component.='/'
+            if !has_key(d, component)
+                let d[component]={}
+            endif
+            let d=d[component]
+        endfor
+        let d[fsplit[-1]]=1
+    endfor
+    unlet! d
+    let patterns=map(copy(a:globs), 's:_r.globtopat('.
+                \                   'a:repo.functions.reltorepo(a:repo,v:val))')
+    let tocheck=map(items(dirs), '[v:val[1], v:val[0]]')
+    while !empty(tocheck)
+        let [d, f]=remove(tocheck, 0)
+        if !empty(filter(copy(patterns), 'f=~#v:val'))
+            let r+=[f]
+        elseif f[-1:] is# '/'
+            let tocheck+=map(items(d), '[v:val[1], f.v:val[0]]')
+        endif
+        unlet d
+    endwhile
+    return r
+endfunction
+"▶1 update
+" TODO Investigate whether this function should be moved to cmdutils, or to 
+" maputils which is probably to be created
+function s:F.update(repo, rev, count)
+    let rev=a:rev
+    if a:count>1
+        let rev=a:repo.functions.getnthparent(a:repo, rev, a:count-1).hex
+    endif
+    return a:repo.functions.update(a:repo, rev, 0)
+endfunction
 "▶1 Post cmdutils resource
 call s:_f.postresource('cmdutils', {'globescape': s:F.globescape,
             \                           'getrrf': s:F.getrrf,
             \                      'getdifffile': s:F.getdifffile,
             \                        'checkrepo': s:F.checkrepo,
+            \                   'checkedgetrepo': s:F.checkedgetrepo,
             \                         'closebuf': s:F.closebuf,
-            \                     'nogetrepoarg': s:nogetrepoarg,
-            \})
-"▶1 Some completion-related globals
-let s:cmds=['new', 'vnew', 'edit',
-            \'leftabove vnew', 'rightbelow vnew', 'topleft vnew', 'botright vnew',
-            \'aboveleft new',  'belowright new',  'topleft new',  'botright new',
-            \]
-call map(s:cmds, 'escape(v:val, " ")')
-"▶1 getcrepo :: [ repo] → repo
-function s:F.getcrepo(...)
-    if a:0
-        return a:1
-    endif
-    return s:_r.cache.get('repo', s:_r.repo.get, [':'], {})
-endfunction
-"▶1 getrevlist :: [ repo] → [String]
-function s:F.getrevlist(...)
-    let repo=call(s:F.getcrepo, a:000, {})
-    return       repo.functions.getrepoprop(repo, 'tagslist')+
-                \repo.functions.getrepoprop(repo, 'brancheslist')+
-                \repo.functions.getrepoprop(repo, 'bookmarkslist')
-endfunction
-"▶1 getbranchlist :: [ repo] → [String]
-function s:F.getbranchlist(...)
-    let repo=call(s:F.getcrepo, a:000, {})
-    return repo.functions.getrepoprop(repo, 'brancheslist')
-endfunction
-"▶1 Post comp resource
-call s:_f.postresource('comp', {'rev': 'in *_r.comp.revlist',
-            \                   'cmd': 'first (in _r.comp.cmdslst, idof cmd)',
-            \                   'branch': 'in *_r.comp.branchlist',
-            \                   'revlist': s:F.getrevlist,
-            \                   'branchlist': s:F.getbranchlist,
-            \                   'cmdslst': s:cmds,
+            \                'getexsttrckdfiles': s:F.getexsttrckdfiles,
+            \               'getaddedermvdfiles': s:F.getaddedermvdfiles,
+            \                      'filterfiles': s:F.filterfiles,
+            \                           'update': s:F.update,
             \})
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r')

@@ -1,10 +1,10 @@
-
 from mercurial import hg, ui, commands, match
 from mercurial.repo import error
 import vim
 import os
 import json
 import re
+import sys
 
 def outermethod(func):
     """
@@ -54,6 +54,36 @@ def nonutf_dumps(obj):
                 r+='"'+str(obj).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')+'"'
     return r
 
+def pyecho(o, error=False):
+    try:
+        return (sys.stderr if error else sys.stdout).write(str(o))
+    except UnicodeDecodeError:
+        if error:
+            vim.command('echohl ErrorMsg')
+        for line in str(o).split("\n"):
+            if not line:
+                line=' '
+            vim.command('echomsg '+utf_dumps(line))
+        if error:
+            vim.command('echohl None')
+
+if hasattr(vim, 'bindeval'):
+    ansi_esc_echo_func=None
+    def register_ansi_esc_echo_func(func):
+        global ansi_esc_echo_func
+        ansi_esc_echo_func=func
+        global echom
+        echom=ansi_esc_echo
+
+    def ansi_esc_echo(o, colinfo):
+        if colinfo is None:
+            return ansi_esc_echo_func(str(o), self={})
+        else:
+            return ansi_esc_echo_func(str(o), colinfo, self={})
+
+echoe=lambda o, colinfo: pyecho(o, True )
+echom=lambda o, colinfo: pyecho(o, False)
+
 def utf_dumps(obj):
     return json.dumps(obj, encoding='utf8')
 
@@ -67,31 +97,19 @@ class VIMEncode(json.JSONEncoder):
         return '"'+str(obj).replace('\\', '\\\\').replace('"', '\\"')+'"'
 
 class PrintUI(ui.ui):
-    @staticmethod
-    def _write(f, o, warning=False):
-        try:
-            return f.write(str(o))
-        except UnicodeDecodeError:
-            for line in str(o).split("\n"):
-                if line == '':
-                    line=' '
-                if warning:
-                    vim.command('echohl ErrorMsg')
-                vim.command('echomsg '+utf_dumps(line))
-                if warning:
-                    vim.command('echohl None')
-
     # ui.ui for some reason does not support outputting unicode
     def write(self, *args, **kwargs):
         if self._buffers:
             self._buffers[-1].extend([str(a) for a in args])
         else:
+            colinfo=None
             for a in args:
-                self._write(self.fout, a)
+                colinfo=echom(a, colinfo)
 
     def write_err(self, *args, **kwargs):
+        colinfo=None
         for a in args:
-            self._write(self.ferr, a, True)
+            colinfo=echoe(a, colinfo)
 
 class CaptureUI(PrintUI):
     def __init__(self):
@@ -167,6 +185,18 @@ def get_revlist(repo, startrev=0):
     r=[set_rev_dict(g_cs(repo, i), {'rev': i,}) for i in range(startrev, cscount+1)]
     return r
 
+if hasattr(vim, 'bindeval'):
+    def vim_extend(val, var='d', utf=True, list=False):
+        d_vim = vim.bindeval(var)
+        if list:
+            d_vim.extend(val)
+        else:
+            for key in val:
+                d_vim[key] = val[key]
+else:
+    def vim_extend(val, var='d', utf=True, list=False):
+        vim.eval('extend('+var+', '+((utf_dumps if utf else nonutf_dumps)(val))+')')
+
 @outermethod
 def get_updates(repo, oldtip=None):
     tipcs=repo['tip']
@@ -187,18 +217,43 @@ def get_updates(repo, oldtip=None):
     bookmarks_vim={}
     if hasattr(repo, 'listkeys'):
         bookmarks_vim=repo.listkeys('bookmarks')
-    d_vim={      'css': r,
-            'startrev': startrev,
-                'tags': tags_vim,
-           'bookmarks': bookmarks_vim,}
-    vim.eval('extend(a:repo, {"csnum": '+str(len(repo)+1)+'})')
-    vim.eval('extend(d, '+utf_dumps(d_vim)+')')
+    vim_extend(var='a:repo', val={'csnum': (len(repo)+1)})
+    vim_extend(val={'css': r,
+               'startrev': startrev,
+                   'tags': tags_vim,
+              'bookmarks': bookmarks_vim,})
+    if hasattr(tipcs, 'phase'):
+        vim_extend(val={'phases': [repo[rev].phasestr() for rev in range(startrev)]})
+
+def get_cs_tag_dict(l):
+    r={}
+    for hex, tag in l:
+        if hex in r:
+            r[hex].append(tag)
+        else:
+            r[hex]=[tag]
+    for key in r:
+        r[key].sort()
+    return r
+
+@outermethod
+def get_tags(repo):
+    tags=get_cs_tag_dict([(repo[val].hex(), key) for key, val
+                          in repo.tags().items()])
+    bookmarks={}
+    if hasattr(repo, 'listkeys'):
+        bookmarks=get_cs_tag_dict([(val, key) for key, val
+                                   in repo.listkeys('bookmarks').items()])
+    vim_extend(val={'tags': tags, 'bookmarks': bookmarks})
+
+@outermethod
+def get_phases(repo):
+    vim_extend(val={'phasemap': dict((lambda cs: (cs.hex(), cs.phasestr()))(repo[rev]) for rev in repo)})
 
 @outermethod
 def get_cs(repo, rev):
     cs=g_cs(repo, rev)
-    cs_vim=set_rev_dict(cs, {'rev': cs.rev()})
-    vim.eval('extend(cs, '+utf_dumps(cs_vim)+')')
+    vim_extend(var='cs', val=set_rev_dict(cs, {'rev': cs.rev()}))
 
 @outermethod
 def new_repo(repo):
@@ -206,26 +261,27 @@ def new_repo(repo):
     vim_repo={'has_octopus_merges': 0,
                    'requires_sort': 0,
                       'changesets': {},
-                          'cslist': [],
+                         'mutable': {'cslist': []},
                            'local': 1 if repo.local() else 0,
                       'labeltypes': ['tag', 'bookmark'],
+                       'hasphases': int(hasattr(repo[None], 'phase')),
              }
     if hasattr(repo, '__len__'):
         vim_repo['csnum']=len(repo)+1
-    vim.eval('extend(repo, '+utf_dumps(vim_repo)+')')
+    vim_extend(var='repo', val=vim_repo)
 
 @outermethod
 def get_file(repo, rev, filepath):
     fctx=g_fctx(g_cs(repo, rev), filepath)
     lines=[line.replace("\0", "\n") for line in fctx.data().split("\n")]
-    vim.eval('extend(r, '+nonutf_dumps(lines)+')')
+    vim_extend(var='r', val=lines, utf=False, list=True)
 
 @outermethod
 def annotate(repo, rev, filepath):
     ann=g_fctx(g_cs(repo, rev), filepath).annotate(follow=True, linenumber=True)
     ann_vim=[(line[0][0].path(), str(line[0][0].rev()), line[0][1])
                                                             for line in ann]
-    vim.eval('extend(r, '+nonutf_dumps(ann_vim)+')')
+    vim_extend(var='r', val=ann_vim, utf=False, list=True)
 
 def run_in_dir(dir, func, *args, **kwargs):
     workdir=os.path.abspath('.')
@@ -258,7 +314,7 @@ def dodiff(ui, repo, rev1, rev2, files, opts):
 def diff(*args, **kwargs):
     ui=CaptureUI()
     dodiff(ui, *args, **kwargs)
-    vim.eval('extend(r, '+nonutf_dumps(ui._getCaptured())+')')
+    vim_extend(var='r', val=ui._getCaptured(), utf=False, list=True)
 
 @outermethod
 def diffToBuffer(*args, **kwargs):
@@ -287,8 +343,8 @@ def get_renames(cs):
         else:
             copies_vim[f]=0
             renames_vim[f]=0
-    vim.eval('extend(a:cs, '+nonutf_dumps({'renames': renames_vim,
-                                            'copies': copies_vim})+')')
+    vim_extend(var='a:cs', val={'renames': renames_vim, 'copies': copies_vim},
+               utf=False)
 
 @outermethod
 def get_cs_prop(repo, rev, prop):
@@ -302,9 +358,8 @@ def get_cs_prop(repo, rev, prop):
                 am.append(f)
             else:
                 r.append(f)
-        vim.eval('extend(a:cs, {  "files": '+nonutf_dumps(am)+', '+
-                               '"removes": '+nonutf_dumps(r) +', '+
-                               '"changes": '+nonutf_dumps(c) +'})')
+        vim_extend(var='a:cs', val={'files': am, 'removes': r, 'changes': c},
+                   utf=False)
         return
     elif prop=='renames' or prop=='copies':
         get_renames(cs)
@@ -313,11 +368,16 @@ def get_cs_prop(repo, rev, prop):
         r=[f for f in cs]
     elif prop=='children':
         r=[ccs.hex() for ccs in cs.children()]
+    elif prop=='phase':
+        if hasattr(cs, 'phasestr'):
+            r=cs.phasestr()
+        else:
+            r='unknown'
     else:
         r=cs.__getattribute__(prop)()
     # XXX There is much code relying on the fact that after getcsprop
     #     property with given name is added to changeset dictionary
-    vim.eval('extend(a:cs, {"'+prop+'": '+nonutf_dumps(r)+'})')
+    vim_extend(var='a:cs', val={prop : r}, utf=False)
 
 @outermethod
 def get_status(repo, rev1=None, rev2=None, files=None, clean=None):
@@ -330,14 +390,14 @@ def get_status(repo, rev1=None, rev2=None, files=None, clean=None):
             m=match.match(None, None, files, exact=True)
         status=repo.status(rev1, rev2, ignored=True, clean=clean,
                            unknown=True, match=m)
-        vim.eval('extend(r, '+nonutf_dumps({'modified': status[0],
-                                               'added': status[1],
-                                             'removed': status[2],
-                                             'deleted': status[3],
-                                             'unknown': status[4],
-                                             'ignored': status[5],
-                                               'clean': status[6],
-                                           })+')')
+        vim_extend(val={'modified': status[0],
+                           'added': status[1],
+                         'removed': status[2],
+                         'deleted': status[3],
+                         'unknown': status[4],
+                         'ignored': status[5],
+                           'clean': status[6],},
+                   utf=False)
     else:
         vim_throw('statuns', repo.path)
 
@@ -358,31 +418,34 @@ def dirty(repo, filepath):
     if dirty and filepath in dirty:
         vim.command('let r=1')
 
+repo_props={
+            'tagslist': lambda repo: repo.tags().keys(),
+        'brancheslist': lambda repo: repo.branchmap().keys(),
+       'bookmarkslist': lambda repo: repo.listkeys('bookmarks').keys()
+                                        if hasattr(repo, 'listkeys') else [],
+                 'url': lambda repo: repo.ui.config('paths', 'default-push') or
+                                     repo.ui.config('paths', 'default'),
+              'branch': lambda repo: repo.dirstate.branch(),
+        }
 @outermethod
 def get_repo_prop(repo, prop):
-    r=None
-    if prop=='tagslist':
-        r=repo.tags().keys()
-    elif prop=='brancheslist':
-        r=repo.branchmap().keys()
-    elif prop=='bookmarkslist':
-        if hasattr(repo, 'listkeys'):
-            r=repo.listkeys('bookmarks').keys()
-        else:
-            r=[]
-    elif prop=='url':
-        r=repo.ui.config('paths', 'default-push')
+    if prop in repo_props:
+        r=repo_props[prop](repo)
         if r is None:
-            r=repo.ui.config('paths', 'default')
-    if r is None:
-        vim_throw('nocfg', prop, repo.path)
+            vim_throw('failcfg', prop, repo.path)
+        else:
+            vim_extend(val={prop : r})
     else:
-        vim.eval('extend(a:repo, {"'+prop+'": '+utf_dumps(r)+'})')
+        vim_throw('nocfg', repo.path, prop)
 
 @outermethod
-def call_cmd(repo, attr, *args, **kwargs):
+def call_cmd(repo, attr, bkwargs, *args, **kwargs):
+    if bkwargs:
+        for kw in bkwargs:
+            if kw in kwargs:
+                kwargs[kw]=bool(int(kwargs[kw]))
     if 'force' in kwargs:
-        kwargs['force']=bool(kwargs['force'])
+        kwargs['force']=bool(int(kwargs['force']))
     else:
         kwargs['force']=False
     if 'bundle' not in kwargs:
@@ -433,7 +496,7 @@ def grep(repo, pattern, files, revisions=None, ignore_case=False, wdfiles=True):
         else:
             file=(rev, file)
         r_vim.append({'filename': file, 'lnum': int(lnum), 'text': text})
-    vim.eval('extend(r, '+nonutf_dumps(r_vim)+')')
+    vim_extend(var='r', val=r_vim, utf=False, list=True)
 
 @outermethod
 def git_hash(repo, rev):

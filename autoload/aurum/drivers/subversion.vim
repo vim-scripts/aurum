@@ -1,15 +1,10 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {   '@aurum/repo': '3.0',
-                \                          '@/os': '0.0',
-                \   '@aurum/drivers/common/utils': '0.0',
-                \     '@aurum/drivers/common/xml': '0.0',
-                \'@aurum/drivers/common/hypsites': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
+            \                                   '@%aurum/repo': '5.0',
+            \                   '@%aurum/drivers/common/utils': '0.0',
+            \                     '@%aurum/drivers/common/xml': '0.0',
+            \                                           '@/os': '0.0',})
 let s:_messages={
             \  'rnimp': 'Reversing diff between working directory and '.
             \           'any revision is not implemented',
@@ -234,7 +229,7 @@ function s:svn.getcs(repo, rev)
         let rev=a:repo.functions.getrevhex(a:repo, a:rev)
         if has_key(a:repo.changesets, rev)
             return a:repo.changesets[rev]
-        elseif !empty(a:repo.cslist)
+        elseif !empty(a:repo.mutable.cslist)
             call a:repo.functions.updatechangesets(a:repo)
             if has_key(a:repo.changesets, rev)
                 return a:repo.changesets[rev]
@@ -294,28 +289,28 @@ function s:F.getchangesets(repo, ...)
 endfunction
 "▶1 svn.getchangesets :: repo → [cs]
 function s:svn.getchangesets(repo)
-    if empty(a:repo.cslist)
+    if empty(a:repo.mutable.cslist)
         let cslist=s:F.getchangesets(a:repo)
         let cslist[-1].children=[]
         call map(cslist[:-2], 'extend(v:val, {"children": ["".(v:val.rev-1)]})')
-        let a:repo.cslist+=cslist
+        let a:repo.mutable.cslist+=cslist
     else
         call a:repo.functions.updatechangesets(a:repo)
     endif
-    return a:repo.cslist
+    return a:repo.mutable.cslist
 endfunction
 "▶1 svn.revrange :: repo, rev1, rev2 → [cs]
 function s:svn.revrange(repo, rev1, rev2)
-    if empty(a:repo.cslist)
+    if empty(a:repo.mutable.cslist)
         call a:repo.functions.getchangesets(a:repo)
     else
         call a:repo.functions.updatechangesets(a:repo)
     endif
     let hex1=a:repo.functions.getrevhex(a:repo, a:rev1)
     let hex2=a:repo.functions.getrevhex(a:repo, a:rev2)
-    let i=len(a:repo.cslist)-1
-    while i>=0 && a:repo.cslist[i].hex isnot# hex1
-        if a:repo.cslist[i].hex is# hex2
+    let i=len(a:repo.mutable.cslist)-1
+    while i>=0 && a:repo.mutable.cslist[i].hex isnot# hex1
+        if a:repo.mutable.cslist[i].hex is# hex2
             let r2i=i
         endif
         let i-=1
@@ -323,26 +318,31 @@ function s:svn.revrange(repo, rev1, rev2)
     if !exists('r2i')
         call s:_f.throw('r2fst', a:rev2, a:rev1)
     endif
-    return a:repo.cslist[(i):(r2i)]
+    return a:repo.mutable.cslist[(i):(r2i)]
 endfunction
 "▶1 svn.updatechangesets :: repo → _
 function s:svn.updatechangesets(repo)
-    let oldtiprev=a:repo.cslist[-1].rev
+    if empty(a:repo.mutable.cslist)
+        return
+    endif
+    let oldtiprev=a:repo.mutable.cslist[-1].rev
     let tiprev=+a:repo.functions.gettiphex(a:repo)
     if tiprev<oldtiprev
-        while !empty(a:repo.cslist) && a:repo.cslist[-1].rev>tiprev
-            call remove(a:repo.cslist, -1)
+        while !empty(a:repo.mutable.cslist) &&
+                    \a:repo.mutable.cslist[-1].rev>tiprev
+            call remove(a:repo.mutable.cslist, -1)
         endwhile
     elseif tiprev>oldtiprev
         let cslist=s:F.getchangesets(a:repo, ''.oldtiprev, ''.tiprev)
         if !empty(cslist)
-            let a:repo.cslist[-1].children=''.(a:repo.cslist[-1].rev+1)
+            let a:repo.mutable.cslist[-1].children=
+                        \''.(a:repo.mutable.cslist[-1].rev+1)
             call map(cslist[:-2], 'extend(v:val, {"children": '.
                         \                                '["".(v:val.rev-1)]})')
-            let a:repo.cslist+=cslist
+            let a:repo.mutable.cslist+=cslist
         endif
     endif
-    let a:repo.cslist[-1].children=[]
+    let a:repo.mutable.cslist[-1].children=[]
 endfunction
 "▶1 svn.gettiphex :: repo → hex
 function s:svn.gettiphex(repo)
@@ -784,7 +784,9 @@ function s:svn.diffre(repo, opts)
 endfunction
 "▶1 svn.getrepoprop :: repo, propname → a
 function s:svn.getrepoprop(repo, prop)
-    if a:prop is# 'url'
+    if a:prop is# 'branch'
+        return substitute(a:repo.svnprefix, '/*$', '', '')
+    elseif a:prop is# 'url'
         return a:repo.svnurl
     elseif a:prop is# 'tagslist'
         return ['HEAD', 'BASE', 'COMMITTED', 'PREV']
@@ -795,7 +797,7 @@ function s:svn.getrepoprop(repo, prop)
 endfunction
 "▶1 svn.repo :: path → repo
 function s:svn.repo(path)
-    let repo={'path': a:path, 'changesets': {}, 'cslist': [],
+    let repo={'path': a:path, 'changesets': {}, 'mutable': {'cslist': []},
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': [], 'hasrevisions': 1,
                 \'requires_sort': 0, 'has_octopus_merges': 0,
@@ -856,14 +858,13 @@ function s:svn.getroot(dir)
     return a:dir
 endfunction
 "▶1 iterfuncs.ancestors
-let s:iterfuncs.ancestors={}
-function s:iterfuncs.ancestors.start(repo, opts)
+function s:iterfuncs.ancestors(repo, opts)
     let cslist=copy(a:repo.functions.revrange(a:repo, '1', a:opts.revision))
-    return {'cslist': cslist}
+    return {'cslist': cslist, 'next': s:F.ancestorsnext}
 endfunction
-function s:iterfuncs.ancestors.next(d)
-    while !empty(a:d.cslist)
-        let cs=remove(a:d.cslist, -1)
+function s:F.ancestorsnext()
+    while !empty(self.cslist)
+        let cs=remove(self.cslist, -1)
         if !empty(cs.changes)
             return cs
         endif
@@ -871,19 +872,16 @@ function s:iterfuncs.ancestors.next(d)
     return 0
 endfunction
 "▶1 iterfuncs.changesets
-let s:iterfuncs.changesets={}
-function s:iterfuncs.changesets.start(repo, opts)
-    return {'cslist': copy(a:repo.functions.getchangesets(a:repo))}
+function s:iterfuncs.changesets(repo, opts)
+    return {'cslist': copy(a:repo.functions.getchangesets(a:repo)),
+                \'next': s:F.ancestorsnext}
 endfunction
-let s:iterfuncs.changesets.next=s:iterfuncs.ancestors.next
 "▶1 iterfuncs.revrange
-let s:iterfuncs.revrange={}
-function s:iterfuncs.revrange.start(repo, opts)
+function s:iterfuncs.revrange(repo, opts)
     let cslist=copy(a:repo.functions.revrange(a:repo, a:opts.revrange[0],
                 \                                     a:opts.revrange[1]))
-    return {'cslist': cslist}
+    return {'cslist': cslist, 'next': s:F.ancestorsnext}
 endfunction
-let s:iterfuncs.revrange.next=s:iterfuncs.ancestors.next
 "▶1 Register driver
 call s:_f.regdriver('Subversion', s:svn)
 "▶1

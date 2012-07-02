@@ -1,28 +1,15 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
-                \                          '@/os': '0.0',
-                \                         '@/fwc': '0.0',
-                \                    '@/mappings': '0.0',
-                \                    '@/commands': '0.0',
-                \                   '@/functions': '0.0',
-                \                 '@aurum/commit': '1.0',
-                \               '@aurum/cmdutils': '1.0',
-                \              '@aurum/lineutils': '0.0',
-                \                   '@aurum/repo': '3.0',
-                \                   '@aurum/edit': '1.0',
-                \                     '@/options': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:reccomp=[]
-    let s:recfunc={}
-    call s:_f.command.add('AuRecord', s:recfunc, {'nargs': '*',
-                \                              'complete': s:reccomp})
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.0', {'@/options': '0.0',
+            \                     '@/os': '0.0',
+            \               '@/mappings': '0.0',
+            \                   '@aurum': '1.0',
+            \             '@aurum/cache': '2.1',
+            \           '@%aurum/commit': '1.0',
+            \         '@%aurum/cmdutils': '3.0',
+            \        '@%aurum/lineutils': '0.0',
+            \             '@%aurum/edit': '1.0',
+            \          '@%aurum/bufvars': '0.0',})
 let s:_options={
             \'recheight': {'default': 0,
             \               'filter': '(if type "" earg _  range 0 inf)'},
@@ -61,20 +48,21 @@ function s:F.write(bvar)
     call feedkeys("\<C-\>\<C-n>:call ".
             \      "call(<SNR>".s:_sid."_Eval('s:F.runstatmap'), ".
             \           "['commit', ".expand('<abuf>')."], {})\n", 'n')
+    call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
 endfunction
 "▶1 recfunc
 " TODO investigate why closing record tab is causing next character consumption
 "      under wine
-function s:recfunc.function(opts, ...)
+function s:cmd.function(opts, ...)
     if !empty(filter(range(1, tabpagenr('$')),
                 \    'gettabvar(v:val, "aurecid") is# "AuRecordTab"'))
         call s:_f.throw('recex')
     endif
     let files=copy(a:000)
     if !empty(files) && a:opts.repo is# ':'
-        let repo=s:_r.repo.get(s:_r.os.path.dirname(files[0]))
+        let repo=s:_r.cmdutils.checkedgetrepo(s:_r.os.path.dirname(files[0]))
     else
-        let repo=s:_r.repo.get(a:opts.repo)
+        let repo=s:_r.cmdutils.checkedgetrepo(a:opts.repo)
     endif
     call map(files, 'repo.functions.reltorepo(repo, v:val)')
     tabnew
@@ -131,21 +119,6 @@ function s:recfunc.function(opts, ...)
         bwipeout!
     endif
 endfunction
-" XXX options message, user, date and closebranch are used by com.commit
-" XXX documentation says that options are the same as for `:AuCommit' except for 
-" `type' option
-let s:recfunc['@FWC']=['-onlystrings '.
-            \          '{  repo '.s:_r.cmdutils.nogetrepoarg.
-            \          '  ?message           type ""'.
-            \          '  ?date              type ""'.
-            \          '  ?user              type ""'.
-            \          ' !?closebranch'.
-            \          '} '.
-            \          '+ type ""', 'filter']
-call add(s:reccomp,
-            \substitute(substitute(s:recfunc['@FWC'][0],
-            \'\V|*F.comm.getrepo',  '',           ''),
-            \'\V+ type ""', '+ (path)', ''))
 "▶1 curundo :: () → UInt
 if exists('*undotree')
     function s:F.curundo()

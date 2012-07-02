@@ -1,25 +1,12 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/os': '0.0',
-                \     '@aurum/cmdutils': '1.0',
-                \         '@aurum/edit': '1.3',
-                \               '@/fwc': '0.0',
-                \          '@/mappings': '0.0',
-                \         '@/resources': '0.0',
-                \          '@/commands': '0.0',
-                \         '@/functions': '0.0',
-                \           '@/options': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:vimdcomp=[]
-    let s:vimdfunc={}
-    call s:_f.command.add('AuVimDiff', s:vimdfunc, {'nargs': '*',
-                \                                'complete': s:vimdcomp})
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('1.0', {'@%aurum/cmdutils': '3.0',
+            \                    '@%aurum/edit': '1.3',
+            \                          '@aurum': '1.0',
+            \                      '@/mappings': '0.0',
+            \                     '@/resources': '0.0',
+            \                       '@/options': '0.0',
+            \                            '@/os': '0.0',})
 let s:_options={
             \'vimdiffusewin': {'default': 0, 'filter': 'bool'},
         \}
@@ -443,9 +430,9 @@ function s:F.fullvimdiff(repo, revs, mt, files, areglobs, ...)
     endfor
     "▲2
 endfunction
-"▶1 vimdfunc
+"▶1 :AuVimDiff
 " TODO exclude binary files from full diff
-function s:vimdfunc.function(opts, ...)
+function s:cmd.function(opts, ...)
     "▶2 repo and revisions
     let full=get(a:opts, 'full', 0)
     let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 0,
@@ -511,21 +498,6 @@ function s:vimdfunc.function(opts, ...)
         endif
     endif
 endfunction
-let s:vimdfunc['@FWC']=['-onlystrings '.
-            \           '{  repo  '.s:_r.cmdutils.nogetrepoarg.
-            \           '  ?file  type ""'.
-            \           ' *?files (match /\W/)'.
-            \           ' !?full'.
-            \           ' !?untracked'.
-            \           ' !?onlymodified'.
-            \           ' !?curfile'.
-            \           ' !?usewin'.
-            \           '}'.
-            \           '+ type ""', 'filter']
-call add(s:vimdcomp,
-            \substitute(substitute(s:vimdfunc['@FWC'][0],
-            \'\vfile\s+type\s*\V""', 'file path',        ''),
-            \'\V+ type ""',          '+ '.s:_r.comp.rev, ''))
 "▶1 Post resource
 call s:_f.postresource('vimdiff', {'split': s:F.diffsplit,
             \                       'full': s:F.fullvimdiff,})

@@ -11,13 +11,13 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/repo': '3.0',
-            \             '@aurum/bufvars': '0.0',
-            \             '@aurum/vimdiff': '1.0',
-            \            '@aurum/annotate': '1.0',
-            \                '@aurum/edit': '1.2',
-            \                 '@/mappings': '0.0',
-            \                       '@/os': '0.0',})
+execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
+            \                '@%aurum/vimdiff': '1.0',
+            \               '@%aurum/annotate': '1.0',
+            \               '@%aurum/cmdutils': '3.1',
+            \                   '@%aurum/edit': '1.2',
+            \                     '@/mappings': '0.0',
+            \                           '@/os': '0.0',})
 let s:_messages={
             \  'nofile': 'File %s was added in revision %s',
             \ 'norfile': 'File %s is not present in the working directory '.
@@ -167,7 +167,7 @@ function s:F.runmap(action, ...)
         endif
     "▶2 `update' action
     elseif a:action is# 'update'
-        call s:_r.repo.update(bvar.repo, hex, v:count)
+        call s:_r.cmdutils.update(bvar.repo, hex, v:count)
     "▶2 `previous' and `next' actions
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))

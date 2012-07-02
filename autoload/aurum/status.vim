@@ -1,24 +1,10 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.1', {'@/resources': '0.0',
-                \            '@aurum/cmdutils': '1.0',
-                \                      '@/fwc': '0.2',
-                \                '@aurum/repo': '3.0',
-                \                '@aurum/edit': '1.0',
-                \                 '@/commands': '0.0',
-                \                  '@/options': '0.0',
-                \                '@/functions': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:statcomp=[]
-    let s:statfunc={}
-    call s:_f.command.add('AuStatus', s:statfunc, {'nargs': '*',
-                \                               'complete': s:statcomp})
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '3.0',
+            \                    '@%aurum/edit': '1.0',
+            \                          '@aurum': '1.0',
+            \                       '@/options': '0.0',
+            \                     '@/resources': '0.0',})
 let s:statchars={
             \ 'deleted': '!',
             \ 'unknown': '?',
@@ -106,13 +92,12 @@ function s:F.setup(read, repo, opts)
 endfunction
 "▶1 statfunc
 let s:defcmd='silent botright new'
-function s:statfunc.function(repopath, opts)
+function s:cmd.function(repopath, opts)
     if has_key(a:opts, 'files') && a:repopath is# ':'
-        let repo=s:_r.repo.get(a:opts.files[0])
+        let repo=s:_r.cmdutils.checkedgetrepo(a:opts.files[0])
     else
-        let repo=s:_r.repo.get(a:repopath)
+        let repo=s:_r.cmdutils.checkedgetrepo(a:repopath)
     endif
-    call s:_r.cmdutils.checkrepo(repo)
     let opts=copy(a:opts)
     if has_key(opts, 'changes')
         let cs=repo.functions.getcs(repo, opts.changes)
@@ -149,24 +134,6 @@ function s:statfunc.function(repopath, opts)
         setlocal bufhidden=wipe
     endif
 endfunction
-let s:statfunc['@FWC']=['-onlystrings '.
-            \           '['.s:_r.cmdutils.nogetrepoarg.']'.
-            \           '{ *?files     (type "")'.
-            \           '   ?rev       (type "")'.
-            \           '   ?wdrev     (type "")'.
-            \           '   ?changes   (type "")'.
-            \           '  *?show      (either (in [modified added removed '.
-            \                                      'deleted unknown ignored '.
-            \                                      'clean all] ~start, '.
-            \                                  'match /\v^[MARDUIC!?]+$/))'.
-            \           '   ?cmd       (type "")'.
-            \           '}', 'filter']
-call add(s:statcomp,
-            \substitute(substitute(substitute(substitute(s:statfunc['@FWC'][0],
-            \'\V|*_r.repo.get',                     '',                   ''),
-            \'\vfiles\s+\([^)]*\)',                 'files path',         ''),
-            \'\Vcmd\s\+(type "")',                  'cmd '.s:_r.comp.cmd, ''),
-            \'\v(%(wd)?rev|changes)\s+\V(type "")', '\1 '.s:_r.comp.rev,  'g'))
 "▶1 aurum://status
 call s:_f.newcommand({
             \'function': s:F.setup,

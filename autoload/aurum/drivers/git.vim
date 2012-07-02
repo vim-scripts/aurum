@@ -1,14 +1,10 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.1', {   '@aurum/repo': '3.0',
-                \                          '@/os': '0.1',
-                \   '@aurum/drivers/common/utils': '0.0',
-                \'@aurum/drivers/common/hypsites': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
+            \                                   '@%aurum/repo': '5.0',
+            \                   '@%aurum/drivers/common/utils': '0.0',
+            \                                           '@/os': '0.1',
+            \                                      '@/options': '0.0',})
 let s:_messages={
             \   'hexf': 'Failed to obtain hex string for revision %s '.
             \           'in the repository %s: %s',
@@ -52,6 +48,9 @@ let s:_messages={
             \    'ppf': 'Failed to run “git %s” for the repository %s: %s',
         \}
 let s:git={}
+let s:_options={
+            \'git_maxitercsnum': {'default': 1000, 'checker': 'range 0 inf'},
+        \}
 "▶1 s:hypsites
 let s:hypsites=s:_r.hypsites.git
 "▶1 refile :: gitfname → path
@@ -86,38 +85,34 @@ endfunction
 " 1-indented commit message
 let s:logformat='%h-%H-%P-%at%n%an%n%ae%n%d%n%w(0,1,1)%B'
 let s:logkwargs={'format': s:logformat, 'encoding': 'utf-8', 'date-order': 1}
-function s:F.parsecs(csdata, lstart)
-    let line=a:lstart
+function s:F.parsecs(csdata)
     let cs={'branch': 'default'}
-    let [rev, hex, parents, time]=split(a:csdata[line], '-', 1) | let line+=1
+    let [rev, hex, parents, time]=split(remove(a:csdata, 0), '-', 1)
     let cs.hex=hex
     let cs.parents=split(parents)
     let cs.time=+time
     let cs.rev=rev
-    let aname=a:csdata[line]                                    | let line+=1
-    let aemail=a:csdata[line]                                   | let line+=1
+    let aname=remove(a:csdata, 0)
+    let aemail=remove(a:csdata, 0)
     let cs.user=aname.' <'.aemail.'>'
-    let cs.tags=split(a:csdata[line][2:-2], ', ')               | let line+=1
+    let cs.tags=split(remove(a:csdata, 0)[2:-2], ', ')
     let cs.bookmarks=[]
     "▶2 get description
     let description=[]
-    let lcsdata=len(a:csdata)
-    while line<lcsdata && a:csdata[line][0] is# ' '
-        let description+=[a:csdata[line][1:]]
-        let line+=1
+    while !empty(a:csdata) && a:csdata[0][0] is# ' '
+        let description+=[remove(a:csdata, 0)[1:]]
     endwhile
     let cs.description=join(description, "\n")
-    if empty(get(a:csdata, line, 0))
-        let line+=1
+    if get(a:csdata, 0, 0) is# ''
+        call remove(a:csdata, 0)
     endif
     "▲2
-    return [cs, line]
+    return cs
 endfunction
 "▶1 git.getcs :: repo, rev → cs
 function s:git.getcs(repo, rev)
     let cs=s:F.parsecs(s:F.git(a:repo, 'log', ['-n1', a:rev], s:logkwargs,
-                \              0, 'csf', a:rev),
-                \      0)[0]
+                \              0, 'csf', a:rev))
     " XXX This construct is used to preserve information like “allfiles” etc
     let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex, {}), cs)
     return a:repo.changesets[cs.hex]
@@ -126,16 +121,19 @@ endfunction
 function s:git.getwork(repo)
     return a:repo.functions.getcs(a:repo, 'HEAD')
 endfunction
-"▶1 git.getchangesets :: repo → []
-function s:git.getchangesets(repo, ...)
+"▶1 prepgitargs
+function s:F.prepgitargs(repo, ...)
     "▶2 Prepare s:F.git arguments
     let args=[]
     let kwargs=copy(s:logkwargs)
+    let revargs=[]
+    let revkwargs={}
     if a:0
-        let args+=[a:1.'^..'.a:2]
+        let revargs+=[((a:1 is 0)?(''):(a:1.'^..')).
+                    \ ((a:2 is 0)?(''):(a:2))]
     else
-        let kwargs.all=1
-        let kwargs['full-history']=1
+        let revkwargs.all=1
+        let revkwargs['full-history']=1
     endif
     let gitargs=[a:repo, 'log', args, kwargs, 0]
     if a:0
@@ -143,35 +141,55 @@ function s:git.getchangesets(repo, ...)
     else
         let gitargs+=['logf']
     endif
-    "▲2
-    let log=call(s:F.git, gitargs, {})[:-2]
-    "▶2 If log has shown nothing, try reversing range
-    if a:0 && empty(log)
-        let args[0]=a:2.'..'.a:1
-        let gitargs[-1]=a:1
-        let gitargs[-2]=a:2
-        let log=call(s:F.git, gitargs, {})[:-2]
-        if empty(log)
-            call s:_f.throw('invrng', a:1, a:2, a:repo.path)
-        endif
+    "▶2 Prepare hexslist in case git_maxitercsnum is greater then zero
+    if a:repo.maxitercsnum
+        let gitrlargs=copy(gitargs)
+        let gitrlargs[2]=copy(gitrlargs[2])+revargs
+        let gitrlargs[3]=extend(extend(copy(gitrlargs[3]),
+                    \           s:rlkwargs),
+                    \           revkwargs)
+        let hexlist=call(s:F.git, gitrlargs, {})[:-2]
+        let kwargs['no-walk']=1
+    else
+        call extend(kwargs, revkwargs)
+        call extend(  args, revargs  )
+        let hexlist=1
     endif
-    "▶2 Parse changeset information
-    let i=0
-    let llog=len(log)
-    let cslist=[]
-    while i<llog
-        let [cs, i]=s:F.parsecs(log, i)
-        let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex, {}),
-                    \                        cs)
-        call insert(cslist, a:repo.changesets[cs.hex])
-    endwhile
     "▲2
+    return [hexlist, gitargs]
+endfunction
+"▶1 git.getchangesets :: repo[, rangestart[, rangeend]] → [cs]
+let s:rlkwargs={'format': '%H'}
+function s:git.getchangesets(repo, ...)
+    let [hexlist, gitargs]=call(s:F.prepgitargs, [a:repo]+a:000, {})
+    let args=gitargs[2]
+    let cslist=[]
+    while !empty(hexlist)
+        if hexlist is 1
+            let hexlist=0
+        else
+            let curhexs=remove(hexlist, 0,
+                        \      min([a:repo.maxitercsnum, len(hexlist)])-1)
+            let gitargs[2]=args+curhexs
+        endif
+        let log=call(s:F.git, gitargs, {})[:-2]
+        "▶2 Parse changeset information
+        while !empty(log)
+            let cs=s:F.parsecs(log)
+            let a:repo.changesets[cs.hex]=extend(get(a:repo.changesets, cs.hex,
+                        \                            {}),
+                        \                        cs)
+            call insert(cslist, a:repo.changesets[cs.hex])
+        endwhile
+        "▲2
+    endwhile
     return cslist
 endfunction
 "▶1 git.revrange :: repo, rev1, rev2 → [cs]
 let s:git.revrange=s:git.getchangesets
 "▶1 git.updatechangesets :: repo → _
-let s:git.updatechangesets=s:git.getchangesets
+function s:git.updatechangesets(...)
+endfunction
 "▶1 git.getrevhex :: repo, rev → hex
 let s:prevrevhex={}
 function s:git.getrevhex(repo, rev)
@@ -185,19 +203,13 @@ function s:git.getrevhex(repo, rev)
     let s:prevrevhex[a:repo.path]=[a:rev, r]
     return r
 endfunction
-"▶1 git.gettiphex
-" XXX Uses master or working directory revision instead of latest revision
-function s:git.gettiphex(repo)
-    try
-        return a:repo.functions.getrevhex(a:repo, 'master')
-    catch
-        return a:repo.functions.gettiphex(a:repo)
-    endtry
-endfunction
 "▶1 git.getworkhex :: repo → hex
 function s:git.getworkhex(repo)
     return a:repo.functions.getrevhex(a:repo, 'HEAD')
 endfunction
+"▶1 git.gettiphex
+" XXX Uses HEAD instead of latest revision
+let s:git.gettiphex=s:git.getworkhex
 "▶1 git.setcsprop :: repo, cs, propname → propvalue
 function s:git.setcsprop(repo, cs, prop)
     if a:prop is# 'allfiles'
@@ -331,7 +343,7 @@ function s:git.status(repo, ...)
     else
         let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let kwargs={'porcelain': 1, 'z': 1}
-        let s=s:F.nullnl(s:F.git(a:repo,'status',args,kwargs,1,'statusf'))[:-2]
+        let s=s:F.nullnl(s:F.git(a:repo,'status',args,kwargs,2,'statusf'))[:-2]
         let files={}
         while !empty(s)
             let line=remove(s, 0)
@@ -632,7 +644,11 @@ function s:git.diffname(repo, line, diffre, opts)
 endfunction
 "▶1 git.getrepoprop :: repo, propname → a
 function s:git.getrepoprop(repo, prop)
-    if a:prop is# 'url'
+    if a:prop is# 'branch'
+        let branches=s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
+                    \        'branchf')[:-2]
+        return get(filter(branches, 'v:val[0] is# "*"'), 0, '')[2:]
+    elseif a:prop is# 'url'
         let r=get(s:F.git(a:repo, 'config', ['remote.origin.pushurl'], {}, 0),
                     \0, 0)
         if v:shell_error || r is 0
@@ -690,12 +706,15 @@ function s:git.pull(...)
 endfunction
 "▶1 git.repo :: path → repo
 function s:git.repo(path)
-    let repo={'path': a:path, 'changesets': {}, 'cslist': [],
+    let repo={'path': a:path, 'changesets': {}, 'mutable': {},
                 \'local': (stridx(a:path, '://')==-1),
                 \'labeltypes': ['tag', 'branch'],
                 \'hasrevisions': 0, 'requires_sort': 0,
                 \'githpath': s:_r.os.path.join(a:path, '.git', 'refs', 'heads'),
-                \'hypsites': deepcopy(s:hypsites),}
+                \'hypsites': deepcopy(s:hypsites),
+                \'maxitercsnum': s:_f.getoption('git_maxitercsnum'),
+                \'iterfuncs': deepcopy(s:iterfuncs),
+                \}
     if has_key(s:prevrevhex, a:path)
         unlet s:prevrevhex[a:path]
     endif
@@ -705,6 +724,50 @@ endfunction
 function s:git.checkdir(dir)
     return s:_r.os.path.isdir(s:_r.os.path.join(a:dir, '.git'))
 endfunction
+"▶1 iterfuncs
+let s:iterfuncs={}
+"▶2 nextcs
+function s:F.nextcs()
+    if empty(self.log)
+        if empty(self.hexlist)
+            return 0
+        endif
+        let curhexs=remove(self.hexlist, 0, min([self.maxitercsnum,
+                    \                            len(self.hexlist)])-1)
+        let gitargs=copy(self.gitargs)
+        let gitargs[2]=gitargs[2]+curhexs
+        let self.log=call(s:F.git, gitargs, {})[:-2]
+    endif
+    let cs=s:F.parsecs(self.log)
+    let self.repo.changesets[cs.hex]=extend(get(self.repo.changesets, cs.hex,
+                \                               {}),
+                \                          cs)
+    return self.repo.changesets[cs.hex]
+endfunction
+"▶2 iterfuncs.revrange, iterfuncs.changesets
+function s:iterfuncs.revrange(repo, opts)
+    let pgaargs=[a:repo]
+    if has_key(a:opts, 'revrange')
+        let pgaargs+=a:opts.revrange
+    elseif has_key(a:opts, 'revision')
+        let pgaargs+=[0, a:opts.revision]
+    endif
+    let [hexlist, gitargs]=call(s:F.prepgitargs, pgaargs, {})
+    let r={'repo': a:repo, 'maxitercsnum': a:repo.maxitercsnum,
+                \'gitargs': gitargs, 'next': s:F.nextcs}
+    if hexlist is 1
+        let hexlist=0
+        let log=call(s:F.git, gitargs, {})[:-2]
+    else
+        let log=[]
+        let r.csnum=len(hexlist)
+    endif
+    let r.hexlist=hexlist
+    let r.log=log
+    return r
+endfunction
+let s:iterfuncs.changesets=s:iterfuncs.revrange
+let s:iterfuncs.ancestors=s:iterfuncs.revrange
 "▶1 Register driver
 call s:_f.regdriver('Git', s:git)
 "▶1

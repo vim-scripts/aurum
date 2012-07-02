@@ -11,15 +11,13 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
-            \                 '@aurum/bufvars': '0.0',
-            \                    '@aurum/repo': '3.0',
-            \                    '@aurum/edit': '1.0',
-            \                           '@/os': '0.0',
-            \                 '@aurum/vimdiff': '1.0',
-            \                     '@/mappings': '0.0',})
+execute frawor#Setup('0.1', {'@%aurum/cmdutils': '3.1',
+            \                 '@%aurum/bufvars': '0.0',
+            \                    '@%aurum/edit': '1.0',
+            \                 '@%aurum/vimdiff': '1.0',
+            \                            '@/os': '0.0',
+            \                      '@/mappings': '0.0',})
 let s:_messages={
-            \'nocontents': 'Log is empty',
             \    'noprev': 'Can’t find any revision before %s',
             \    'nonext': 'Can’t find any revision after %s',
             \    'nopars': 'Revision %s has no parents',
@@ -169,8 +167,46 @@ function s:F.fvdiff(...)
         return cmd.hex.' '.cs.parents[0]."\n"
     endif
 endfunction
+"▶1 getfile
+function s:F.getfile(bvar, files, hex, more)
+    if empty(a:files)
+        return 0
+    endif
+    if has_key(a:bvar.opts, 'files') &&
+                \!has_key(a:bvar.opts.ignorefiles, 'open')
+        if a:more
+            let files=[]
+            let rej=copy(a:files)
+            for pattern in a:bvar.opts.filepats
+                call filter(rej, 'v:val!~#pattern || [0, add(files, v:val)][0]')
+            endfor
+        else
+            let files=copy(a:bvar.opts.csfiles[a:hex])
+            call filter(files, 'index(a:files, v:val)!=-1')
+        endif
+        if empty(files)
+            call s:_f.throw('novfilesff', a:hex)
+        endif
+    else
+        let files=a:files
+        if empty(files)
+            call s:_f.throw('novfiles', a:hex)
+        endif
+    endif
+    let file=0
+    if len(files)==1
+        let file=files[0]
+    else
+        let choice=inputlist(['Select file (0 to cancel):']+
+                    \        map(copy(files), '(v:key+1).". ".v:val'))
+        if choice
+            let file=files[choice-1]
+        endif
+    endif
+    return file
+endfunction
 "▶1 gethexfile
-function s:F.gethexfile()
+function s:F.gethexfile(...)
     let bvar=s:_r.bufvars[bufnr('%')]
     let [blockstart, blockend, hex]=bvar.getblock(bvar)
     let spname=s:F.findCurSpecial(bvar, hex, blockstart[0])
@@ -180,37 +216,19 @@ function s:F.gethexfile()
         " XXX If fileN special exists, then files property was definitely added, 
         " so no need to use getcsprop()
         let file=cs.files[str2nr(spname[4:])]
-    " Above is not applicable if we don't know exactly whether such special 
-    " exists
-    elseif !empty(bvar.repo.functions.getcsprop(bvar.repo, cs, 'files'))
-        if has_key(bvar.opts, 'files') &&
-                    \!has_key(bvar.opts.ignorefiles, 'open')
-            let files=copy(bvar.opts.csfiles[hex])
-            call filter(files, 'index(cs.files, v:val)!=-1')
-            if empty(files)
-                call s:_f.throw('novfilesff', hex)
-            endif
-        else
-            let files=cs.files
-            if empty(files)
-                call s:_f.throw('novfiles', hex)
-            endif
-        endif
-        if len(files)==1
-            let file=files[0]
-        else
-            let choice=inputlist(['Select file (0 to cancel):']+
-                        \        map(copy(files), '(v:key+1).". ".v:val'))
-            if choice
-                let file=files[choice-1]
-            endif
-        endif
+    else
+        let file=s:F.getfile(bvar,
+                    \        bvar.repo.functions.getcsprop(bvar.repo, cs,
+                    \                                      (((a:0 && !a:1))?
+                    \                                           ('allfiles'):
+                    \                                           ('files'))),
+                    \        hex, (a:0 && !a:1))
     endif
     return [hex, file]
 endfunction
 "▶1 open
-function s:F.open()
-    let [hex, file]=s:F.gethexfile()
+function s:F.open(...)
+    let [hex, file]=call(s:F.gethexfile, a:000, {})
     if file is 0
         return 0
     endif
@@ -220,8 +238,8 @@ function s:F.open()
     return 1
 endfunction
 "▶1 annotate
-function s:F.annotate()
-    if s:F.open()
+function s:F.annotate(...)
+    if call(s:F.open, a:000, {})
         AuAnnotate
     endif
 endfunction
@@ -323,7 +341,7 @@ endfunction
 function s:F.update()
     let bvar=s:_r.bufvars[bufnr('%')]
     let hex=bvar.getblock(bvar)[2]
-    call s:_r.repo.update(bvar.repo, hex, v:count)
+    call s:_r.cmdutils.update(bvar.repo, hex, v:count)
     return "\<C-\>\<C-n>:silent edit\n"
 endfunction
 "▶1 AuLog mapping group
@@ -332,26 +350,28 @@ function s:m(f, ...)
                 \                   '('.string(string(a:000))[2:-3].')'')<CR>'
 endfunction
 call s:_f.mapgroup.add('AuLog', {
-            \   'Enter': {'lhs': "\n", 'rhs': s:m('cr'),                      },
-            \    'File': {'lhs': 'gF', 'rhs': s:F.filehistory                 },
-            \    'User': {'lhs': 'gu', 'rhs': s:m('cr', 'user')               },
-            \    'Date': {'lhs': 'gM', 'rhs': s:m('cr', 'time')               },
-            \  'Branch': {'lhs': 'gb', 'rhs': s:m('cr', 'branch')             },
-            \     'Rev': {'lhs': 'gr', 'rhs': s:m('cr', 'rev')                },
-            \  'FVdiff': {'lhs': 'gD', 'rhs': s:F.fvdiff                      },
-            \ 'RFVdiff': {'lhs': 'gC', 'rhs': [1],         'func': s:F.fvdiff },
-            \   'Fdiff': {'lhs': 'gd', 'rhs': s:m('cr', 'curdiff')            },
-            \  'RFdiff': {'lhs': 'gc', 'rhs': s:m('cr', 'revdiff')            },
-            \    'Diff': {'lhs':  'd', 'rhs': s:m('diff', 1)                  },
-            \   'Rdiff': {'lhs':  'c', 'rhs': s:m('diff')                     },
-            \   'Vdiff': {'lhs':  'D', 'rhs': s:m('vimdiff', 1)               },
-            \  'RVdiff': {'lhs':  'C', 'rhs': s:m('vimdiff')                  },
-            \    'Next': {'lhs':  'K', 'rhs': s:F.next                        },
-            \    'Prev': {'lhs':  'J', 'rhs': s:F.prev                        },
-            \    'Open': {'lhs':  'o', 'rhs': s:m('open')                     },
-            \'Annotate': {'lhs':  'a', 'rhs': s:m('annotate')                 },
-            \  'Update': {'lhs':  'U', 'rhs': s:F.update                      },
-            \    'Exit': {'lhs':  'X', 'rhs': ':<C-u>bwipeout<CR>'            },
+            \      'Enter': {'lhs': "\n", 'rhs': s:m('cr'),             },
+            \       'File': {'lhs': 'gF', 'rhs': s:F.filehistory        },
+            \       'User': {'lhs': 'gu', 'rhs': s:m('cr', 'user')      },
+            \       'Date': {'lhs': 'gM', 'rhs': s:m('cr', 'time')      },
+            \     'Branch': {'lhs': 'gb', 'rhs': s:m('cr', 'branch')    },
+            \        'Rev': {'lhs': 'gr', 'rhs': s:m('cr', 'rev')       },
+            \     'FVdiff': {'lhs': 'gD', 'rhs': s:F.fvdiff             },
+            \    'RFVdiff': {'lhs': 'gC', 'rhs': [1], 'func': s:F.fvdiff},
+            \      'Fdiff': {'lhs': 'gd', 'rhs': s:m('cr', 'curdiff')   },
+            \     'RFdiff': {'lhs': 'gc', 'rhs': s:m('cr', 'revdiff')   },
+            \       'Diff': {'lhs':  'd', 'rhs': s:m('diff', 1)         },
+            \      'Rdiff': {'lhs':  'c', 'rhs': s:m('diff')            },
+            \      'Vdiff': {'lhs':  'D', 'rhs': s:m('vimdiff', 1)      },
+            \     'RVdiff': {'lhs':  'C', 'rhs': s:m('vimdiff')         },
+            \       'Next': {'lhs':  'K', 'rhs': s:F.next               },
+            \       'Prev': {'lhs':  'J', 'rhs': s:F.prev               },
+            \       'Open': {'lhs':  'o', 'rhs': s:m('open')            },
+            \    'OpenAny': {'lhs':  'O', 'rhs': s:m('open', 0)         },
+            \   'Annotate': {'lhs':  'a', 'rhs': s:m('annotate')        },
+            \'AnnotateAny': {'lhs':  'A', 'rhs': s:m('annotate', 0)     },
+            \     'Update': {'lhs':  'U', 'rhs': s:F.update             },
+            \       'Exit': {'lhs':  'X', 'rhs': ':<C-u>bwipeout<CR>'   },
             \}, {'func': s:F.cr, 'silent': 1, 'mode': 'n'})
 delfunction s:m
 "▶1

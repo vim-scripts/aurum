@@ -1,33 +1,19 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@aurum/cmdutils': '1.0',
-                \                 '@aurum/bufvars': '0.0',
-                \               '@aurum/lineutils': '0.0',
-                \                 '@aurum/vimdiff': '1.0',
-                \                    '@aurum/repo': '3.0',
-                \                    '@aurum/edit': '1.2',
-                \                           '@/os': '0.0',
-                \                          '@/fwc': '0.0',
-                \                     '@/mappings': '0.0',
-                \                     '@/commands': '0.0',
-                \                    '@/functions': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:filecomp=[]
-    let s:filefunc={}
-    call s:_f.command.add('AuFile', s:filefunc, {'nargs': '*',
-                \                             'complete': s:filecomp})
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '3.1',
+            \                 '@%aurum/bufvars': '0.0',
+            \               '@%aurum/lineutils': '0.0',
+            \                 '@%aurum/vimdiff': '1.0',
+            \                    '@%aurum/edit': '1.2',
+            \                          '@aurum': '1.0',
+            \                            '@/os': '0.0',
+            \                      '@/mappings': '0.0',})
 let s:_messages={
             \'wfail': 'Writing to %s failed',
             \'dfail': 'Failed to delete %s',
         \}
-"▶1 filefunc
-function s:filefunc.function(rev, file, opts)
+"▶1 AuFile
+function s:cmd.function(rev, file, opts)
     let opts=copy(a:opts)
     if a:rev isnot 0 && a:rev isnot ':'
         let opts.rev=a:rev
@@ -63,17 +49,6 @@ function s:filefunc.function(rev, file, opts)
     endif
     call s:_f.mapgroup.map('AuFile', bufnr('%'))
 endfunction
-let s:filefunc['@FWC']=['-onlystrings '.
-            \           '[:=(0)   type "" '.
-            \           '[:=(0)   either (match /\L/, path fr)]]'.
-            \           '{  repo '.s:_r.cmdutils.nogetrepoarg.
-            \           ' !?replace'.
-            \           '  ?cmd    type ""}', 'filter']
-call add(s:filecomp,
-            \substitute(substitute(substitute(s:filefunc['@FWC'][0],
-            \'\V:=(0)\s\+either (\[^)]\+)', 'path',                         ''),
-            \'\Vcmd\s\+type ""',            'cmd '.s:_r.comp.cmd,           ''),
-            \'\V:"."\s\+type ""', 'either ((type ""), '.s:_r.comp.rev.')',  ''))
 "▶1 docmd :: [String], read::0|1|2 → _ + ?
 function s:F.docmd(lines, read)
     if a:read==0 || a:read==1
@@ -92,7 +67,7 @@ function s:F.docmd(lines, read)
         endtry
     endif
 endfunction
-"▶1 file resource
+"▶1 aurum://file
 let s:file={'arguments': 2, 'sourceable': 1, 'mgroup': 'AuFile'}
 function s:file.function(read, repo, rev, file)
     let rev=a:repo.functions.getrevhex(a:repo, a:rev)
@@ -116,7 +91,7 @@ function s:F.runfilemap(action)
     if a:action is# 'exit'
         let cmd.=s:_r.cmdutils.closebuf(bvar)
     elseif a:action is# 'update'
-        call s:_r.repo.update(bvar.repo, bvar.rev, v:count)
+        call s:_r.cmdutils.update(bvar.repo, bvar.rev, v:count)
         return ''
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))

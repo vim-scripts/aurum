@@ -1,11 +1,6 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.0', {'@/resources': '0.0',})
 let s:bufvars={}
 "▶1 bufwipeout
 function s:F.bufwipeout()
@@ -32,5 +27,5 @@ let s:_augroups+=['AurumBufVars']
 "▶1
 call s:_f.postresource('bufvars', s:bufvars, 1)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,bufvars')
+call frawor#Lockvar(s:, 'bufvars')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

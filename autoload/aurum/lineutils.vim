@@ -1,11 +1,6 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.0', {'@/resources': '0.0',})
 let s:resource={}
 "▶1 crnl :: [String] → [String]
 function s:F.crnl(text)

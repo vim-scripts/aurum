@@ -1,24 +1,11 @@
 "▶1 
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.0', {'@/table': '0.1',
-                \        '@aurum/cmdutils': '1.0',
-                \         '@aurum/bufvars': '0.0',
-                \            '@aurum/edit': '1.0',
-                \                  '@/fwc': '0.3',
-                \             '@/commands': '0.0',
-                \            '@/functions': '0.0',
-                \            '@/resources': '0.0',}, 0)
-    call FraworLoad('@/commands')
-    call FraworLoad('@/functions')
-    let s:anncomp=[]
-    let s:annfunc={}
-    call s:_f.command.add('AuAnnotate', s:annfunc, {'nargs': '*',
-                \                                'complete': s:anncomp})
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('1.0', {'@%aurum/cmdutils': '3.0',
+            \                 '@%aurum/bufvars': '0.0',
+            \                    '@%aurum/edit': '1.0',
+            \                          '@aurum': '1.0',
+            \                     '@/resources': '0.0',
+            \                         '@/table': '0.1',})
 "▶1 formatann :: repo, cs, lnum, numlen → String
 function s:F.formatann(repo, cs, lnum, numlen)
     if !has_key(self, a:cs.hex)
@@ -142,7 +129,7 @@ endif
 "▶1 annfunc
 " TODO Investigate why wiping out annotate buffer causes consumption of next
 "      character under wine
-function s:annfunc.function(opts)
+function s:cmd.function(opts)
     let [hasannbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'noafile',
                 \                                         'annotate')
     if repo is 0
@@ -175,15 +162,6 @@ function s:annfunc.function(opts)
     call s:F.setannbuf(s:_r.bufvars[bufnr('%')], annbuf)
 endfunction
 let s:_augroups+=['AuAnnotateBW']
-let s:annfunc['@FWC']=['-onlystrings'.
-            \          '{  repo  '.s:_r.cmdutils.nogetrepoarg.
-            \          '  ?file  type ""'.
-            \          '  ?rev   type ""'.
-            \          '}', 'filter']
-call add(s:anncomp,
-            \substitute(substitute(s:annfunc['@FWC'][0],
-            \'\vfile\s+type\s*\V""', 'file path',          ''),
-            \'\vrev\s+type\s*\V""',  'rev '.s:_r.comp.rev, ''))
 "▶1 aurum://annotate
 call s:_f.newcommand({'function': s:F.setup,
             \        'arguments': 2,

@@ -1,31 +1,16 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('1.3', {'@/autocommands': '0.0',
-                \                   '@/functions': '0.0',
-                \                   '@/resources': '0.0',
-                \                   '@aurum/repo': '3.0',
-                \              '@aurum/lineutils': '0.0',
-                \                '@aurum/bufvars': '0.0',}, 0)
-    call FraworLoad('@/autocommands')
-    call FraworLoad('@/functions')
-    let s:auefunc={}
-    call s:_f.augroup.add('Aurum',
-                \[['BufReadCmd',   'aurum://*', 1, [s:auefunc,  0]],
-                \ ['FileReadCmd',  'aurum://*', 1, [s:auefunc,  1]],
-                \ ['SourceCmd',    'aurum://*', 1, [s:auefunc,  2]],
-                \ ['BufWriteCmd',  'aurum://*', 1, [s:auefunc, -1]],
-                \ ['FileWriteCmd', 'aurum://*', 1, [s:auefunc, -2]],
-                \])
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('1.3', {'@/resources': '0.0',
+            \               '@%aurum/repo': '5.0',
+            \          '@%aurum/lineutils': '0.0',
+            \            '@%aurum/bufvars': '0.0',
+            \                     '@aurum': '1.0',})
 let s:commands={}
 let s:_messages={
             \    'ucmd': 'Unknown command: %s',
             \     'nwr': 'Write feature is not implemented for command %s',
             \'nosource': 'Can not source %s',
+            \   'nrepo': 'No repository found for path %s',
         \}
 call extend(s:_messages, map({
             \'creg': 'command was already registered by plugin %s',
@@ -308,7 +293,7 @@ let s:_augroups+=['AurumNoInsert']
 "▶1 checkcmd :: command → _ + :throw?
 function s:F.checkcmd(command)
     if !has_key(s:commands, a:command)
-        call FraworLoad('@aurum/'.a:command)
+        call FraworLoad('@%aurum/'.a:command)
         if !has_key(s:commands, a:command)
             call s:_f.throw('ucmd', a:command)
         endif
@@ -321,14 +306,14 @@ function s:F.addpats(cdescr, args)
         let opts[o[:-2].'pats']=map(copy(opts[o]), 's:F.globtopat(v:val)')
     endfor
 endfunction
-"▶1 auefunc
+"▶1 aurum://
 let s:okeys={
             \'list': 'map(split(opts[o],";"), "s:F.ounescape(v:val)")',
             \'bool': '!!(+opts[o])',
             \ 'num': '+opts[o]',
             \ 'str': 's:F.ounescape(opts[o])',
         \}
-function s:auefunc.function(rw)
+function s:cmd.function(rw)
     " XXX On windows all forward slashes are transformed to backward in @%,
     "     all backward are transformed to forward in <amatch>
     let buf=expand('<abuf>')
@@ -387,9 +372,10 @@ function s:auefunc.function(rw)
         endif
     endif
     "▶2 Get repository
-    let repo=s:_r.repo.get(s:F.ounescape(args[0]))
+    let path=s:F.ounescape(args[0])
+    let repo=s:_r.repo.get(path)
     if repo is 0
-        call s:_f.throw('nrepo', args[0])
+        call s:_f.throw('nrepo', path)
     endif
     let args[0]=repo
     "▲2

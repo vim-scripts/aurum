@@ -3,13 +3,13 @@ scriptencoding utf-8
 setlocal textwidth=0
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.0', {'@aurum/bufvars': '0.0',
-            \                '@aurum/vimdiff': '1.0',
-            \               '@aurum/cmdutils': '1.0',
-            \                   '@aurum/edit': '1.2',
-            \                 '@aurum/commit': '1.0',
-            \                    '@/mappings': '0.0',
-            \                          '@/os': '0.0',})
+execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
+            \                '@%aurum/vimdiff': '1.0',
+            \               '@%aurum/cmdutils': '3.0',
+            \                   '@%aurum/edit': '1.2',
+            \                 '@%aurum/commit': '1.0',
+            \                     '@/mappings': '0.0',
+            \                           '@/os': '0.0',})
 let s:_messages={
             \  'nopars': 'Revision %s has no parents',
         \}
@@ -170,9 +170,9 @@ function s:F.runmap(action, ...)
     elseif a:action is# 'forget'
         call map(copy(files), 'bvar.repo.functions.forget(bvar.repo, v:val)')
         silent edit!
-    elseif a:action is# 'diff'
-        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
     elseif a:action is# 'revdiff'
+        call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
+    elseif a:action is# 'diff'
         call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
     elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
         let args=[bvar.repo]
@@ -202,12 +202,12 @@ endfunction
 "▲2
 call s:_f.mapgroup.add('AuStatus', {
             \    'Exit': {'lhs':  'X',   'rhs': ':<C-u>bwipeout!<CR>'       },
-            \    'Open': {'lhs': '<CR>', 'rhs': s:F.getrhs(          'open')},
-            \   'ROpen': {'lhs':  'o',   'rhs': s:F.getrhs(       'revopen')},
-            \ 'RFVdiff': {'lhs': 'gD',   'rhs': s:F.getrhs('revfullvimdiff')},
-            \  'FVdiff': {'lhs': 'gC',   'rhs': s:F.getrhs(   'fullvimdiff')},
-            \  'RFdiff': {'lhs': 'gd',   'rhs': s:F.getrhs(   'revfulldiff')},
-            \   'Fdiff': {'lhs': 'gc',   'rhs': s:F.getrhs(      'fulldiff')},
+            \   'Enter': {'lhs': '<CR>', 'rhs': s:F.getrhs(          'open')},
+            \    'Open': {'lhs':  'o',   'rhs': s:F.getrhs(       'revopen')},
+            \  'FVdiff': {'lhs': 'gD',   'rhs': s:F.getrhs(   'fullvimdiff')},
+            \ 'RFVdiff': {'lhs': 'gC',   'rhs': s:F.getrhs('revfullvimdiff')},
+            \   'Fdiff': {'lhs': 'gd',   'rhs': s:F.getrhs(      'fulldiff')},
+            \  'RFdiff': {'lhs': 'gc',   'rhs': s:F.getrhs(   'revfulldiff')},
             \    'Diff': {'lhs':  'd',   'rhs': s:F.getrhs(          'diff')},
             \   'vDiff': {'lhs':  'd',   'rhs': s:F.getrhs(          'diff', 1),
             \             'mode': 'x'},

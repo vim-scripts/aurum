@@ -1,11 +1,6 @@
 "▶1
 scriptencoding utf-8
-if !exists('s:_pluginloaded')
-    execute frawor#Setup('0.0', {'@/resources': '0.0',}, 0)
-    finish
-elseif s:_pluginloaded
-    finish
-endif
+execute frawor#Setup('0.1', {'@/resources': '0.0',})
 "▶1 s:hypsites
 let s:dport='domain.(empty(port)?"":":".port)'
 let s:link='shellescape("http://".'.s:dport.'.path)'
@@ -167,6 +162,7 @@ let s:hyp.git=[
 \['domain is? "bitbucket.org"', s:bbdict],
 \['domain is? "github.com"',
 \ {     'html': '"https://".domain."/".'.s:ghpath.'."/blob/".hex."/".file',   'hline': '"L".line',
+\                                                                             'hlines': '"L".line1."-L".line2',
 \        'raw': '"https://".domain."/".'.s:ghpath.'."/raw/". hex."/".file',
 \   'annotate': '"https://".domain."/".'.s:ghpath.'."/blame/". hex."/".file', 'aline': '"LID".line',
 \   'filehist': '"https://".domain."/".'.s:ghpath.'."/commits/".hex."/".file',
