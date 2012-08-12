@@ -353,8 +353,10 @@ function s:git.status(repo, ...)
         endif
         if a:0>4 && a:5
             let r.ignored=s:_r.utils.nullnl(
-                        \ s:F.git(a:repo, 'ls', args,
-                        \                 {'ignored': 1, 'z': 1}, 2,
+                        \ s:F.git(a:repo, 'ls-files', args,
+                        \                 {'ignored': 1, 'z': 1,
+                        \                  'exclude-standard': 1,
+                        \                  'others': 1}, 2,
                         \                 'lsignf', a:repo))[:-2]
         endif
     endif
