@@ -131,7 +131,7 @@ function s:F.commit(repo, opts, files, status, types)
         endfor
         call sort(fmessage)
         call append('.', fmessage)
-        startinsert
+        startinsert!
         return 0
     else
         call a:repo.functions.commit(a:repo, message, a:files, user, date, cb)
@@ -165,7 +165,8 @@ endfunction
 "▶1 commfunc
 function s:cmd.function(opts, ...)
     let rrfopts=copy(a:opts)
-    if a:0 && index(a:000, 'all')==-1
+    let hasall=index(a:000, 'all')!=-1
+    if a:0 && !hasall
         let rrfopts.files=a:000
     endif
     let [repo, rev, files]=s:_r.cmdutils.getrrf(rrfopts,
@@ -175,7 +176,8 @@ function s:cmd.function(opts, ...)
     let status=repo.functions.status(repo)
     "▶2 Get file list
     let types=['modified', 'added', 'removed']
-    if a:0 && index(a:000, 'all')!=-1
+    if hasall
+        unlet files
         let files=[]
     elseif a:0
         if has_key(a:opts, 'type')

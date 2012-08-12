@@ -10,7 +10,6 @@ endtry
 
 hi def link auLogSkipBefore_hex    Comment
 hi def link auLog_rev_suf          Comment
-hi def link auLogHexEnd            Comment
 
 hi def link auLogPatchFile         diffFile
 hi def link auLogPatchNewFile      diffNewFile
@@ -32,6 +31,11 @@ else
     hi auLogHexStart       ctermfg=DarkYellow  guifg=DarkYellow
 endif
 hi def link auLog_hex auLogHexStart
+hi def link auLogHexStart_hex auLogHexStart
+hi def link auLogHexEnd_hex   auLogHexStart
+
+hi def link auLogHexEnd_parents_  auLogHexStart_parents_
+hi def link auLogHexEnd_children_ auLogHexStart_children_
 
 let b:current_syntax=expand('<sfile>:t:r')
 if exists('s:_pluginloaded')

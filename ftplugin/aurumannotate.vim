@@ -201,6 +201,8 @@ function s:F.getrhs(...)
     return ':<C-u>call call(<SID>Eval("s:F.runmap"), '.string(a:000).', {})<CR>'
 endfunction
 "▲2
+" TODO Investigate why there is no previous window when using non-python version 
+"      of driver
 call s:_f.mapgroup.add('AuAnnotate', {
             \    'Enter': {'lhs': '<CR>', 'rhs': s:F.getrhs(   'vimdiff'   )},
             \   'FVdiff': {'lhs': 'gD',   'rhs': s:F.getrhs(   'vimdiff', 1)},

@@ -6,14 +6,19 @@ execute frawor#Setup('1.0', {'@%aurum/cmdutils': '3.0',
             \                          '@aurum': '1.0',
             \                     '@/resources': '0.0',
             \                         '@/table': '0.1',})
+let s:_messages={
+            \'nocsfile': 'File “%s” is not present in changeset %s '.
+            \            'from the repository %s',
+        \}
 "▶1 formatann :: repo, cs, lnum, numlen → String
 function s:F.formatann(repo, cs, lnum, numlen)
     if !has_key(self, a:cs.hex)
-        let description=matchstr(a:cs.description, '\v[^\r\n]+')
+        let description=matchstr(a:cs.description, '\v\S@=\p.*\S@=\p')
+        let oldlen=len(description)
         while s:_r.strdisplaywidth(description, a:numlen+1)>30
             let description=substitute(description, '.$', '', '')
         endwhile
-        if len(description)<len(a:cs.description)
+        if len(description)<oldlen
             let description.='…'
         endif
         let descwidth=s:_r.strdisplaywidth(description, a:numlen+1)
@@ -137,6 +142,10 @@ function s:cmd.function(opts)
     endif
     if rev is 0
         let rev=repo.functions.getworkhex(repo)
+    endif
+    let allfiles=repo.functions.getcsprop(repo, rev, 'allfiles')
+    if index(allfiles, file)==-1
+        call s:_f.throw('nocsfile', file, rev, repo.path)
     endif
     if hasannbuf==2
         let hasannbuf=!repo.functions.dirty(repo, file)

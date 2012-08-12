@@ -335,7 +335,7 @@ call s:_f.newfeature('aurumcmd', s:feature)
 " TODO mapping that closes status window
 call s:_f.mapgroup.add('Aurum', {
             \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'               },
-            \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit **<CR>'            },
+            \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit all<CR>'           },
             \'Open':      {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'                 },
             \'Revert':    {'lhs':  'O', 'rhs': ':<C-u>AuFile . : replace<CR>'     },
             \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'              },

@@ -21,8 +21,8 @@ let s:templates={
             \           "$empty",
             \'hgdef':   "changeset:   $rev#suf:\:#$hex\n".
             \           "branch:      $branch\n".
-            \           "tags:        $tags\n".
-            \           "bookmarks:   $bookmarks\n".
+            \           "tag:         $tags_\n".
+            \           "bookmark:    $bookmarks_\n".
             \           "user:        $user\n".
             \           "date:        $time#%a %b %d %H:%M:%S %Y#\n".
             \           "files:       $changes# #\n".
@@ -32,8 +32,8 @@ let s:templates={
             \           "$empty",
             \'hgdescr': "changeset:   $rev#suf:\:#$hex\n".
             \           "branch:      $branch\n".
-            \           "tags:        $tags\n".
-            \           "bookmarks:   $bookmarks\n".
+            \           "tag:         $tags_\n".
+            \           "bookmark:    $bookmarks_\n".
             \           "user:        $user\n".
             \           "date:        $time#%a %b %d %H:%M:%S %Y#\n".
             \           "files:       $changes# #\n".
@@ -92,6 +92,10 @@ let s:kwexpr.summary     = [0, '@@@']
 " TODO Add tab expansion
 let s:kwexpr.description = [1, 'split(@@@, "\n")']
 let s:kwexpr.patch       = [1, '@@@']
+let s:kwexpr.parents_    = [1, '@@@']
+let s:kwexpr.children_   = [1, '@@@']
+let s:kwexpr.tags_       = [1, '@@@']
+let s:kwexpr.bookmarks_  = [1, '@@@']
 let s:kwexpr.stat        = [2, 's:F.stat(@@@, @.@.files, @<@)']
 let s:kwexpr.files       = [2, 's:F.multlfmt(@@@, @.@.files, '.
             \                                    '@<@, @0@, '.
@@ -105,24 +109,23 @@ let s:kwexpr.copies      = [2, 's:F.renames(@@@, @.@.files, '.
             \                                   '@<@, @0@)', ' to ']
 let s:kwmarg={}
 let s:kwmarg.summary='matchstr(@.@.description, "\\\\v^[^\\n]*")'
-let s:kwmarg.stat='a:repo.functions.getstats(a:repo, diff, a:opts)'
+let s:kwmarg.stat='@:@.functions.getstats(@:@, diff, @o@)'
 let s:kwmarg.patch='diff'
 let s:kwmarg.empty=''''''
 let s:kwpempt=['parents', 'children', 'tags', 'bookmarks']
+let s:kwpemptml=['parents_', 'children_', 'tags_', 'bookmarks_',
+            \    'files', 'changes']
 let s:kwreg={
-            \'rev' : '\d\+',
-            \'parents': '\v\x{12,}( \x{12,})?',
-            \'children': '\v\x{12,}( \x{12,})*',
             \'phase': '\v(public|draft|secret)',
         \}
 let s:kwreqseqkw=['hex', 'branch', 'user', 'rev', 'time', 'parents', 'children',
             \     'tags', 'bookmarks', 'description', 'files', 'changes',
-            \     'phase']
+            \     'phase', 'parents_', 'children_', 'tags_', 'bookmarks_']
 let s:kwreqs = {'stat': {'files': 1},
             \'renames': {'files': 1, 'renames': 1},
             \ 'copies': {'files': 1, 'copies': 1},
             \}
-call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : {v:val : 1}})')
+call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : {substitute(v:val, "_$", "", "") : 1}})')
 unlet s:kwreqseqkw
 "▶1 beatycode       :: function::[String] → function::[String]
 let s:indents={
@@ -247,7 +250,7 @@ function s:F.parsearg(str)
     let r={}
     let i=0
     while !empty(s)
-        let key=matchstr(s, '\v^%(expr|synreg|flbeg|pref|suf):')[:-2]
+        let key=matchstr(s, '\C\v^%(expr|synreg|flbeg|pref|suf):')[:-2]
         if empty(key)
             let arg=matchstr(s, '\v(\\.|[^,])*')
             let s=s[len(arg)+1:]
@@ -344,9 +347,19 @@ let s:setlstrstr='let lstr=remove(text, -1)'
 let s:addexpr='((eval(submatch(1))!=0)?'.
             \           '(printf("%+i", eval(submatch(1)))):'.
             \           '(""))'
-function s:F.strappend(func, s)
+function s:F.strappend(func, s, nl)
     let func=a:func
-    if func[-1][:13] is# 'let text[-1].='
+    if a:nl
+        let i=len(func)
+        while i
+            let i-=1
+            if func[i] is# 'let text+=[""]'
+                call remove(func, i)
+                break
+            endif
+        endwhile
+        let func+=['let text+=['.a:s.']']
+    elseif func[-1][:13] is# 'let text[-1].='
         let func[-1].='.'.a:s
     elseif func[-1][:10] is# 'let text+=['
         let func[-1]=func[-1][:-2].'.'.a:s.']'
@@ -384,7 +397,7 @@ endfunction
 "▶1 compile :: template, opts → Fref
 let s:add={}
 "▶2 add.ke2 : Add complex multiline statement
-function s:add.ke2(addedif, expr, kw, arg, func)
+function s:add.ke2(addedif, expr, kw, arg, func, nl)
     let addedif2=0
     let func=a:func
     let func+=[s:setlstrstr]
@@ -418,7 +431,7 @@ function s:add.ke2(addedif, expr, kw, arg, func)
     endif
 endfunction
 "▶2 add.ke1 : Add simple multiline statements
-function s:add.ke1(addedif, expr, kw, arg, func)
+function s:add.ke1(addedif, expr, kw, arg, func, nl)
     let addedif2=0
     let func=a:func
     let func+=[s:setlstrstr]
@@ -428,7 +441,7 @@ function s:add.ke1(addedif, expr, kw, arg, func)
         let func+=['if exists("diff")']
     endif
     "▲3
-    let func+=['let ntext='.a:expr,
+    let func+=['let ntext=copy('.a:expr.')',
                 \'call map(ntext, "lstr.v:val")']+
                 \   (has_key(a:arg, 'flbeg')?
                 \       ['let ntext[0]='.string(a:arg.flbeg).
@@ -442,7 +455,7 @@ function s:add.ke1(addedif, expr, kw, arg, func)
     endif
 endfunction
 "▶2 add.ke0 : Add single-line statement
-function s:add.ke0(addedif, expr, kw, arg, func)
+function s:add.ke0(addedif, expr, kw, arg, func, nl)
     let func=a:func
     let add2if=0
     if a:kw is# 'branch' && a:arg.0 isnot# 'keep' && !a:addedif
@@ -495,10 +508,17 @@ function s:add.ke0(addedif, expr, kw, arg, func)
         endif
     endif
     "▲3
+    if a:nl
+        let  lexpr='len(text)'
+        let llexpr='0'
+    else
+        let  lexpr='len(text)-1'
+        let llexpr='len(text[-1])'
+    endif
     let func+=['let special.'.a:kw.'_r='.
-                \  '[[len(text)-1, len(text[-1])], '.
-                \   '[len(text)-1, len(text[-1])-1+len(estr)]]',]
-    call s:F.strappend(func, 'estr')
+                \  '[['.lexpr.', '.llexpr.'], '.
+                \   '['.lexpr.', '.llexpr.'-1+len(estr)]]',]
+    call s:F.strappend(func, 'estr', a:nl)
     if add2if
         let func+=['endif']
     endif
@@ -569,9 +589,9 @@ function s:F.compile(template, opts, repo)
         elseif lkw is# 'patch' || lkw is# 'stat'
             let addedif=1
             let func+=['if exists("diff")']
-        elseif lkw is# 'files' || lkw is# 'changes'
+        elseif index(s:kwpemptml, lkw)!=-1
             let addedif=1
-            let func+=['if !empty(a:cs.'.kw.')']
+            let func+=['if !empty(a:cs.'.substitute(lkw, '_$', '', '').')']
         elseif lkw is# 'renames' || lkw is# 'copies'
             let addedif=1
             let func+=['if !empty(filter(values(a:cs.'.lkw.'), '.
@@ -580,14 +600,12 @@ function s:F.compile(template, opts, repo)
         "▲2
         let func+=['let text+=[""]']
         let i=-1
+        let nl=1
         for str in lit
             let i+=1
             if !empty(str)
-                if i==0
-                    let func[-1]='let text+=['.string(str).']'
-                else
-                    call s:F.strappend(func, string(str))
-                endif
+                call s:F.strappend(func, string(str), nl)
+                let nl=0
             endif
             if lmeta>i
                 "▶2 Define variables
@@ -610,12 +628,15 @@ function s:F.compile(template, opts, repo)
                     let marg='filter(copy(a:cs.'.kw.'), '.
                                 \   '"index(files, v:val)!=-1")'
                 else
-                    let marg='a:cs.'.kw
+                    let marg='a:cs.'.substitute(kw, '_$', '', '')
                 endif
                 "▲3
-                let expr=substitute(substitute(substitute(expr,
+                let expr=substitute(substitute(substitute(substitute(
+                            \substitute(expr,
                             \'\V@@@', marg,      'g'),
                             \'\V@.@', 'a:cs',    'g'),
+                            \'\V@:@', 'a:repo',  'g'),
+                            \'\V@o@', 'a:opts',  'g'),
                             \'\V@-@', 'a:width', 'g')
                 "▶2 Process positional parameters
                 for j in range(len(ke)-2)
@@ -633,7 +654,8 @@ function s:F.compile(template, opts, repo)
                     call extend(reqs, s:kwreqs[kw])
                 endif
                 "▲2
-                call s:add['ke'.ke[0]](addedif, expr, kw, arg, func)
+                call s:add['ke'.ke[0]](addedif, expr, kw, arg, func, nl)
+                let nl=0
             endif
         endfor
         if addedif
@@ -771,17 +793,18 @@ function s:F.syntax(template, opts, repo)
                     call s:F.addgroup(r, nlgroups, 'auLog_'.kw)
                     let r+=['syn match auLog_'.kw.' /'.arg.synreg.'/ '.
                                 \'contained nextgroup=']
-                elseif kw is# 'hex'
+                elseif kw is# 'hex' || kw is# 'parents_' || kw is# 'children_'
                     if has_key(a:repo, 'hexreg')
-                        call s:F.addgroup(r, nlgroups, 'auLog_hex')
-                        let r+=['syn match auLog_hex /'.a:repo.hexreg.'/ '.
+                        call s:F.addgroup(r, nlgroups, 'auLog_'.kw)
+                        let r+=['syn match auLog_'.kw.' /'.a:repo.hexreg.'/ '.
                                     \'contained nextgroup=']
                     else
-                        call s:F.addgroup(r, nlgroups, 'auLogHexStart')
-                        let r+=['syn match auLogHexStart /\v\x{12}/ contained'.
-                                    \' nextgroup=auLogHexEnd',
-                                \'syn match auLogHexEnd /\v\x+/ contained '.
-                                \   (has('conceal')?('conceal'):('')).
+                        call s:F.addgroup(r, nlgroups, 'auLogHexStart_'.kw)
+                        let r+=['syn match auLogHexStart_'.kw.' /\v\x{12}/'.
+                                    \' contained nextgroup=auLogHexEnd_'.kw,
+                                \'syn match auLogHexEnd_'.kw.' '.
+                                \   '/\v\x+/ contained'.
+                                \   (has('conceal')?(' conceal'):('')).
                                 \   ' nextgroup=']
                     endif
                 elseif kw is# 'patch'
@@ -852,8 +875,15 @@ function s:F.syntax(template, opts, repo)
                         call s:F.addgroup(r, nlgroups, 'auLog_'.kw.trail)
                     endif
                     let nextlit=get(arg, 'suf', get(lit, j+1, 0))
-                    let r+=['syn match auLog_'.kw.' '.
-                                \'/'.s:F.getkwreg(kw, nextlit).'/ '.
+                    if kw is# 'rev'
+                        let reg=get(a:repo, 'revreg', '\v\d+')
+                    elseif kw is# 'parents' || kw is# 'children'
+                        let reg=get(a:repo, 'hexreg', '\x{12,}')
+                        let reg='\v'.reg.'(\ '.reg.')*'
+                    else
+                        let reg=s:F.getkwreg(kw, nextlit)
+                    endif
+                    let r+=['syn match auLog_'.kw.' /'.reg.'/ '.
                                 \'contained nextgroup=']
                     if has_key(arg, 'suf')
                         let r[-1].='auLog_'.kw.'_suf'

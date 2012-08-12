@@ -1,10 +1,18 @@
 from mercurial import hg, ui, commands, match
-from mercurial.repo import error
+try:
+    from mercurial.repo import error
+except ImportError:
+    from mercurial import error
 import vim
 import os
 import json
 import re
 import sys
+
+if hasattr(error, 'RepoLookupError'):
+    RepoLookupError=error.RepoLookupError
+else:
+    RepoLookupError=error.RepoError
 
 def outermethod(func):
     """
@@ -152,11 +160,8 @@ def g_repo(path):
 
 def g_cs(repo, rev):
     try:
-        if not hasattr(repo, '__getitem__'):
-            vim.command('call s:_f.throw("csuns", '+nonutf_dumps(repo.path)+')')
-            raise AurumError()
         return repo[rev]
-    except error.RepoLookupError:
+    except RepoLookupError:
         vim_throw('norev', rev, repo.path)
 
 def g_fctx(cs, filepath):
@@ -176,6 +181,7 @@ def set_rev_dict(cs, cs_vim):
         cs_vim['branch']=branch
         cs_vim['tags']=cs.tags()
         cs_vim['bookmarks']=cs.bookmarks()
+        # FIXME For some reason using cs.phasestr() here results in an exception
     except AttributeError:
         pass
     return cs_vim
@@ -248,7 +254,8 @@ def get_tags(repo):
 
 @outermethod
 def get_phases(repo):
-    vim_extend(val={'phasemap': dict((lambda cs: (cs.hex(), cs.phasestr()))(repo[rev]) for rev in repo)})
+    vim_extend(val={'phasemap': dict((lambda cs: (cs.hex(), cs.phasestr()))(repo[rev])
+                                                 for rev in repo)})
 
 @outermethod
 def get_cs(repo, rev):
@@ -261,13 +268,19 @@ def new_repo(repo):
     vim_repo={'has_octopus_merges': 0,
                    'requires_sort': 0,
                       'changesets': {},
-                         'mutable': {'cslist': []},
+                         'mutable': {'cslist': [], 'commands': {}},
                            'local': 1 if repo.local() else 0,
-                      'labeltypes': ['tag', 'bookmark'],
+                      'labeltypes': ['tag',  'bookmark'],
+                         'updkeys': ['tags', 'bookmarks'],
+                    'hasbookmarks': 1,
                        'hasphases': int(hasattr(repo[None], 'phase')),
              }
     if hasattr(repo, '__len__'):
         vim_repo['csnum']=len(repo)+1
+    if not hasattr(commands, 'bookmarks'):
+        vim_repo['labeltypes'].pop()
+        vim_repo['updkeys'].pop()
+        vim_repo['hasbookmarks']=0
     vim_extend(var='repo', val=vim_repo)
 
 @outermethod
@@ -380,7 +393,7 @@ def get_cs_prop(repo, rev, prop):
     vim_extend(var='a:cs', val={prop : r}, utf=False)
 
 @outermethod
-def get_status(repo, rev1=None, rev2=None, files=None, clean=None):
+def get_status(repo, rev1=None, rev2=None, files=None, clean=None, ignored=None):
     if rev1 is None and rev2 is None:
         rev1='.'
     if hasattr(repo, 'status'):
@@ -388,8 +401,8 @@ def get_status(repo, rev1=None, rev2=None, files=None, clean=None):
             m=None
         else:
             m=match.match(None, None, files, exact=True)
-        status=repo.status(rev1, rev2, ignored=True, clean=clean,
-                           unknown=True, match=m)
+        status=repo.status(rev1, rev2, match=m, clean=clean, ignored=ignored,
+                           unknown=True)
         vim_extend(val={'modified': status[0],
                            'added': status[1],
                          'removed': status[2],
@@ -448,8 +461,6 @@ def call_cmd(repo, attr, bkwargs, *args, **kwargs):
         kwargs['force']=bool(int(kwargs['force']))
     else:
         kwargs['force']=False
-    if 'bundle' not in kwargs:
-        kwargs['bundle']=None
     for key in [key for key in kwargs if key.find('-')!=-1]:
         newkey=key.replace('-', '_')
         kwargs[newkey]=kwargs.pop(key)
@@ -526,3 +537,5 @@ def git_hash(repo, rev):
         vim.command('return '+json.dumps(r))
     finally:
         sys.path.pop(0)
+
+# vim: ft=python ts=4 sw=4 sts=4 et tw=100

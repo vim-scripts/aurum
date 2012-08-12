@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
-            \                   '@%aurum/drivers/common/utils': '0.0',
+            \                   '@%aurum/drivers/common/utils': '1.0',
             \                     '@%aurum/drivers/common/xml': '0.0',
             \                                           '@/os': '0.0',})
 let s:_messages={
@@ -50,23 +50,25 @@ let s:_messages={
             \           'time information for Subversion revisions',
             \  'r2fst': 'Second revision (%s) was found before the first (%s)',
             \     'u3': 'Subversion supports only three lines '.
-            \           'of unified context, you gave %u',
+            \           'of unified context, not requested %u',
             \ 'iediff': 'Diff parser error: expected at least one more line '.
             \           'after “====<…>====” separator line',
+            \ 'punimp': 'Cannot “pull” from non-default location',
+            \'pulnimp': 'Cannot pull: use update instead',
         \}
 let s:svn={}
 let s:iterfuncs={}
 "▶1 s:hypsites
 let s:hypsites=s:_r.hypsites.svn
-"▶1 svncmd :: repo, cmd, args, kwargs, esc → String
-function s:F.svncmd(repo, ...)
-    return 'svn '.call(s:_r.utils.getcmd, a:000, {})
+"▶1 svncmd :: cmd, args, kwargs → String
+function s:F.svncmd(...)
+    return ['svn']+call(s:_r.utils.getcmd, a:000, {})
 endfunction
 "▶1 svn :: repo, cmd, args, kwargs, has0[, msgid[, marg1[, …]]] → [String] + ?
 function s:F.svn(repo, cmd, args, kwargs, hasnulls, ...)
-    let cmd=s:F.svncmd(a:repo, a:cmd, a:args, a:kwargs, a:hasnulls)
-    let r=s:_r.utils.run(cmd, a:hasnulls, a:repo.path)
-    if v:shell_error && a:0
+    let cmd=s:F.svncmd(a:cmd, a:args, a:kwargs)
+    let [r, exit_code]=s:_r.utils.run(cmd, a:hasnulls, a:repo.path)
+    if exit_code && a:0
         call call(s:_f.throw, a:000+[a:repo.path, join(r[:-1-(a:hasnulls)],
                     \                                  "\n")], {})
     endif
@@ -105,6 +107,7 @@ let s:csinit={
             \'tags': [],
             \'bookmarks': [],
             \'status': {'added': [], 'removed': [], 'modified': []},
+            \'phase': 'public',
         \}
 let s:logstatchars={
             \'M': 'modified',
@@ -384,13 +387,9 @@ let s:statchars=[{
             \'I': 'ignored',}, {
             \'C': 'modified',
             \'M': 'modified',}]
-function s:F.status(repo, files)
-    let r=deepcopy(s:initstatdct)
-    let args=[]
-    if !empty(a:files)
-        let args+=['--']+a:files
-    endif
-    let slines=s:F.svn(a:repo, 'status', args, {}, 0, 'statf')
+function s:F.status(repo, args, kwargs)
+    let r=deepcopy(s:_r.utils.emptystatdct)
+    let slines=s:F.svn(a:repo, 'status', a:args, a:kwargs, 0, 'statf')
     let revstatus={}
     for line in slines
         let status=line[:6]
@@ -414,7 +413,7 @@ endfunction
 function s:F.statfromdiff(repo, diff, ofs, fs, files)
     "▶2 Initialize variables
     let diff=copy(a:diff)
-    let r=deepcopy(s:initstatdct)
+    let r=deepcopy(s:_r.utils.emptystatdct)
     let diffre=a:repo.functions.diffre(a:repo, {})
     let revstatus={}
     let file=0
@@ -494,22 +493,18 @@ function s:F.statreverse(status)
                 \'map(v:val, "extend(r, {v:val : ''".v:key."''})")')
     return r
 endfunction
-"▶1 svn.status :: repo[, rev1[, rev2[, files[, clean]]]]
-let s:initstatdct={
-            \'modified': [],
-            \   'added': [],
-            \ 'removed': [],
-            \ 'deleted': [],
-            \ 'unknown': [],
-            \ 'ignored': [],
-            \   'clean': [],
-        \}
+"▶1 svn.status :: repo[, rev1[, rev2[, files[, clean[, ign]]]]] → {type:[file]}
 " TODO Try using diff --summarize
 function s:svn.status(repo, ...)
     let requiresclean=(a:0>3 && a:4)
+    let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
     "▶2 Simple case: we can use “svn status”
     if !a:0 || (a:1 is 0 && !(a:0>1 && a:2 isnot 0))
-        let [r, revstatus]=s:F.status(a:repo, get(a:000, 2, []))
+        let kwargs={}
+        if a:0>4 && a:5
+            let kwargs['no-ignore']=1
+        endif
+        let [r, revstatus]=s:F.status(a:repo, args, kwargs)
         if requiresclean
             let allfiles=a:repo.functions.getcsprop(a:repo, 'BASE', 'allfiles')
             if a:0>2 && !empty(a:3)
@@ -519,7 +514,7 @@ function s:svn.status(repo, ...)
     "▶2 Not so complicated case: cs and its parent or itself
     elseif a:0>1 && !empty(a:1) && !empty(a:2) && a:1.a:2!~#'\D' &&
                 \abs(a:1-a:2)<=1
-        let r=copy(s:initstatdct)
+        let r=copy(s:_r.utils.emptystatdct)
         if requiresclean
             let allfiles=copy(a:repo.functions.getcsprop(a:repo,a:1,'allfiles'))
             if a:0>2 && !empty(a:3)
@@ -581,7 +576,7 @@ function s:svn.status(repo, ...)
             call map(rsallfiless, 'filter(v:val, "index(a:3, v:val)!=-1")')
         endif
         if usescur
-            let fs=s:F.status(a:repo, get(a:000, 2, []))[1]
+            let fs=s:F.status(a:repo, args, {})[1]
             call filter(fs, 'v:val is# "deleted" || v:val is# "removed"')
             let ofs=rsallfiless[0]
         else
@@ -707,10 +702,8 @@ function s:svn.diff(repo, rev1, rev2, files, opts)
     let reverse=get(a:opts, 'reverse', 0)
     let kwargs={}
     let args=[]
-    for [k, v] in items(diffopts)
-        if v
-            let args+=['--extensions', '--'.k]
-        endif
+    for [k, v] in filter(items(diffopts), 'v:val[1]')
+        let args+=['--extensions', '--'.k]
     endfor
     "▶2 Get revision arguments
     if empty(a:rev2)
@@ -795,6 +788,17 @@ function s:svn.getrepoprop(repo, prop)
     endif
     call s:_f.throw('nocfg', a:prop, a:repo.path)
 endfunction
+"▶1 svn.pull :: repo, dryrun, force[, URL[, rev]]
+function s:svn.pull(repo, dryrun, force, ...)
+    if a:0>=1 && a:1 isnot 0
+        call s:_f.throw('punimp')
+    endif
+    if a:dryrun
+        return s:F.svnm(a:repo, 'log', [], {'revision': 'HEAD:BASE'}, 0)
+    else
+        call s:_f.throw('pulnimp')
+    endif
+endfunction
 "▶1 svn.repo :: path → repo
 function s:svn.repo(path)
     let repo={'path': a:path, 'changesets': {}, 'mutable': {'cslist': []},
@@ -804,7 +808,7 @@ function s:svn.repo(path)
                 \'initprops': ['rev', 'hex', 'parents', 'tags', 'bookmarks',
                 \              'branch', 'time', 'user', 'description',
                 \              'renames', 'copies', 'files', 'changes',
-                \              'removes'],
+                \              'removes', 'phase'],
                 \'hypsites': deepcopy(s:hypsites),
                 \'has_merges': 0, 'iterfuncs': deepcopy(s:iterfuncs),
                 \'hexreg': '\v[1-9]\d*',}

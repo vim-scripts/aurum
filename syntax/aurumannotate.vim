@@ -3,7 +3,7 @@ if exists('b:current_syntax')
 endif
 
 syn match auAnnRevision    /\v^\ *\S+\ / nextgroup=auAnnDescription
-syn match auAnnDescription /\v.{31}/     nextgroup=auAnnDescNameSep contained
+syn match auAnnDescription /\v.*%38v/    nextgroup=auAnnDescNameSep contained
 syn match auAnnDescNameSep @\V / @       nextgroup=auAnnAuthor      contained
 syn match auAnnAuthor      /\v.*$/                                  contained
 

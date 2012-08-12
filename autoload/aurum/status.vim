@@ -37,20 +37,24 @@ function s:F.setup(read, repo, opts)
     endfor
     let bvar={}
     let requiresclean=0
+    let requiresignored=0
     if has_key(opts, 'show')
         if index(opts.show, 'all')==-1
             let show=s:F.parseshow(opts.show)
             let requiresclean=(index(show, 'clean')!=-1)
+            let requiresignored=(index(show, 'ignored')!=-1)
         else
             let show=s:allshow
             let requiresclean=1
+            let requiresignored=1
         endif
     else
         let show=s:defshow
     endif
     let status=a:repo.functions.status(a:repo, get(opts, 'rev',   0),
                 \                              get(opts, 'wdrev', 0),
-                \                              0, requiresclean)
+                \                              0, requiresclean,
+                \                              requiresignored)
     let bvar.status=status
     let bvar.types=[]
     let bvar.chars=[]

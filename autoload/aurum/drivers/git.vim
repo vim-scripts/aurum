@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
-            \                   '@%aurum/drivers/common/utils': '0.0',
+            \                   '@%aurum/drivers/common/utils': '1.0',
             \                                           '@/os': '0.1',
             \                                      '@/options': '0.0',})
 let s:_messages={
@@ -31,6 +31,8 @@ let s:_messages={
             \    'lsf': 'Failed to list files in the changeset %s '.
             \           'of the repository %s: %s',
             \'statusf': 'Failed to obtain status of the repository %s: %s',
+            \ 'lsignf': 'Failed to list ignored files '.
+            \           'in the repository %s: %s',
             \    'rlf': 'Failed to list commits in repository %s: %s',
             \    'lbf': 'Failed to create/remove %s %s for revision %s '.
             \           'in the repository %s: %s',
@@ -57,19 +59,21 @@ let s:hypsites=s:_r.hypsites.git
 function s:F.refile(fname)
     return a:fname[0] is# '"' ? eval(a:fname) : a:fname
 endfunction
-"▶1 gitcmd :: repo, cmd, args, kwargs, esc → String
-function s:F.gitcmd(repo, ...)
-    return 'git --git-dir='.  shellescape(a:repo.path.'/.git', a:4).
-                \' --work-tree='.shellescape(a:repo.path,         a:4).
-                \' '.call(s:_r.utils.getcmd, a:000, {})
+"▶1 gitcmd :: cmd, args, kwargs → String
+function s:F.gitcmd(...)
+    return ['git']+call(s:_r.utils.getcmd, a:000, {})
 endfunction
 "▶1 git :: repo, cmd, args, kwargs, has0[, msgid[, marg1[, …]]] → [String] + ?
 function s:F.git(repo, cmd, args, kwargs, hasnulls, ...)
-    let cmd=s:F.gitcmd(a:repo, a:cmd, a:args, a:kwargs, a:hasnulls)
-    let r=s:_r.utils.run(cmd, a:hasnulls, a:repo.path)
-    if v:shell_error && a:0
-        call call(s:_f.throw, a:000+[a:repo.path, join(r[:-1-(a:hasnulls)],
-                    \                                  "\n")], {})
+    let cmd=s:F.gitcmd(a:cmd, a:args, a:kwargs)
+    let [r, exit_code]=s:_r.utils.run(cmd, a:hasnulls, a:repo.path)
+    if a:0
+        if a:1 is 0
+            return [r, exit_code]
+        elseif exit_code
+            call call(s:_f.throw, a:000+[a:repo.path, join(r[:-1-(a:hasnulls)],
+                        \                                  "\n")], {})
+        endif
     endif
     return r
 endfunction
@@ -86,7 +90,7 @@ endfunction
 let s:logformat='%h-%H-%P-%at%n%an%n%ae%n%d%n%w(0,1,1)%B'
 let s:logkwargs={'format': s:logformat, 'encoding': 'utf-8', 'date-order': 1}
 function s:F.parsecs(csdata)
-    let cs={'branch': 'default'}
+    let cs={'branch': 'default', 'phase': 'unknown'}
     let [rev, hex, parents, time]=split(remove(a:csdata, 0), '-', 1)
     let cs.hex=hex
     let cs.parents=split(parents)
@@ -280,42 +284,17 @@ function s:git.setcsprop(repo, cs, prop)
     let a:cs[a:prop]=r
     return r
 endfunction
-"▶1 nullnl :: [String] → [String]
-" Convert between lines (NL separated strings with NULLs represented as NLs) and 
-" NULL separated strings with NLs represented by NLs.
-function s:F.nullnl(text)
-    let r=['']
-    for nlsplit in map(copy(a:text), 'split(v:val, "\n", 1)')
-        let r[-1].="\n".nlsplit[0]
-        call extend(r, nlsplit[1:])
-    endfor
-    if empty(r[0])
-        call remove(r, 0)
-    else
-        let r[0]=r[0][1:]
-    endif
-    return r
-endfunction
 "▶1 git.status :: repo[, rev1[, rev2[, files[, clean]]]]
 let s:statchars={
             \'A': 'added',
             \'M': 'modified',
             \'D': 'removed',
         \}
-let s:initstatdct={
-            \'modified': [],
-            \   'added': [],
-            \ 'removed': [],
-            \ 'deleted': [],
-            \ 'unknown': [],
-            \ 'ignored': [],
-            \   'clean': [],
-        \}
 function s:git.status(repo, ...)
-    let r=deepcopy(s:initstatdct)
+    let r=deepcopy(s:_r.utils.emptystatdct)
     let requiresclean=(a:0>3 && a:4)
+    let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
     if a:0 && (a:1 isnot 0 || (a:0>1 && a:2 isnot 0))
-        let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let rspec=[]
         let reverse=0
         if a:1 is 0
@@ -341,9 +320,9 @@ function s:git.status(repo, ...)
             let allfiles=a:repo.functions.getcsprop(a:repo,rspec[0],'allfiles')
         endif
     else
-        let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let kwargs={'porcelain': 1, 'z': 1}
-        let s=s:F.nullnl(s:F.git(a:repo,'status',args,kwargs,2,'statusf'))[:-2]
+        let s=s:_r.utils.nullnl(
+                    \s:F.git(a:repo, 'status', args, kwargs, 2, 'statusf'))[:-2]
         let files={}
         while !empty(s)
             let line=remove(s, 0)
@@ -371,6 +350,12 @@ function s:git.status(repo, ...)
         endwhile
         if requiresclean
             let allfiles=a:repo.functions.getcsprop(a:repo, 'HEAD', 'allfiles')
+        endif
+        if a:0>4 && a:5
+            let r.ignored=s:_r.utils.nullnl(
+                        \ s:F.git(a:repo, 'ls', args,
+                        \                 {'ignored': 1, 'z': 1}, 2,
+                        \                 'lsignf', a:repo))[:-2]
         endif
     endif
     if exists('allfiles')
@@ -543,7 +528,7 @@ endfunction
 function s:git.grep(repo, pattern, files, revisions, ic, wdfiles)
     let args=['-e', a:pattern, '--']+a:files
     let kwargs={'full-name': 1, 'extended-regexp': 1, 'n': 1, 'z': 1}
-    let gitargs=[a:repo, 'grep', args, kwargs, 1, 0]
+    let gitargs=[a:repo, 'grep', args, kwargs, 1]
     let r=[]
     if !empty(a:revisions)
         let revs=[]
@@ -602,9 +587,6 @@ let s:difftrans={
         \}
 function s:git.diff(repo, rev1, rev2, files, opts)
     let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
-    if has_key(diffopts, 'unified')
-        let diffopts.unified=''.diffopts.unified
-    endif
     let kwargs=copy(diffopts)
     let args=[]
     if empty(a:rev2)
@@ -649,9 +631,10 @@ function s:git.getrepoprop(repo, prop)
                     \        'branchf')[:-2]
         return get(filter(branches, 'v:val[0] is# "*"'), 0, '')[2:]
     elseif a:prop is# 'url'
-        let r=get(s:F.git(a:repo, 'config', ['remote.origin.pushurl'], {}, 0),
-                    \0, 0)
-        if v:shell_error || r is 0
+        let [r, exit_code]=get(s:F.git(a:repo, 'config',
+                    \                  ['remote.origin.pushurl'], {}, 0),
+                    \          0, 0)
+        if exit_code || r is 0
             let r=get(s:F.git(a:repo, 'config', ['remote.origin.url'], {}, 0),
                         \0, 0)
         endif

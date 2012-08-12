@@ -1,38 +1,63 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('0.2', {'@/resources': '0.0',
+execute frawor#Setup('1.0', {'@/resources': '0.0',
             \                       '@/os': '0.2'})
 let s:utils={}
-"▶1 utils.getcmd :: cmd, args, kwargs, esc → sh
-let s:prefexpr='repeat("-", 1+(len(v:val[0])>1)).v:val[0]." ="[len(v:val[0])>1]'
-function s:utils.getcmd(cmd, args, kwargs, esc)
-    let cmd=a:cmd
+"▶1 utils.kwargstolst :: kwargs → [str]
+function s:utils.kwargstolst(kwargs)
+    let r=[]
+    for [key, value] in filter(items(a:kwargs), 'v:val[1] isnot 0')
+        let long=(len(key)>1)
+        let r+=[repeat('-', 1+long).key]
+        if value is 1
+            continue
+        elseif type(value)==type([])
+            let k=remove(r, -1)
+            let r+=map(copy(value), 'k.'.(long? '"=".': '').'v:val')
+        else
+            let r[-1].=(long? '=': '').value
+        endif
+        unlet value
+    endfor
+    return r
+endfunction
+"▶1 utils.getcmd :: cmd, args, kwargs → sh
+function s:utils.getcmd(cmd, args, kwargs)
+    let cmd=[a:cmd]
     if !empty(a:kwargs)
-        let cmd.=' '.join(map(filter(items(a:kwargs), 'v:val[1] isnot 0'),
-                \             '((v:val[1] is 1)?'.
-                \               '(repeat("-", 1+(len(v:val[0])>1)).v:val[0]):'.
-                \             '((v:val[1] is 0)?'.
-                \               '(""):'.
-                \             '((type(v:val[1])=='.type([]).')?'.
-                \               '(join(map(copy(v:val[1]), '.
-                \                         '"\"".'.s:prefexpr.'."\".'.
-                \                           'shellescape(v:val,    a:esc)"))):'.
-                \               '('.s:prefexpr.'.'.
-                \                           'shellescape(v:val[1], a:esc)))))'
-                \            ))
+        let cmd+=s:utils.kwargstolst(a:kwargs)
     endif
     if !empty(a:args)
-        let cmd.=' '.join(map(copy(a:args), 'shellescape(v:val, a:esc)'))
+        let cmd+=a:args
     endif
     return cmd
 endfunction
-"▶1 utils.run :: sh, hasnulls::0|1|2 → [String] + shell
+"▶1 readsystem :: cmd[, cdpath] → [String]
+if has('python') && exists('*pyeval')
+    try
+        " This way is much faster
+        python import aurum.utils
+        function s:F.readsystem(...)
+            return pyeval('aurum.utils.readsystem(*vim.eval("a:000"))')
+        endfunction
+    catch
+    endtry
+endif
+"▶1 utils.run :: cmd, hasnulls::0|1|2, path → [String] + shell
 function s:utils.run(cmd, hasnulls, cdpath)
-    if a:hasnulls==2 && !empty(&shellredir)
-        return call(s:_r.os.readsystem, [a:cmd]+(empty(a:cdpath)?
-                    \                               ([]):
-                    \                               ([a:cdpath])), {})
-    elseif a:hasnulls
+    if a:hasnulls==2
+        if has_key(s:F, 'readsystem')
+            return s:F.readsystem(a:cmd, a:cdpath)
+        elseif !empty(&shellredir)
+            let lines=call(s:F.readsystem, [a:cmd]+(empty(a:cdpath)?
+                        \                               ([]):
+                        \                               ([a:cdpath])), {})
+            return [lines, v:shell_error]
+        endif
+    endif
+    if a:hasnulls
+        " XXX Remove this code? Or keep as-is as it avoids temporary files in 
+        "     some cases?
         let savedlazyredraw=&lazyredraw
         let savedeventignore=&eventignore
         set eventignore=all
@@ -53,7 +78,7 @@ function s:utils.run(cmd, hasnulls, cdpath)
             endif
             " XXX this is not able to distinguish between output with and 
             " without trailing newline, and also is “smart” about lineendings
-            silent execute '%!'.a:cmd
+            silent execute '%!'.join(map(copy(a:cmd), 'shellescape(v:val, 1)'))
             let r=getline(1, '$')
             bwipeout!
         finally
@@ -61,17 +86,20 @@ function s:utils.run(cmd, hasnulls, cdpath)
             let &eventignore=savedeventignore
         endtry
     else
-        let cmd=a:cmd
+        let cmd=join(map(copy(a:cmd), 'shellescape(v:val, 0)'))
         if !empty(a:cdpath)
             let cmd='cd '.shellescape(a:cdpath).' && '.cmd
         endif
         let r=split(system(cmd), "\n", 1)
     endif
-    return r
+    return [r, v:shell_error]
 endfunction
 "▶1 utils.diffopts :: opts, opts, difftrans → diffopts
 function s:utils.diffopts(opts, defaultdiffopts, difftrans)
     let opts=extend(copy(a:defaultdiffopts), a:opts)
+    if has_key(opts, 'numlines')
+        let opts.numlines.=''
+    endif
     let r={}
     call map(filter(copy(a:difftrans), 'has_key(opts, v:key)'),
             \'extend(r, {v:val : opts[v:key]})')
@@ -135,8 +163,34 @@ else
     endfunction
     let s:utils.using_ansi_esc_echo=0
 endif
+"▶1 utils.emptystatdct
+let s:utils.emptystatdct={
+            \'modified': [],
+            \   'added': [],
+            \ 'removed': [],
+            \ 'deleted': [],
+            \ 'unknown': [],
+            \ 'ignored': [],
+            \   'clean': [],
+        \}
+"▶1 nullnl :: [String] → [String]
+" Convert between lines (NL separated strings with NULLs represented as NLs) and 
+" NULL separated strings with NLs represented by NLs.
+function s:utils.nullnl(text)
+    let r=['']
+    for nlsplit in map(copy(a:text), 'split(v:val, "\n", 1)')
+        let r[-1].="\n".nlsplit[0]
+        call extend(r, nlsplit[1:])
+    endfor
+    if empty(r[0])
+        call remove(r, 0)
+    else
+        let r[0]=r[0][1:]
+    endif
+    return r
+endfunction
 "▶1 post resource
 call s:_f.postresource('utils', s:utils)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded')
+call frawor#Lockvar(s:, '')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

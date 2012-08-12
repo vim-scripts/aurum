@@ -45,6 +45,9 @@ endfunction
 let s:_functions+=['aurum#changeset']
 "▶1 aurum#status
 function aurum#status(...)
+    if !empty(&buftype)
+        return ''
+    endif
     let [cbvar, repo, file]=s:F.getcrf()
     if repo is 0 || file is 0
         return ''
@@ -53,7 +56,7 @@ function aurum#status(...)
         autocmd! BufWritePost <buffer> :call s:_r.cache.del('status')
     augroup END
     return get(keys(filter(copy(s:_r.cache.get('status', repo.functions.status,
-                \                              [repo, 0, 0, [file]], {})),
+                \                              [repo, 0, 0, [file], 1, 1], {})),
                 \          'index(v:val, file)!=-1')), 0, '')
 endfunction
 let s:_functions+=['aurum#status']

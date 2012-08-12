@@ -27,12 +27,10 @@ let s:hyp={}
 let s:gcproj='matchstr(domain, "\\v^[^.]+")'
 "▶1 mercurial
 "  https://bitbucket.org/ZyX_I/aurum / ssh://hg@bitbucket.org/ZyX_I/aurum
-"  ssh://zyxsf@translit3.hg.sourceforge.net/hgroot/translit3/translit3 /
-"       http://translit3.hg.sourceforge.net:8000/hgroot/translit3/translit3
+"  ssh://zyxsf@translit3.hg.sourceforge.net/hgroot/translit3/translit3 / http://translit3.hg.sourceforge.net:8000/hgroot/translit3/translit3
 "  https://vim-pyinteractive-plugin.googlecode.com/hg/
 "  http://hg.assembla.com/CMakeLua
-"  https://zyx@zyx.codebasehq.com/test/test.hg /
-"       ssh://hg@codebasehq.com/zyx/test/test.hg
+"  https://zyx@zyx.codebasehq.com/test/test.hg / ssh://hg@codebasehq.com/zyx/test/test.hg
 "  https://hg01.codeplex.com/visualhg
 "  http://mercurial.intuxication.org/hg/tryton-client_ru
 "  https://mirrors.kilnhg.com/Repo/Mirrors/Hg/Mercurial
@@ -43,6 +41,7 @@ let s:gcproj='matchstr(domain, "\\v^[^.]+")'
 "  https://sharesource.org/hg/alqua/
 "  http://mercurial.tuxfamily.org/mercurialroot/slitaz/tazlito/
 "t http://anonscm.debian.org/hg/minicom/
+"  https://zyx.repositoryhosting.com/hg/zyx/t3 / ssh://hg@zyx.repositoryhosting.com/zyx/t3
 " len("hgroot")=6
 let s:pkbase='"http://".matchstr(domain, ''\v[^.]+\.[^.]+$'')."/projects/".matchstr(path, ''\v.*\/\zs[^~]+'').'.
             \                                                '"/sources/". matchstr(path, "\\v[^~]+$")'
@@ -64,6 +63,34 @@ let s:hgwebdict={
 \        'log': '"http://".'.s:dport.'.path."/graph"',
 \      'clone': '"http://".'.s:dport.'.path',
 \}
+let s:rhprojs={'hg': ['path[4:]', 'path[1:]', 'ssh', '@@@'],
+            \ 'git': map(['path[5:]', 'path[1:]'],
+            \           '"substitute(".v:val.", ''\\.git$'', '''', '''')"')+['ssh', '@@@'],
+            \ 'svn': ['substitute(path[5:], "_", "/", "")', 'path[1:]', 'svn+ssh', 'tr(@@@, "/", "_")'],}
+let s:rhbase='"https://".domain."/trac/".tr(@@@, "/", "_")'
+let s:rhdict={
+\       'html': s:rhbase.'."/browser/".file."?rev=".hex',                'hline': '"L".line',
+\        'raw': s:rhbase.'."/export/".hex."/".file',
+\   'annotate': s:rhbase.'."/browser/".file."?annotate=blame&rev=".hex', 'aline': '"L".line',
+\   'filehist': s:rhbase.'."/log/".file."?rev=".hex',
+\  'changeset': s:rhbase.'."/changeset/".hex',
+\        'log': s:rhbase.'."/timeline"',
+\      'clone': '"https://".domain."/@u@/".@3@',
+\       'push': '"@2@://@u@@".domain."/".@@@',
+\}
+unlet s:rhbase
+let s:rhdicts={}
+for [s:vcs, s:rh] in items(s:rhprojs)
+    let s:rhdicts[s:vcs]={}
+    for i in range(2)
+        let s:rhdicts[s:vcs][i]=map(copy(s:rhdict),
+                    \'substitute(substitute(substitute('.
+                    \'v:val, ''@\(\d\)@'', "\\=s:rh[submatch(1)]", "g"), '.
+                    \        '"@@@",       "\\=s:rh['.i.']",       "g"), '.
+                    \        '"@u@",       "'.s:vcs.'",            "g")')
+    endfor
+endfor
+unlet s:vcs s:rh s:rhprojs
 let s:hyp.mercurial=[
 \['domain is? "bitbucket.org"', s:bbdict],
 \['domain =~? "\\Vhg.sourceforge.net\\$"',
@@ -134,6 +161,8 @@ let s:hyp.mercurial=[
 \        'log': s:pkbase.'."/history"',
 \      'clone': '"https://".domain."/hg/".matchstr(path, "\\v[^/]+$")',
 \       'push': '"ssh://".domain."/".matchstr(path, "\\v[^/]+$")',}],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "https" && path[:2] is? "/hg"', s:rhdicts.hg.0],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "ssh" && user is? "hg"',        s:rhdicts.hg.1],
 \['domain is? "sharesource.org" && path[:2] is? "/hg"',
 \ map(copy(s:hgwebdict), 'substitute(v:val, "http", "https", "")')],
 \[ 'domain =~? ''\v^%(mercurial\.%(intuxication|tuxfamily)|hg\.mozdev|hg\.savannah\.%(non)?gnu)\.org$'' || '.
@@ -144,17 +173,23 @@ let s:hyp.mercurial=[
 unlet s:hgwebdict s:pkbase s:cpbase s:cbssh s:cbhttps
 "▶1 git
 "  ssh://git@github.com:MarcWeber/vim-addon-manager / git://github.com/MarcWeber/vim-addon-manager
-"  git://vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository
-"       / ssh://zyxsf@vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository
-"  git://repo.or.cz/test2.git / http://repo.or.cz/r/test2.git /
-"       ssh://repo.or.cz/srv/git/test2.git
-"  git://gitorious.org/test4/test.git / https://git.gitorious.org/test4/test.git
-"       / ssh://git@gitorious.org:test4/test.git
-"  git://git.kitenet.net/mr.git / http://git.kitenet.net/git/mr.git
-"       / ssh://git.kitenet.net/srv/git/mr.git
+"  git://gist.github.com/1569146.git / ssh://git@gist.github.com:1569146.git
+"  git://vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository / ssh://zyxsf@vimpluginloader.git.sourceforge.net/gitroot/vimpluginloader/vam-test-repository
+"  git://repo.or.cz/test2.git / http://repo.or.cz/r/test2.git / ssh://repo.or.cz/srv/git/test2.git
+"  git://gitorious.org/test4/test.git / https://git.gitorious.org/test4/test.git / ssh://git@gitorious.org:test4/test.git
+"  git://git.kitenet.net/mr.git / http://git.kitenet.net/git/mr.git / ssh://git.kitenet.net/srv/git/mr.git
 "  (unable to clone with hg-git) https://code.google.com/p/tortoisegit/
+"  https://zyx.repositoryhosting.com/git/zyx/t2.git / ssh://git@zyx.repositoryhosting.com/zyx/t2.git
+"
+" Warning: when using gists you have a choice: either point to a specific file 
+"          or to a specific line in whichever file comes first. I have chosen 
+"          to use specific file making it impossible to point to a line using 
+"          :AuH. This means currently gist has a problem: if there are two 
+"          files in gist, then there are two spans having same id.
+"          It also seems impossible to download bundle with older version of 
+"          gist.
 let s:ghpath='substitute(path, "\\v^[:/]|\\.git$", "", "g")'
-let s:roproj='matchstr(path, ''\v\/@<=[^/]{-1,}%(%(\.git)?\/*$)@='').".git"'
+let s:roproj='matchstr(path, ''\C\v\/@<=[^/]{-1,}%(%(\.git)?\/*$)@='').".git"'
 let s:robase='"http://".domain."/w/".'.s:roproj
 let s:godomain='substitute(domain, "^git\\.", "", "")'
 let s:gobase='"http://".'.s:godomain.'."/".'.s:ghpath
@@ -162,7 +197,7 @@ let s:hyp.git=[
 \['domain is? "bitbucket.org"', s:bbdict],
 \['domain is? "github.com"',
 \ {     'html': '"https://".domain."/".'.s:ghpath.'."/blob/".hex."/".file',   'hline': '"L".line',
-\                                                                             'hlines': '"L".line1."-L".line2',
+\                                                                            'hlines': '"L".line1."-L".line2',
 \        'raw': '"https://".domain."/".'.s:ghpath.'."/raw/". hex."/".file',
 \   'annotate': '"https://".domain."/".'.s:ghpath.'."/blame/". hex."/".file', 'aline': '"LID".line',
 \   'filehist': '"https://".domain."/".'.s:ghpath.'."/commits/".hex."/".file',
@@ -171,6 +206,15 @@ let s:hyp.git=[
 \        'log': '"https://".domain."/".'.s:ghpath.'."/commits"',
 \      'clone': '"git://".domain."/".'.s:ghpath,
 \       'push': '"ssh://git@".domain.":".'.s:ghpath.'.".git"',}],
+\['domain is? "gist.github.com"',
+\ {     'html': '"https://".domain."/".'.s:ghpath.'."/".hex."#file_".tr(file, "-", "_")',
+\        'raw': '"https://".domain."/raw/".'.s:ghpath.'."/".hex."/".file',
+\     'bundle': '"https://".domain."/gists/".'.s:ghpath.'."/download"',
+\  'changeset': '"https://".domain."/".'.s:ghpath.'."/".hex',
+\        'log': '"https://".domain."/".'.s:ghpath.'."#revisions"',
+\      'clone': '"git://".domain."/".'.s:ghpath.'.".git"',
+\       'push': '"ssh://git@".domain.":".'.s:ghpath.'.".git"',
+\ }],
 \['domain =~? "\\Vgit.sourceforge.net\\$"',
 \ {     'html': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=blob;hb=".hex.";f=".file', 'hline': '"l".line',
 \        'raw': '"http://".domain."/git/gitweb.cgi?p=".path[9:].";a=blob_plain;hb=".hex.";f=".file',
@@ -207,11 +251,14 @@ let s:hyp.git=[
 \        'log': '"http://".domain."/?p=".'.s:roproj.'.";a=log"',
 \      'clone': '"git://".domain."/".'.s:roproj,
 \       'push': '"ssh://".domain."/srv/git/".'.s:roproj,}],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "https" && path[:3] is? "/git"', s:rhdicts.git.0],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "ssh" && user is? "git"',        s:rhdicts.git.1],
 \]
 unlet s:ghpath s:roproj s:robase s:godomain s:gobase
 "▶1 subversion
 "  https://vimpluginloader.svn.sourceforge.net/svnroot/vimpluginloader
 "  http://conque.googlecode.com/svn/trunk
+"  https://zyx.repositoryhosting.com/svn/zyx_t1 / svn+ssh://svn@zyx.repositoryhosting.com/zyx/t1
 let s:svngcbase='"http://code.google.com/p/".'.s:gcproj
 let s:svngcfile='path[5:]."/".file'
 let s:hyp.svn=[
@@ -228,7 +275,7 @@ let s:hyp.svn=[
 \   'filehist': s:svngcbase.'."/source/list?path=/".'.s:svngcfile.'."&r=".hex',
 \        'log': s:svngcbase.'."/source/list"',
 \      'clone': 'url',}],
-\['domain is? "svn.gna.org',
+\['domain is? "svn.gna.org"',
 \ {     'html': '"http://".domain."/viewvcs".path[4:]."/".file."?view=markup&revision=".hex',   'hline': '"l".line',
 \        'raw': '"http://".domain."/viewvcs/*checkout*".path[4:]."/".file."?view=markup&revision=".hex',
 \   'annotate': '"http://".domain."/viewvcs".path[4:]."/".file."?annotate=".hex',               'aline': '"l".line',
@@ -236,12 +283,15 @@ let s:hyp.svn=[
 \        'log': '"http://".domain."/viewvcs".path[4:]."?view=log"',
 \      'clone': '"svn://".domain.path',
 \       'push': '"svn+ssh://".user."@".domain.path',}],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "https" && path[:3] is? "/svn"', s:rhdicts.svn.0],
+\['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "svn+ssh"',                      s:rhdicts.svn.1],
 \]
 unlet s:svngcbase s:svngcfile
+unlet s:rhdicts
 "▶1 post resource
 unlet s:gcproj s:dl s:bbdict s:dport
 call s:_f.postresource('hypsites', s:hyp)
 unlet s:hyp
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded')
-" vim: ft=vim ts=4 sts=4 et fmr=▶,▲
+" vim: ft=vim ts=4 sts=4 et fmr=▶,▲ tw=0

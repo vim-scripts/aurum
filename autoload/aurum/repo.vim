@@ -1,5 +1,5 @@
 "▶1
-execute frawor#Setup('5.1', {'@/resources': '0.0',
+execute frawor#Setup('5.3', {'@/resources': '0.0',
             \                       '@/os': '0.0',
             \                  '@/options': '0.0',
             \          '@%aurum/lineutils': '0.0',
@@ -495,11 +495,22 @@ function s:F.regdriver(plugdict, fdict, name, funcs)
 endfunction
 "▶2 deldriver :: {f} → + s:drivers
 function s:F.deldriver(plugdict, fdict)
-    call map(keys(a:fdict), 'remove(s:drivers, v:val)')
+    for name in keys(a:fdict)
+        for [buf, bvar] in filter(items(s:_r.bufvars),
+                    \             'has_key(v:val[1], "repo") && '.
+                    \             'v:val[1].repo.type is# name')
+            if bufexists(buf)
+                execute 'bwipeout' buf
+            endif
+        endfor
+        call filter(s:bufrepos, 'v:val.type isnot# name')
+        call filter(s:repos,    'v:val.type isnot# name')
+        unlet s:drivers[name]
+    endfor
 endfunction
 "▶2 Register feature
 call s:_f.newfeature('regdriver', {'cons': s:F.regdriver,
             \                    'unload': s:F.deldriver})
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,_r,bufrepos,repos,drivers')
+call frawor#Lockvar(s:, '_r,bufrepos,repos,drivers')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

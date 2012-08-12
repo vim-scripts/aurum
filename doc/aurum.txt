@@ -1123,12 +1123,16 @@ Keyword    Description ~
 flbeg      For multiline template strings: determine what string should be 
            prepended to the first line.
 expr       Use this expression instead of default to get resulting string. 
-           Inside an expression “@@@” refers to original data, “@N@” - to Nth 
-           positional parameter (count starts from zero), “@-@” - to number of 
-           leading columns taken by graph lines, “@.@” - to current 
-           |aurum-changeset| object, “@<@” - to string that should be 
-           prepended to every line (valid for complex multiline template 
-           strings).
+           Inside an expression
+           String  What it refers to ~
+           @@@     original data
+           @N@     Nth positional parameter (count starts from zero)
+           @-@     number of leading colums taken by graph lines
+           @.@     current |aurum-changeset| object
+           @:@     current |aurum-repository| object
+           @o@     current options dictionary
+           @<@     (for complex multiline statement only) string that should 
+                   be prepended to every line
 synreg     Pass this regular expression to “syn match”. Useful if you override 
            output of the {word} using “expr” keyword.
 pref, suf  For some single-line statements (currently: rev, parents, children, 
@@ -1184,9 +1188,14 @@ time         String representation of the date. Accepts one positional
 parents, children
              List of space-separated hashes designating parents or children of 
              current changeset.
+parents_, children_
+             List of hashes designating parents or children of current 
+             changeset, each on its own line.
 tags, bookmarks
              List of tags or bookmarks separated by the first positional 
              parameter (default value: ", ").
+tags_, bookmarks_
+             List of tags or bookmarks, each on its own line.
 summary      First line of description.
 description  (multiline) Description of a changeset.
 patch        (multiline) Differences introduced by processed changeset. Not 
@@ -1224,7 +1233,7 @@ hgdef                                                      *aurum-style-hgdef*
     Style that mimics default “hg log” style: >
       changeset:   1:454ae580ce74
       branch:      A
-      tags:        tip
+      tag:         tip
       user:        Bob <bob@example.com>
       date:        Sun Jan 01 00:00:00 2011
       files:       foo/bar.txt foo/barbaz.txt foo/baz.txt
@@ -1236,7 +1245,7 @@ hgdescr                                                  *aurum-style-hgdescr*
     controlled by other |:AuLog| options): >
       changeset:   1:454ae580ce74
       branch:      A
-      tags:        tip
+      tag:         tip
       user:        Bob <bob@example.com>
       date:        Sun Jan 01 00:00:00 2011
       files:       foo/bar.txt foo/barbaz.txt foo/baz.txt
@@ -1429,6 +1438,8 @@ hexreg :: Regex                                            *aurum-repo.hexreg*
     rule that matches exactly 12 first hexadecimal numbers (|/\x|) followed by 
     another rule than matches any positive number of hexadecimal characters 
     and conceals them (requires |+conceal| to work properly).
+revreg :: Regex                                            *aurum-repo.revreg*
+    Like |aurum-repo.hexreg|, but for |aurum-cs.rev|. Default is \d\+ (|\d|).
 hasrevisions :: Bool                                 *aurum-repo.hasrevisions*
     Determines whether |aurum-cs.rev| contains something different from 
     abbreviated hash. If this option is false, then in log produced by 
@@ -1515,7 +1526,7 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     pulling properties that are not obtained by |aurum-rf-getcs| by default: 
     “files”, “changes”, “renames”, “copies”, “allfiles”, “chidlren”.
                                                              *aurum-rf-status*
-  status :: [hex[, hex[, [ file ][, requiresclean]]]] -> {status : [ file ]}
+  status :: [hex[, hex[, [ file ][, clean[, ign]]]]] -> {status : [ file ]}
     Returns dictionary where values are lists of files and keys are 
     "modified", "added" (new tracked files), "removed" (made untracked, not 
     necessary deleted from filesystem), "deleted" (just deleted from 
@@ -1523,8 +1534,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     files), "ignored" and "clean" (unmodified).
     Specifying 0 instead of any optional argument acts like not specifying 
     this argument.
-    Note: “clean” may be empty unless {requiresclean} argument is present and 
-          true.
+    Note: “clean” may be empty unless {clean} argument is present and true. 
+          Same for “ignored” and {ign}. {ign} argument is likely to be ignored 
+          itself unless two first optional arguments are absent or zero.
   dirty :: file -> Bool                                       *aurum-rf-dirty*
     Check whether file is “dirty” (meaning that it has changes that can be 
     committed).
@@ -1759,9 +1771,11 @@ throw an "nimp" exception.
        replaced with static string "HEAD".
 |aurum-rf-status|: For non-python driver this function does not support names 
     containing newlines.
-|aurum-rf-grep|: For non-python driver filenames that look like 
-    {smth}:{num>=0}:{num>0} are not supported and will lead to invalid 
-    results.
+|aurum-rf-diff| requires at least mercurial-1.4 to support reverse diff 
+    option.
+|aurum-rf-getcsprop|(…, "children") requires at least mercurial-1.7 or manual 
+    preceding |aurum-rf-getchangesets| call. Thus many Next mappings do not 
+    work.
 *aurum-rf-svnrev* exists and produces svn revision number out of repository 
     object and mercurial revision specification.
 *aurum-rf-githex* exists and produces git sha1 out of repository object and 
@@ -1784,7 +1798,8 @@ Python driver was not tested under windows (wine) at all.
 |aurum-cs.rev| contains truncated hash (for use in |aurum://annotate|).
 |aurum-rf-status|: if at least one of first two optional arguments is 
     non-zero, then then unknown and deleted files won’t be shown (if any). 
-    Ignored files are not shown in any case.
+    Ignored files are shown only when the first two optional arguments are 
+    absent or equal to null.
 |aurum-rf-gettiphex|: Same as |aurum-rf-getworkhex|.
 |aurum-rf-diff|: Options "git", "iblanks", "showfunc", "dates" are not 
     supported.
@@ -1861,7 +1876,9 @@ Python driver was not tested under windows (wine) at all.
          |aurum-repo.mutable|.
     4.1: Added csnum key to value returned by |aurum-repo.iterfuncs|.func().
     5.0: Removed _r.repo.update, .diffoptslst and .diffoptsstr.
-    5.1: Added repo.hasphases
+    5.1: Added repo.hasphases.
+    5.2: Added repo.revreg.
+    5.3: Added {ign} argument to |aurum-rf-status|.
 @aurum:
     0.1: Added |:AuBranch| and |:AuName|.
     0.2: Added |:AuOther|.
@@ -1874,8 +1891,8 @@ Python driver was not tested under windows (wine) at all.
 @%aurum/edit:
     1.0: Removed setlines function (moved it to @aurum/repo).
     1.1: Added “requiresbvar” _f.newcommand option.
-    1.2: Added “mgroup” _f.newcommand option and mrun resource
-    1.3: Added prevbuf function
+    1.2: Added “mgroup” _f.newcommand option and mrun resource.
+    1.3: Added prevbuf function.
 @%aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
@@ -1919,5 +1936,10 @@ ftplugin/aurumlog:
 @%aurum/drivers/common/utils:
     0.1: _r.utils.getcmd() now accepts kwargs key values 0 and [...]
     0.2: Added _r.utils.using_ansi_esc_echo
+    0.3: Added _r.utils.nullnl and _r.utils.kwargstostr
+    0.4: Added _r.utils.emptystatdct
+    1.0: Made _r.utils.getcmd return a list,
+         replaced _r.utils.kwargstostr with _r.utils.kwargstolst,
+         made _r.utils.run return a pair (output, exit_code)
 
 vim: ft=help:tw=78
