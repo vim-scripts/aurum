@@ -1,6 +1,7 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@%aurum/cmdutils': '3.1',
+execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.1',
+            \                '@%aurum/maputils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/vimdiff': '1.0',
@@ -12,16 +13,44 @@ let s:_messages={
             \'wfail': 'Writing to %s failed',
             \'dfail': 'Failed to delete %s',
         \}
+"▶1 callbacks
+let s:F.callbacks={}
+"▶2 callbacks.open
+function s:F.callbacks.open(file, repo, rev, cmd, hasbuf)
+    if a:hasbuf
+        let filetype=&filetype
+    endif
+    let oldlastbuf=bufnr('$')
+    let existed=s:_r.run(a:cmd, 'file', a:repo, a:rev, a:file)
+    if exists('filetype') && &filetype isnot# filetype
+        let &filetype=filetype
+    endif
+    let buf=bufnr('%')
+    if !existed && buf>oldlastbuf
+        setlocal bufhidden=wipe
+    endif
+    call s:_f.mapgroup.map('AuFile', buf)
+endfunction
+"▶2 callbacks.replace
+function s:F.callbacks.replace(file, repo, rev, cmd, hasbuf)
+    let winview=winsaveview()
+    silent %delete _
+    call s:_r.lineutils.setlines(a:repo.functions.readfile(a:repo,a:rev,a:file),
+                \                0)
+    call winrestview(winview)
+endfunction
 "▶1 AuFile
 function s:cmd.function(rev, file, opts)
     let opts=copy(a:opts)
     if a:rev isnot 0 && a:rev isnot ':'
         let opts.rev=a:rev
     endif
-    if a:file isnot 0 && a:file isnot# ':'
+    let prompt=get(a:opts, 'prompt', 0)
+    if !prompt && a:file isnot 0 && a:file isnot# ':'
         let opts.file=a:file
     endif
-    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(opts, 'noffile', 'open')
+    let action=((prompt)?('getrr'):('open'))
+    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(opts, 'noffile', action)
     if repo is 0
         return
     endif
@@ -31,23 +60,22 @@ function s:cmd.function(rev, file, opts)
         let rev=repo.functions.getrevhex(repo, a:rev)
     endif
     if get(a:opts, 'replace', 0)
-        let winview=winsaveview()
-        silent %delete _
-        call s:_r.lineutils.setlines(repo.functions.readfile(repo, rev, file),0)
-        call winrestview(winview)
-        return
+        let cbargs=[s:F.callbacks.replace]
+    else
+        let cbargs=[s:F.callbacks.open]
     endif
-    if hasbuf
-        let filetype=&filetype
+    let cbargs+=[repo, rev, get(a:opts, 'cmd', 'silent edit'), hasbuf]
+    let pvargs=[s:_r.maputils.readfilewrapper, repo, rev]
+    if prompt
+        let files=repo.functions.getcsprop(repo, rev, 'allfiles')
+        if a:file isnot# ':'
+            let pattern=s:_r.globtopat(a:file)
+            let files=filter(copy(files), 'v:val =~# pattern')
+        endif
+        return s:_r.maputils.promptuser(files, cbargs, pvargs)
+    else
+        call call(cbargs[0], [file]+cbargs[1:], {})
     endif
-    call s:_r.run(get(a:opts, 'cmd', 'silent edit'), 'file', repo, rev, file)
-    if exists('filetype') && &filetype isnot# filetype
-        let &filetype=filetype
-    endif
-    if !has_key(a:opts, 'cmd')
-        setlocal bufhidden=wipe
-    endif
-    call s:_f.mapgroup.map('AuFile', bufnr('%'))
 endfunction
 "▶1 docmd :: [String], read::0|1|2 → _ + ?
 function s:F.docmd(lines, read)
@@ -91,7 +119,7 @@ function s:F.runfilemap(action)
     if a:action is# 'exit'
         let cmd.=s:_r.cmdutils.closebuf(bvar)
     elseif a:action is# 'update'
-        call s:_r.cmdutils.update(bvar.repo, bvar.rev, v:count)
+        call s:_r.maputils.update(bvar.repo, bvar.rev, v:count)
         return ''
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))

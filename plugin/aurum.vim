@@ -150,6 +150,7 @@ let s:cmds={
             \                      '[:=(0)   either (match /\L/, path fr)]]'.
             \                      '{  repo '.s:nogetrepoarg.
             \                      ' !?replace'.
+            \                      ' !?prompt'.
             \                      '  ?cmd    '.s:cmdarg.
             \                      '}',
             \              'subs': [['\V:=(0)\s\+either (\[^)]\+)', 'path', ''],
@@ -337,7 +338,8 @@ call s:_f.mapgroup.add('Aurum', {
             \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'               },
             \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit all<CR>'           },
             \'Open':      {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'                 },
-            \'Revert':    {'lhs':  'O', 'rhs': ':<C-u>AuFile . : replace<CR>'     },
+            \'OpenAny':   {'lhs':  'O', 'rhs': ':<C-u>AuFile : : prompt<CR>'      },
+            \'Revert':    {'lhs': 'go', 'rhs': ':<C-u>AuFile : : replace<CR>'     },
             \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'              },
             \'FVdiff':    {'lhs': 'gD', 'rhs': ':<C-u>AuVimDiff full<CR>'         },
             \'Diff':      {'lhs':  'd', 'rhs': ':<C-u>AuDiff :<CR>'               },

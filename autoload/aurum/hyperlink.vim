@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',
+            \      '@%aurum/cmdutils': '4.0',
             \             '@/options': '0.0',})
 let s:_messages={
             \'uknurl': 'Failed to process url %s of repository %s',
@@ -59,8 +59,7 @@ function s:cmd.function(line1, line2, opts)
     "▶3 File needed: html, annotate, raw, filehist
     if utype is# 'html' || utype is# 'annotate' || utype is# 'raw'
                 \       || utype is# 'filehist'
-        let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'nocurf',
-                    \                                      'get')
+        let [repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'nocurf', 'get')[1:]
         call s:_r.cmdutils.checkrepo(repo)
         let file=s:F.urlescape(file)
         if rev is 0

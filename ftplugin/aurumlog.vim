@@ -11,7 +11,8 @@ if exists('+relativenumber')
 endif
 setlocal noswapfile
 setlocal nomodeline
-execute frawor#Setup('0.1', {'@%aurum/cmdutils': '3.1',
+execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.0',
+            \                '@%aurum/maputils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \                    '@%aurum/edit': '1.0',
             \                 '@%aurum/vimdiff': '1.0',
@@ -168,7 +169,7 @@ function s:F.fvdiff(...)
     endif
 endfunction
 "▶1 getfile
-function s:F.getfile(bvar, files, hex, more)
+function s:F.getfile(bvar, files, hex, more, cbargs, pvargs)
     if empty(a:files)
         return 0
     endif
@@ -195,87 +196,80 @@ function s:F.getfile(bvar, files, hex, more)
     endif
     let file=0
     if len(files)==1
-        let file=files[0]
+        return call(a:cbargs[0], [files[0]]+a:cbargs[1:], {})
     else
-        let choice=inputlist(['Select file (0 to cancel):']+
-                    \        map(copy(files), '(v:key+1).". ".v:val'))
-        if choice
-            let file=files[choice-1]
-        endif
+        return s:_r.maputils.promptuser(files, a:cbargs, a:pvargs)
     endif
-    return file
 endfunction
 "▶1 gethexfile
-function s:F.gethexfile(...)
+function s:F.gethexfile(more, cbargs)
     let bvar=s:_r.bufvars[bufnr('%')]
     let [blockstart, blockend, hex]=bvar.getblock(bvar)
     let spname=s:F.findCurSpecial(bvar, hex, blockstart[0])
     let cs=bvar.repo.changesets[hex]
     let file=0
+    let cbargs=copy(a:cbargs)
+    let cbargs[0]=s:F.callbacks[cbargs[0]]
+    let pvargs=[s:_r.maputils.readfilewrapper, bvar.repo, hex]
+    call extend(cbargs, [bvar, hex], 1)
     if spname=~#'\v^file\d+$'
         " XXX If fileN special exists, then files property was definitely added, 
         " so no need to use getcsprop()
-        let file=cs.files[str2nr(spname[4:])]
+        return call(cbargs[0], [cs.files[str2nr(spname[4:])]]+cbargs[1:], {})
     else
         let file=s:F.getfile(bvar,
                     \        bvar.repo.functions.getcsprop(bvar.repo, cs,
-                    \                                      (((a:0 && !a:1))?
+                    \                                      ((a:more)?
                     \                                           ('allfiles'):
                     \                                           ('files'))),
-                    \        hex, (a:0 && !a:1))
-    endif
-    return [hex, file]
-endfunction
-"▶1 open
-function s:F.open(...)
-    let [hex, file]=call(s:F.gethexfile, a:000, {})
-    if file is 0
-        return 0
-    endif
-    let bvar=s:_r.bufvars[bufnr('%')]
-    call s:F.cwin(bvar)
-    call s:_r.mrun('silent edit', 'file', bvar.repo, hex, file)
-    return 1
-endfunction
-"▶1 annotate
-function s:F.annotate(...)
-    if call(s:F.open, a:000, {})
-        AuAnnotate
+                    \        hex, a:more, cbargs, pvargs)
     endif
 endfunction
-"▶1 diff
-function s:F.diff(...)
-    let [hex, file]=s:F.gethexfile()
-    if file is 0
-        return ''
-    endif
-    let bvar=s:_r.bufvars[bufnr('%')]
-    call s:F.cwin(bvar)
+"▶1 Callbacks
+let s:F.callbacks={}
+"▶2 open
+function s:F.callbacks.open(file, bvar, hex)
+    call s:F.cwin(a:bvar)
+    call s:_r.mrun('silent edit', 'file', a:bvar.repo, a:hex, a:file)
+endfunction
+"▶2 annotate
+function s:F.callbacks.annotate(file, bvar, hex)
+    call s:F.callbacks.open(a:file, a:bvar, a:hex)
+    AuAnnotate
+endfunction
+"▶2 diff
+function s:F.callbacks.diff(file, bvar, hex, ...)
+    call s:F.cwin(a:bvar)
     if a:0 && a:1
-        call s:_r.mrun('silent edit', 'diff', bvar.repo, hex, '', [file], {})
+        call s:_r.mrun('silent edit', 'diff', a:bvar.repo,a:hex,'',[a:file],{})
     else
-        call s:_r.mrun('silent edit', 'diff', bvar.repo, '', hex, [file], {})
+        call s:_r.mrun('silent edit', 'diff', a:bvar.repo,'',a:hex,[a:file],{})
     endif
+endfunction
+"▶2 filehistory
+function s:F.callbacks.filehistory(file, bvar, hex)
+    let crrcond=((has_key(a:bvar.opts, 'crrestrict'))?
+                \   (string(a:bvar.opts.crrestrict).' isnot# v:key &&'):
+                \   (''))
+    let opts=filter(copy(a:bvar.opts), crrcond.'index(s:ignkeys, v:key)==-1')
+    call extend(opts, {'files': [s:_r.cmdutils.globescape(a:file)],
+                \ 'crrestrict': 'files'})
+    call s:_r.run('silent edit', 'log', a:bvar.repo, opts)
 endfunction
 "▶1 vimdiff
-function s:F.vimdiff(...)
-    let [hex, file]=s:F.gethexfile()
-    if file is 0
-        return
-    endif
-    let bvar=s:_r.bufvars[bufnr('%')]
-    let cs=bvar.repo.changesets[hex]
-    call s:F.cwin(bvar)
+function s:F.callbacks.vimdiff(file, bvar, hex, ...)
+    let cs=a:bvar.repo.changesets[a:hex]
+    call s:F.cwin(a:bvar)
     if a:0 && a:1
         execute 'silent edit'
-                    \ fnameescape(s:_r.os.path.join(bvar.repo.path, file))
-        call s:_r.vimdiff.split(s:_r.fname('file', bvar.repo, hex, file), 0)
+                    \ fnameescape(s:_r.os.path.join(a:bvar.repo.path, a:file))
+        call s:_r.vimdiff.split(s:_r.fname('file',a:bvar.repo,a:hex,a:file), 0)
     elseif !empty(cs.parents)
-        call s:_r.run('silent edit', 'file', bvar.repo, hex, file)
-        call s:_r.vimdiff.split(s:_r.fname('file', bvar.repo, cs.parents[0],
-                    \                      file), 0)
+        call s:_r.run('silent edit', 'file', a:bvar.repo, a:hex, a:file)
+        call s:_r.vimdiff.split(s:_r.fname('file', a:bvar.repo, cs.parents[0],
+                    \                      a:file), 0)
     else
-        call s:_f.throw('nopars', hex)
+        call s:_f.throw('nopars', a:hex)
     endif
 endfunction
 "▶1 findfirstvisible :: n → hex
@@ -322,26 +316,11 @@ endfunction
 function s:F.prev()
     return s:F.findfirstvisible(v:count1)
 endfunction
-"▶1 filehistory
-function s:F.filehistory()
-    let [hex, file]=s:F.gethexfile()
-    if file is 0
-        return ''
-    endif
-    let bvar=s:_r.bufvars[bufnr('%')]
-    let crrcond=((has_key(bvar.opts, 'crrestrict'))?
-                \   (string(bvar.opts.crrestrict).' isnot# v:key &&'):
-                \   (''))
-    let opts=filter(copy(bvar.opts), crrcond.'index(s:ignkeys, v:key)==-1')
-    call extend(opts, {'files': [s:_r.cmdutils.globescape(file)],
-                \ 'crrestrict': 'files'})
-    return ':silent edit '.fnameescape(s:_r.fname('log', bvar.repo, opts))."\n"
-endfunction
 "▶1 update
 function s:F.update()
     let bvar=s:_r.bufvars[bufnr('%')]
     let hex=bvar.getblock(bvar)[2]
-    call s:_r.cmdutils.update(bvar.repo, hex, v:count)
+    call s:_r.maputils.update(bvar.repo, hex, v:count)
     return "\<C-\>\<C-n>:silent edit\n"
 endfunction
 "▶1 AuLog mapping group
@@ -349,9 +328,13 @@ function s:m(f, ...)
     return ':<C-u>call <SNR>'.s:_sid.'_Eval(''s:F.'.a:f.
                 \                   '('.string(string(a:000))[2:-3].')'')<CR>'
 endfunction
+function s:c(f, m, ...)
+    return ':<C-u>call call(<SNR>'.s:_sid.'_Eval("s:F.gethexfile"), '.
+                \'['.a:m.', ["'.a:f.'", '.string(a:000)[1:-2].']], {})<CR>'
+endfunction
 call s:_f.mapgroup.add('AuLog', {
             \      'Enter': {'lhs': "\n", 'rhs': s:m('cr'),             },
-            \       'File': {'lhs': 'gF', 'rhs': s:F.filehistory        },
+            \       'File': {'lhs': 'gF', 'rhs': s:c('filehistory', 0)  },
             \       'User': {'lhs': 'gu', 'rhs': s:m('cr', 'user')      },
             \       'Date': {'lhs': 'gM', 'rhs': s:m('cr', 'time')      },
             \     'Branch': {'lhs': 'gb', 'rhs': s:m('cr', 'branch')    },
@@ -360,20 +343,21 @@ call s:_f.mapgroup.add('AuLog', {
             \    'RFVdiff': {'lhs': 'gC', 'rhs': [1], 'func': s:F.fvdiff},
             \      'Fdiff': {'lhs': 'gd', 'rhs': s:m('cr', 'curdiff')   },
             \     'RFdiff': {'lhs': 'gc', 'rhs': s:m('cr', 'revdiff')   },
-            \       'Diff': {'lhs':  'd', 'rhs': s:m('diff', 1)         },
-            \      'Rdiff': {'lhs':  'c', 'rhs': s:m('diff')            },
-            \      'Vdiff': {'lhs':  'D', 'rhs': s:m('vimdiff', 1)      },
-            \     'RVdiff': {'lhs':  'C', 'rhs': s:m('vimdiff')         },
+            \       'Diff': {'lhs':  'd', 'rhs': s:c('diff', 0, 1)      },
+            \      'Rdiff': {'lhs':  'c', 'rhs': s:c('diff', 0)         },
+            \      'Vdiff': {'lhs':  'D', 'rhs': s:c('vimdiff', 0, 1)   },
+            \     'RVdiff': {'lhs':  'C', 'rhs': s:c('vimdiff', 0)      },
             \       'Next': {'lhs':  'K', 'rhs': s:F.next               },
             \       'Prev': {'lhs':  'J', 'rhs': s:F.prev               },
-            \       'Open': {'lhs':  'o', 'rhs': s:m('open')            },
-            \    'OpenAny': {'lhs':  'O', 'rhs': s:m('open', 0)         },
-            \   'Annotate': {'lhs':  'a', 'rhs': s:m('annotate')        },
-            \'AnnotateAny': {'lhs':  'A', 'rhs': s:m('annotate', 0)     },
+            \       'Open': {'lhs':  'o', 'rhs': s:c('open', 0)         },
+            \    'OpenAny': {'lhs':  'O', 'rhs': s:c('open', 1)         },
+            \   'Annotate': {'lhs':  'a', 'rhs': s:c('annotate', 0)     },
+            \'AnnotateAny': {'lhs':  'A', 'rhs': s:c('annotate', 1)     },
             \     'Update': {'lhs':  'U', 'rhs': s:F.update             },
             \       'Exit': {'lhs':  'X', 'rhs': ':<C-u>bwipeout<CR>'   },
             \}, {'func': s:F.cr, 'silent': 1, 'mode': 'n'})
 delfunction s:m
+delfunction s:c
 "▶1
 call frawor#Lockvar(s:, '_r')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

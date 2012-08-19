@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',})
+            \      '@%aurum/cmdutils': '4.0',})
 let s:_messages={
             \ 'nunsup': 'Naming is not supported for repository %s',
             \'ukntype': 'Unknown label type: %s. Supported types: %s',

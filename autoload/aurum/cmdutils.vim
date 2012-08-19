@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('3.1', {'@/resources': '0.0',
+execute frawor#Setup('4.1', {'@/resources': '0.0',
             \                       '@/os': '0.0',
             \               '@%aurum/repo': '5.0',
             \               '@%aurum/edit': '1.0',
@@ -12,12 +12,13 @@ let s:_messages={
             \ 'nocurf': 'Failed to deduce which file was meant',
             \'nocfile': 'Unsure what should be commited',
         \}
+let s:r={}
 "▶1 globescape :: path → glob
-function s:F.globescape(path)
+function s:r.globescape(path)
     return escape(a:path, '\*?[]{}')
 endfunction
 "▶1 getdifffile :: bvar + cursor → file
-function s:F.getdifffile(bvar)
+function s:r.getdifffile(bvar)
     if len(a:bvar.files)==1
         return a:bvar.files[0]
     endif
@@ -30,7 +31,7 @@ function s:F.getdifffile(bvar)
                 \                         a:bvar.opts)
 endfunction
 "▶1 getfile :: [path] → path
-function s:F.getfile(files)
+function s:r.getfile(files)
     let file=0
     if !empty(a:files)
         if len(a:files)==1
@@ -62,7 +63,9 @@ function s:rrf.copy(bvar, opts, act, failmsg)
         let r.file=a:bvar.file
     else
         let r.repo=s:_r.repo.get(s:_r.os.path.dirname(a:bvar.file))
-        let r.file=r.repo.functions.reltorepo(r.repo, a:bvar.file)
+        if a:act isnot# 'getrr'
+            let r.file=r.repo.functions.reltorepo(r.repo, a:bvar.file)
+        endif
     endif
     let r.rev=0
     let r.hasbuf=1
@@ -95,8 +98,8 @@ function s:rrf.diff(bvar, opts, act, failmsg)
     let r.repo=a:bvar.repo
     let  r.rev=empty(a:bvar.rev2) ? a:bvar.rev1 : a:bvar.rev2
     " XXX Maybe it should pull in all filenames instead when act='getfiles'?
-    let r.file=s:F.getdifffile(a:bvar)
-    if r.file is 0 && a:failmsg isnot 0
+    let r.file=s:r.getdifffile(a:bvar)
+    if r.file is 0 && a:failmsg isnot 0 && a:act isnot# 'getrr'
         return 0
     endif
     if a:act is# 'annotate' || a:act is# 'open'
@@ -110,8 +113,8 @@ function s:rrf.commit(bvar, opts, act, failmsg)
     let r.repo=a:bvar.repo
     if a:act is# 'getfiles'
         let r.files=a:bvar.files
-    elseif a:act isnot# 'getsilent'
-        let r.file=s:F.getfile(a:bvar.files)
+    elseif a:act isnot# 'getsilent' && a:act isnot# 'getrr'
+        let r.file=s:r.getfile(a:bvar.files)
         if r.file is 0 && a:failmsg isnot 0
             return 0
         endif
@@ -131,7 +134,7 @@ function s:rrf.annotate(bvar, opts, act, failmsg)
         let r.file=a:bvar.files[line('.')-1]
         if !has_key(a:opts, 'rev')
             let r.rev=a:bvar.revisions[line('.')-1]
-            if r.rev is# r.repo.functions.getrevhex(r.repo, a:bvar.rev)
+            if r.rev is# a:bvar.rev
                 if a:act isnot# 'annotate'
                     " Don't do the following if we are not annotating
                 elseif has_key(a:bvar, 'annbuf') &&
@@ -166,15 +169,32 @@ function s:rrf.log(bvar, opts, act, failmsg)
 endfunction
 "▲2
 "▶1 getrrf :: opts, failmsg, act + buf → (hasbuf, repo, rev, file)
+" Actions: getfile   : Used to get trivial filename only. Non-last arguments 
+"                      should be ignored
+"          getfiles  : Used to get a list of files (if user specified no 
+"                      patterns), or, at least, repository (but not revision)
+"          get       : Used to get repo, revision and file. If it is not 
+"                      aurum:// buffer, revision is zero
+"          getsilent : Like get, but won’t prompt for a file in aurum://commit 
+"                      buffers
+"          getrr     : Gets repository and revision, but not file
+" TODO Move open and annotate actions out of here.
+"          open      : Prepare a window for opening file as well
+"          annotate  : Like open, except for aurum://annotate when current 
+"                      revision is the same as annotated revision. In latter 
+"                      case it just switches to annotated file (or opens a new 
+"                      one if it does not exist)
 let s:rrffailresult=[0, 0, 0, 0]
-function s:F.getrrf(opts, failmsg, act)
+function s:r.getrrf(opts, failmsg, act)
     let hasbuf=0
     let file=0
     "▶2 a:opts.file file → (repo?)
     if has_key(a:opts, 'file') && a:opts.file isnot# ':'
         if a:act isnot# 'getfile' && a:opts.repo is# ':'
             let repo=s:_r.repo.get(s:_r.os.path.dirname(a:opts.file))
-            let file=repo.functions.reltorepo(repo, a:opts.file)
+            if a:act isnot# 'getrr'
+                let file=repo.functions.reltorepo(repo, a:opts.file)
+            endif
         else
             let file=a:opts.file
         endif
@@ -187,7 +207,7 @@ function s:F.getrrf(opts, failmsg, act)
         if index(a:opts.files, ':')!=-1
             let newopts=copy(a:opts)
             unlet newopts.files
-            let [repo, rev, file]=s:F.getrrf(newopts, 'nocurf', 'getfile')[1:]
+            let [repo, rev, file]=s:r.getrrf(newopts, 'nocurf', 'getfile')[1:]
             if repo is 0
                 unlet repo
                 let repo=s:_r.repo.get(file)
@@ -222,8 +242,10 @@ function s:F.getrrf(opts, failmsg, act)
             let file=expand('%')
         else
             let repo=s:_r.repo.get(':')
-            call s:F.checkrepo(repo)
-            let file=repo.functions.reltorepo(repo, expand('%'))
+            call s:r.checkrepo(repo)
+            if a:act isnot# 'getrr'
+                let file=repo.functions.reltorepo(repo, expand('%'))
+            endif
         endif
         let  rev=0
         let hasbuf=2
@@ -240,7 +262,7 @@ function s:F.getrrf(opts, failmsg, act)
         "▶2 repo
         if !exists('repo')
             let repo=s:_r.repo.get(a:opts.repo)
-            call s:F.checkrepo(repo)
+            call s:r.checkrepo(repo)
             if file isnot 0
                 let file=repo.functions.reltorepo(repo, file)
             endif
@@ -261,6 +283,8 @@ function s:F.getrrf(opts, failmsg, act)
             if rev isnot 0
                 let rev=repo.functions.getrevhex(repo, rev)
             endif
+        elseif a:act is# 'getrr'
+            let rev=repo.functions.getworkhex(repo)
         else
             let rev=0
         endif
@@ -277,20 +301,20 @@ function s:F.getrrf(opts, failmsg, act)
                 \   (file))]
 endfunction
 "▶1 checkrepo
-function s:F.checkrepo(repo)
+function s:r.checkrepo(repo)
     if type(a:repo)!=type({})
         call s:_f.throw('nrepo')
     endif
     return 1
 endfunction
 "▶1 checkedgetrepo
-function s:F.checkedgetrepo(repopath)
+function s:r.checkedgetrepo(repopath)
     let repo=s:_r.repo.get(a:repopath)
-    call s:F.checkrepo(repo)
+    call s:r.checkrepo(repo)
     return repo
 endfunction
 "▶1 closebuf :: bvar → + buf
-function s:F.closebuf(bvar)
+function s:r.closebuf(bvar)
     let r=''
     if has_key(a:bvar, 'prevbuf') && bufexists(a:bvar.prevbuf)
         let r.=':buffer '.a:bvar.prevbuf."\n"
@@ -299,7 +323,7 @@ function s:F.closebuf(bvar)
     return r.':if bufexists('.buf.')|bwipeout '.buf."|endif\n"
 endfunction
 "▶1 getexsttrckdfiles
-function s:F.getexsttrckdfiles(repo, ...)
+function s:r.getexsttrckdfiles(repo, ...)
     let cs=a:repo.functions.getwork(a:repo)
     let r=copy(a:repo.functions.getcsprop(a:repo, cs, 'allfiles'))
     let status=a:repo.functions.status(a:repo)
@@ -312,13 +336,13 @@ function s:F.getexsttrckdfiles(repo, ...)
     return r
 endfunction
 "▶1 getaddedermvdfiles
-function s:F.getaddedermvdfiles(repo)
+function s:r.getaddedermvdfiles(repo)
     let status=a:repo.functions.status(a:repo)
     return status.unknown+filter(copy(status.removed),
                 \         'filereadable(s:_r.os.path.join(a:repo.path, v:val))')
 endfunction
 "▶1 filterfiles
-function s:F.filterfiles(repo, globs, files)
+function s:r.filterfiles(repo, globs, files)
     if empty(a:globs)
         return []
     endif
@@ -354,28 +378,8 @@ function s:F.filterfiles(repo, globs, files)
     endwhile
     return r
 endfunction
-"▶1 update
-" TODO Investigate whether this function should be moved to cmdutils, or to 
-" maputils which is probably to be created
-function s:F.update(repo, rev, count)
-    let rev=a:rev
-    if a:count>1
-        let rev=a:repo.functions.getnthparent(a:repo, rev, a:count-1).hex
-    endif
-    return a:repo.functions.update(a:repo, rev, 0)
-endfunction
 "▶1 Post cmdutils resource
-call s:_f.postresource('cmdutils', {'globescape': s:F.globescape,
-            \                           'getrrf': s:F.getrrf,
-            \                      'getdifffile': s:F.getdifffile,
-            \                        'checkrepo': s:F.checkrepo,
-            \                   'checkedgetrepo': s:F.checkedgetrepo,
-            \                         'closebuf': s:F.closebuf,
-            \                'getexsttrckdfiles': s:F.getexsttrckdfiles,
-            \               'getaddedermvdfiles': s:F.getaddedermvdfiles,
-            \                      'filterfiles': s:F.filterfiles,
-            \                           'update': s:F.update,
-            \})
+call s:_f.postresource('cmdutils', s:r)
 "▶1
 call frawor#Lockvar(s:, '_pluginloaded,_r')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

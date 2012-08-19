@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',
+            \      '@%aurum/cmdutils': '4.0',
             \          '@%aurum/edit': '1.0',
             \                  '@/os': '0.0',
             \               '@/table': '0.0',})

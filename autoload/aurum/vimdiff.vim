@@ -1,6 +1,6 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@%aurum/cmdutils': '3.0',
+execute frawor#Setup('1.0', {'@%aurum/cmdutils': '4.0',
             \                    '@%aurum/edit': '1.3',
             \                          '@aurum': '1.0',
             \                      '@/mappings': '0.0',
@@ -435,9 +435,8 @@ endfunction
 function s:cmd.function(opts, ...)
     "▶2 repo and revisions
     let full=get(a:opts, 'full', 0)
-    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 0,
-                \                                      ((full)?('getfiles'):
-                \                                              ('open')))
+    let action=((full)?('getfiles'):('open'))
+    let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 0, action)
     call s:_r.cmdutils.checkrepo(repo)
     let revs=[]
     if rev isnot 0
@@ -464,7 +463,7 @@ function s:cmd.function(opts, ...)
         endif
     endif
     "▲2
-    if get(a:opts, 'full', 0)
+    if full
         let args=[repo, revs,
                     \((get(a:opts, 'untracked', 0))?
                     \   (2):

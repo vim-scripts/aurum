@@ -158,12 +158,19 @@ AuDiff {options} {diffoptions} [glob1 [...]]                         *:AuDiff*
     [no]dates     Flag. Determines whether dates should be shown in headers.
     [no]git       Flag. Determines whether extended git format should be used.
 
-AuFile [{rev} [{file}]] [[no]replace] [cmd {cmd}] [repo {repo}]      *:AuFile*
+                                                                     *:AuFile*
+AuFile [{rev} [{file}]] [[no]replace] [[no]prompt] [cmd {cmd}] [repo {repo}]
     View file as it was at given revision. If “replace” option is given, then 
     current buffer contents will be replaced instead of opening new 
     |aurum://file| buffer. “cmd” option determines which command will be used 
     to open aurum://file buffer (default: “silent edit”) (may be overriden by 
     “replace” option).
+    If you need to skip to keyword arguments use “:” in place of file and 
+    revision: in this case these arguments are considered to be absent.
+    If “prompt” option is given then {file} is treated as a glob and prompt is 
+    used to get what file should be actually opened.
+    Note: You may use “{pat1,pat2}” to merge multiple globs into one and “:” 
+          as an equivalent for “all files” or “**”. Also see |aurum-globs|.
 
 AuGrep {pattern} {opts}                                              *:AuGrep*
     Populates |quickfix| list with the results of searching repository for 
@@ -548,6 +555,12 @@ starting with aurum://. Some things you should know:
   customized using |g:frawormap_mgid| and |g:frawormap_mgid_mapname|.
 - All buffers that define mappings also define Exit mapping (with default 
   LHS=X)
+- OpenAny/AnnotateAny mappings require one of Command-T, Ctrlp or FuzzyFinder 
+  plugins installed. Otherwise they will show |inputlist()| that is unusable 
+  with large number of files.
+  Note: currently if you install two or all of them the behavior is undefined 
+        (depends on how keys “commandt”, “ctrlp” and “fuf” are arranged inside 
+        a |Dictionary|).
 
 aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
     Annotate file {file} from repository {repo} at revision {rev}.
@@ -841,7 +854,8 @@ commands. Present mappings:
                       *g:frawormap_Aurum_URL*    *g:frawormap_Aurum_LineURL*
                       *g:frawormap_Aurum_Track*  *g:frawormap_Aurum_Forget*
                       *g:frawormap_Aurum_Push*   *g:frawormap_Aurum_Pull*
-                      *g:frawormap_Aurum_FVdiff*     *aurum-m-Aurum-FVdiff*
+                      *g:frawormap_Aurum_FVdiff* *g:frawormap_Aurum_OpenAny*
+                          *aurum-m-Aurum-FVdiff*     *aurum-m-Aurum-OpenAny*
                           *aurum-m-Aurum_Commit*     *aurum-m-Aurum_CommitAll*
                           *aurum-m-Aurum_Open*       *aurum-m-Aurum_Revert*
                           *aurum-m-Aurum_Vdiff*      *aurum-m-Aurum_Diff*
@@ -856,7 +870,10 @@ Commit      i   AuCommit    Commit changes to current file
 CommitAll   I   AuCommit ** Commit changes to all files
 Open        o   AuFile      View contents of the current file as it was at the 
                             the working directory revision
-Revert      O   AuFile . : replace
+OpenAny     O   AuFile : : prompt
+                            Prompt for the file and view its contents as it 
+                            was at the working directory revision.
+Revert     go   AuFile : : replace
                             Replace current buffer with contents of the 
                             current file as it was at the working directory 
                             revision
@@ -897,47 +914,49 @@ filetypes or by :Au* commands. All mappings for readonly buffers have no
 leader, for non-readonly buffers or for global scope (|:AuVimDiff| ones) have 
 “<leader>” as their prefix by default.
 
-               ┌ aurumannotate filetype (aurum://annotate)  ~
-               │┌ aurumcommit filetype (aurum://commit; with leader) ~
-               ││┌ AuDiff command, mappings (aurum://diff) ~
-               │││┌ AuFile command, mappings (aurum://file) ~
-               ││││┌ aurumlog filetype (aurum://log) ~
-               │││││┌ aurumstatus filetype (aurum://status) ~
-               ││││││┌ :AuVimDiff command (with leader) ~
-               │││││││┌ :AuRecord mappings ~
-               ││││││││┌ global mappings (with leader) ~
-               │││││││││ ~
-Name      Key  │││││││││  Description ~
-Enter     <CR> a   ls     Does some default action
-File      gF       l      Shows file history
-User      gu       l      Shows revisions committed by current user
-Date      gM       l      Shows revisions committed in the current month
-Branch    gb       l      Shows revisions that have the same branch
-Rev       gr       l      Shows revisions that are descendants of the current
-FVdiff    gD   a D lS  g  Shows full vimdiff between current revision and WD
-                          (status and diff: between two current revisions)
-RFVdiff   gC   a   ls     Shows changes done in current rev as full vimdiff
-Vdiff      D   a Df S  g  Shows vimdiff between cur. rev. and WD for cur. file
-                          (status and diff: between two current revisions)
-RVdiff     C   a  f s     Shows changes to cur. file in cur. rev. as a vimdiff
-Fdiff     gd   a   lS  g  Shows diff between current revision and working dir
-                          (status: between two current revisions)
-RFdiff    gc   a   ls     Shows changes introduced by current revision
-Diff       d   a  flS  g  Shows diff between rev and WD for current file
-                          (status: between two current revisions)
-Rdiff      c   a  fls     Shows changes done in current rev to current file
-Prev/Next J/K  acdfl      Go to previous/next revision
-Open       o   a d ls  g  Opens current file as it was at current revision
-Annotate   a   a   ls  g  Annotates current file at current revision
-Update     U   a dfl      Update working directory to current revision
-Commit     i    c   s Rg  Commit changes made to current file
-                          (record: record all selected changes)
-CommitAll  I           g  Commit changes made to all files
-Track      A        s Rg  Make current file tracked by VCS
-                          (record: mark it for committing)
-Forget     R        s Rg  Make VCS forget current file
-                          (record: don’t commit changes to this file)
-Exit       X   acdflsvr   Close current buffer (tabpage, tabpage list)
+                ┌ aurumannotate filetype (aurum://annotate)  ~
+                │┌ aurumcommit filetype (aurum://commit; with leader) ~
+                ││┌ AuDiff command, mappings (aurum://diff) ~
+                │││┌ AuFile command, mappings (aurum://file) ~
+                ││││┌ aurumlog filetype (aurum://log) ~
+                │││││┌ aurumstatus filetype (aurum://status) ~
+                ││││││┌ :AuVimDiff command (with leader) ~
+                │││││││┌ :AuRecord mappings ~
+                ││││││││┌ global mappings (with leader) ~
+                │││││││││ ~
+Name       Key  │││││││││  Description ~
+Enter      <CR> a   ls     Does some default action
+File       gF       l      Shows file history
+User       gu       l      Shows revisions committed by current user
+Date       gM       l      Shows revisions committed in the current month
+Branch     gb       l      Shows revisions that have the same branch
+Rev        gr       l      Shows revisions that are descendants of the current
+FVdiff     gD   a D lS  g  Shows full vimdiff between current revision and WD
+                           (status and diff: between two current revisions)
+RFVdiff    gC   a   ls     Shows changes done in current rev as full vimdiff
+Vdiff       D   a Df S  g  Shows vimdiff between cur. rev. and WD for file
+                           (status and diff: between two current revisions)
+RVdiff      C   a  f s     Shows changes to file in cur. rev. as a vimdiff
+Fdiff      gd   a   lS  g  Shows diff between current revision and working dir
+                           (status: between two current revisions)
+RFdiff     gc   a   ls     Shows changes introduced by current revision
+Diff        d   a  flS  g  Shows diff between rev and WD for current file
+                           (status: between two current revisions)
+Rdiff       c   a  fls     Shows changes done in current rev to current file
+Prev/Next  J/K  acdfl      Go to previous/next revision
+Open        o   a d ls  g  Opens current file as it was at current revision
+OpenAny     O       l   g  Prompts user and opens one of the changeset files
+Annotate    a   a   ls  g  Annotates current file at current revision
+AnnotateAny         l      Prompts user and annotates one of changeset files
+Update      U   a dfl      Update working directory to current revision
+Commit      i    c   s Rg  Commit changes made to current file
+                           (record: record all selected changes)
+CommitAll   I           g  Commit changes made to all files
+Track       A        s Rg  Make current file tracked by VCS
+                           (record: mark it for committing)
+Forget      R        s Rg  Make VCS forget current file
+                           (record: don’t commit changes to this file)
+Exit        X   acdflsvr   Close current buffer (tabpage, tabpage list)
 
 There are some more uncommon global and AuRecord mappings not mentioned above.
 
@@ -1922,6 +1941,8 @@ Python driver was not tested under windows (wine) at all.
          getexsttrckdfiles _r.cmdutils functions.
     3.0: Removed _r.cmdutils.nogetrepoarg.
     3.1: Added _r.cmdutils.update (moved from @aurum/repo).
+    4.0: Moved _r.cmdutils.update to @%aurum/maputils
+    4.1: Made _r.cmdutils.getrrf recognize “getrr” action
 @%aurum:
     0.1: Added |aurum#branch()| function.
 @aurum/cache:
@@ -1941,5 +1962,7 @@ ftplugin/aurumlog:
     1.0: Made _r.utils.getcmd return a list,
          replaced _r.utils.kwargstostr with _r.utils.kwargstolst,
          made _r.utils.run return a pair (output, exit_code)
+@%aurum/file:
+    0.1: Added |:AuFile| prompt option.
 
 vim: ft=help:tw=78

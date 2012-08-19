@@ -1,6 +1,7 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@%aurum/cmdutils': '3.1',
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.0',
+            \                '@%aurum/maputils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/vimdiff': '1.0',
@@ -88,7 +89,7 @@ function s:F.rundiffmap(action)
         let cmd.=s:_r.cmdutils.closebuf(bvar)
     elseif a:action is# 'update'
         let rev=(empty(bvar.rev1)?(bvar.rev2):(bvar.rev1))
-        call s:_r.cmdutils.update(bvar.repo, rev, v:count)
+        call s:_r.maputils.update(bvar.repo, rev, v:count)
         return ''
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))

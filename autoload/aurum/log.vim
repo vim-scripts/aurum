@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('1.1', {'@%aurum/cmdutils': '3.0',
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.0',
             \           '@%aurum/log/templates': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/bufvars': '0.0',

@@ -6,7 +6,7 @@ execute frawor#Setup('0.0', {'@/options': '0.0',
             \                   '@aurum': '1.0',
             \             '@aurum/cache': '2.1',
             \           '@%aurum/commit': '1.0',
-            \         '@%aurum/cmdutils': '3.0',
+            \         '@%aurum/cmdutils': '4.0',
             \        '@%aurum/lineutils': '0.0',
             \             '@%aurum/edit': '1.0',
             \          '@%aurum/bufvars': '0.0',})

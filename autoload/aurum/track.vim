@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',})
+            \      '@%aurum/cmdutils': '4.0',})
 function s:cmd.function(...)
     let globs=filter(copy(a:000), 'v:val isnot# ":"')
     let hascur=!(a:0 && len(globs)==a:0)

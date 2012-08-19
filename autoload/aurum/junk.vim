@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',})
+            \      '@%aurum/cmdutils': '4.0',})
 let s:_messages={
             \'nofiles': 'No files were specified',
         \}

@@ -40,17 +40,17 @@ Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It
 Project page: https://bitbucket.org/ZyX_I/aurum
 Documentation: http://vimpluginloader.sourceforge.net/doc/aurum.txt.html
 
-[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line398-0 (:AuRecord)
-[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line664-0 (aurum://file)
+[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line405-0 (:AuRecord)
+[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line677-0 (aurum://file)
 [3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line161-0 (:AuFile)
-[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line441-0 (:AuVimDiff)
-[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line253-0 (:AuLog)
-[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line402-0 (:AuStatus)
+[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line448-0 (:AuVimDiff)
+[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line260-0 (:AuLog)
+[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line409-0 (:AuStatus)
 [7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line102-0 (:AuCommit)
-[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1030-0 (g:aurum_remembermsg)
-[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line196-0 (:AuHyperlink)
-[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line490-0 (aurum#changeset())
-[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line486-0 (aurum#repository())
-[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line494-0 (aurum#status())
-[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line826-0 (aurum-mappings)
+[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1049-0 (g:aurum_remembermsg)
+[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line203-0 (:AuHyperlink)
+[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line497-0 (aurum#changeset())
+[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line493-0 (aurum#repository())
+[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line501-0 (aurum#status())
+[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line839-0 (aurum-mappings)
 

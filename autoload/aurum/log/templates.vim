@@ -125,7 +125,8 @@ let s:kwreqs = {'stat': {'files': 1},
             \'renames': {'files': 1, 'renames': 1},
             \ 'copies': {'files': 1, 'copies': 1},
             \}
-call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : {substitute(v:val, "_$", "", "") : 1}})')
+call map(s:kwreqseqkw, 'extend(s:kwreqs, {v:val : '.
+            \'{substitute(v:val, "_$", "", "") : 1}})')
 unlet s:kwreqseqkw
 "▶1 beatycode       :: function::[String] → function::[String]
 let s:indents={
@@ -683,9 +684,14 @@ function s:F.addgroup(r, nlgroups, group)
     endif
 endfunction
 "▶1 getkwreg
-function s:F.getkwreg(kw, nextlit)
+function s:F.getkwreg(repo, kw, nextlit)
     if has_key(s:kwreg, a:kw)
         return s:kwreg[a:kw]
+    elseif a:kw is# 'rev'
+        return get(a:repo, 'revreg', '\v\d+')
+    elseif a:kw is# 'parents' || a:kw is# 'children'
+        let reg=get(a:repo, 'hexreg', '\x{12,}')
+        return '\v'.reg.'(\ '.reg.')*'
     " XXX 0 is empty
     elseif !empty(a:nextlit)
         return '\V\%(\%('.escape(a:nextlit, '\/').'\)\@!\.\)\*'
@@ -773,11 +779,7 @@ function s:F.syntax(template, opts, repo)
                 let skname='auLog'.skname
                 call s:F.addgroup(r, nlgroups, skname)
                 let r+=['syn match '.skname.' ']
-                if lmeta>j
-                    let r[-1].='/\V'.escape(str, '\/').'/'
-                else
-                    let r[-1].='/\v.*/'
-                endif
+                let r[-1].='/\V'.escape(str, '\/').'/'
                 let r[-1].=' contained nextgroup='
             endif
             if lmeta>j
@@ -875,15 +877,8 @@ function s:F.syntax(template, opts, repo)
                         call s:F.addgroup(r, nlgroups, 'auLog_'.kw.trail)
                     endif
                     let nextlit=get(arg, 'suf', get(lit, j+1, 0))
-                    if kw is# 'rev'
-                        let reg=get(a:repo, 'revreg', '\v\d+')
-                    elseif kw is# 'parents' || kw is# 'children'
-                        let reg=get(a:repo, 'hexreg', '\x{12,}')
-                        let reg='\v'.reg.'(\ '.reg.')*'
-                    else
-                        let reg=s:F.getkwreg(kw, nextlit)
-                    endif
-                    let r+=['syn match auLog_'.kw.' /'.reg.'/ '.
+                    let r+=['syn match auLog_'.kw.' /'.
+                                \s:F.getkwreg(a:repo, kw, nextlit).'/ '.
                                 \'contained nextgroup=']
                     if has_key(arg, 'suf')
                         let r[-1].='auLog_'.kw.'_suf'
@@ -918,8 +913,8 @@ function s:F.syntax(template, opts, repo)
                 else
                     call s:F.addgroup(r, nlgroups, 'auLog_'.kw)
                     let r+=['syn match auLog_'.kw.' /'.
-                                \s:F.getkwreg(kw, get(lit, j+1, 0)).'/ '.
-                                \'contained nextgroup=']
+                                \    s:F.getkwreg(a:repo, kw, get(lit, j+1, 0)).
+                                \'/ contained nextgroup=']
                 endif
             endif
             let j+=1

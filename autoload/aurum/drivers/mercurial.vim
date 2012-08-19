@@ -294,10 +294,10 @@ function s:F.parsecs(csdata, lstart)
     return [cs, line]
 endfunction
 "▶2 getcslist :: repo, start, end
-function s:F.getcslist(repo, start, end)
+function s:F.getcslist(repo, start)
     let kwargs={'style': s:stylefile}
     let lines=s:F.hg(a:repo, 'log', [],
-                \    extend({'rev': a:start.':'.a:end}, kwargs), 0, 'log')[:-2]
+                \    extend({'rev': a:start.':-1'}, kwargs), 0, 'log')[:-2]
     let css=[]
     if has_key(a:repo.changesets, s:nullrev)
         let cs0=a:repo.changesets[s:nullrev]
@@ -470,7 +470,7 @@ if s:usepythondriver
 else
     function s:F.getupdates(repo, start)
         let r={}
-        let tip_hex=a:repo.functions.getrevhex(a:repo, 'tip')
+        let tip_hex=a:repo.functions.gettiphex(a:repo)
         let cschange=1
         if a:start isnot 0
             try
@@ -489,7 +489,7 @@ else
         endif
         let r.startrev=startrev
         if cschange
-            let r.css=s:F.getcslist(a:repo, startrev, -1)
+            let r.css=s:F.getcslist(a:repo, startrev)
         else
             let r.css=[]
         endif
@@ -505,7 +505,8 @@ else
         endfor
         if a:repo.hasphases && startrev
             let r.phases=map(s:F.hg(a:repo, 'phase', [],
-                        \           {'rev': '0:'.(startrev-1)}, 0),
+                        \           {'rev': '0:'.(cschange?(startrev-1):-1)},
+                        \           0)[:-2],
                         \           'v:val[stridx(v:val, " ")+1:]')
         endif
         let a:repo.csnum=startrev+len(r.css)
@@ -555,7 +556,7 @@ function s:hg.updatechangesets(repo, ...)
         return
     endif
     call map(d.css, 'extend(v:val, {"children": []})')
-    if !empty(a:repo.mutable.cslist)
+    if !empty(a:repo.mutable.cslist) && !empty(d.css)
         call s:F.removechangesets(a:repo, d.startrev)
     endif
     for key in a:repo.updkeys

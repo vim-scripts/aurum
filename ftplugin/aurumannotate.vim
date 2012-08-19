@@ -14,7 +14,8 @@ setlocal nomodeline
 execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
             \                '@%aurum/vimdiff': '1.0',
             \               '@%aurum/annotate': '1.0',
-            \               '@%aurum/cmdutils': '3.1',
+            \               '@%aurum/cmdutils': '4.0',
+            \               '@%aurum/maputils': '0.0',
             \                   '@%aurum/edit': '1.2',
             \                     '@/mappings': '0.0',
             \                           '@/os': '0.0',})
@@ -167,7 +168,7 @@ function s:F.runmap(action, ...)
         endif
     "▶2 `update' action
     elseif a:action is# 'update'
-        call s:_r.cmdutils.update(bvar.repo, hex, v:count)
+        call s:_r.maputils.update(bvar.repo, hex, v:count)
     "▶2 `previous' and `next' actions
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))

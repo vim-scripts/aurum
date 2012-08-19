@@ -49,9 +49,9 @@ function s:utils.run(cmd, hasnulls, cdpath)
         if has_key(s:F, 'readsystem')
             return s:F.readsystem(a:cmd, a:cdpath)
         elseif !empty(&shellredir)
-            let lines=call(s:F.readsystem, [a:cmd]+(empty(a:cdpath)?
-                        \                               ([]):
-                        \                               ([a:cdpath])), {})
+            let lines=call(s:_r.os.readsystem, [a:cmd]+(empty(a:cdpath)?
+                        \                                 ([]):
+                        \                                 ([a:cdpath])), {})
             return [lines, v:shell_error]
         endif
     endif

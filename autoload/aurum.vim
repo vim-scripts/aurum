@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('0.1', {'@%aurum/repo': '5.0',
             \                '@aurum/cache': '2.0',
-            \            '@%aurum/cmdutils': '3.0',})
+            \            '@%aurum/cmdutils': '4.0',})
 "▶1 getcrf
 function s:F.id(val)
     return a:val
@@ -14,8 +14,8 @@ function s:F.getcrf()
         return [cbvar, cbvar.repo, cbvar.__relfname]
     endif
     try
-        silent let [hasbuf, repo, rev, file]=s:_r.cmdutils.getrrf({'repo': ':'},
-                    \                                             0,"getsilent")
+        silent let [repo, rev, file]=s:_r.cmdutils.getrrf({'repo': ':'}, 0,
+                    \                                     'getsilent')[1:]
     catch /^Frawor:[^:]\+:nrepo:/
         return [cbvar, 0, 0]
     endtry

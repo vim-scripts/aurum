@@ -1,6 +1,6 @@
 scriptencoding utf-8
 execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '3.0',
+            \      '@%aurum/cmdutils': '4.0',
             \                  '@/os': '0.0',})
 function s:cmd.function(bang, action, rev, url, repopath)
     let repo=s:_r.cmdutils.checkedgetrepo(a:repopath)
