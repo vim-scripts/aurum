@@ -14,7 +14,7 @@ module CommandT
                 {'"'  => "\\\"",
                  "\n" => "\\n",
                  "\\" => "\\\\"}[s]}
-            ::VIM::evaluate "call(b:aurum_callback_fun, [\"#{selection}\"]+b:aurum_addargs, {})"
+            ::VIM::evaluate "call(b:aurum_cbfun, [\"#{selection}\"]+b:aurum_cbargs, {})"
         end
     end
 end

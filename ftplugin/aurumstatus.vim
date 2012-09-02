@@ -4,14 +4,20 @@ setlocal textwidth=0
 setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
-            \                '@%aurum/vimdiff': '1.0',
+            \                '@%aurum/vimdiff': '1.1',
             \               '@%aurum/cmdutils': '4.0',
             \                   '@%aurum/edit': '1.2',
             \                 '@%aurum/commit': '1.0',
             \                     '@/mappings': '0.0',
+            \                      '@/options': '0.0',
             \                           '@/os': '0.0',})
 let s:_messages={
             \  'nopars': 'Revision %s has no parents',
+        \}
+let s:_oprefix='aurum'
+let s:_options={
+            \'statwincmd': {'default': 'c',
+            \               'checker': 'match /\v^[jkhlwWtbpc]$/'},
         \}
 "▶1 runmap
 let s:noacttypes={
@@ -73,8 +79,8 @@ function s:F.runmap(action, ...)
         if isrecord
             let [lwnr, rwnr, swnr]=bvar.getwnrs()
             execute lwnr.'wincmd w'
-        else
-            wincmd c
+        elseif winnr('$')>1
+            execute 'wincmd' s:_f.getoption('statwincmd')
         endif
     endif
     if a:action is# 'open'
@@ -125,7 +131,7 @@ function s:F.runmap(action, ...)
             else
                 call call(s:_r.run, ['silent view']+fargs2, {})
             endif
-            call s:_r.vimdiff.split(call(s:_r.fname, fargs1, {}), -1)
+            call s:_r.vimdiff.split([fargs1], -1)
         endif
     elseif a:action is# 'annotate'
         call s:_r.mrun('silent edit', 'file', bvar.repo, rev1, file)
@@ -174,7 +180,7 @@ function s:F.runmap(action, ...)
         call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1,  '',  files, {})
     elseif a:action is# 'diff'
         call s:_r.mrun('silent edit', 'diff', bvar.repo, rev1, rev2, files, {})
-    elseif a:action is# 'revvimdiff' || a:action is# 'vimdiff'
+    elseif manyfiles && (a:action is# 'revvimdiff' || a:action is# 'vimdiff')
         let args=[bvar.repo]
         if a:action is# 'revvimdiff'
             let cs1=bvar.repo.functions.getcs(bvar.repo, rev1)

@@ -57,6 +57,8 @@ won’t be able to use its python API).
 
 Plugin requires some additional plugins:
   - frawor (https://bitbucket.org/ZyX_I/frawor)
+  - Command-T, Ctrlp, FuzzyFinder, unite, ku or tlib for |:AuFile| prompt 
+    option and a number of OpenAny/AnnotateAny mappings (optional).
 (with their dependencies).
 
 Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
@@ -479,6 +481,13 @@ AuVimDiff {opts} [rev1 [...]]                                     *:AuVimDiff*
           (see |aurum-current-revision|) and second (unless one revision is 
           specified) will either be working directory revision or, if it is 
           equal to current revision, its first parent.
+    Note: |:AuVimDiff| and all *VDiff mappings respect value of 'diffopt' just 
+          like |:diffsplit| does: if it contains “vertical” split will be 
+          vertical, otherwise horizontal. Do not ask to change this as 
+          |vimdiff| uses vertical splits by default: I am consistent with 
+          |:diffsplit|, not with |vimdiff| as most of time |:diffsplit| is 
+          being used directly; it is not used only when using existing window 
+          (|g:aurum_vimdiffusewin|) and opening full vimdiff.
                           *g:frawormap_AuVimDiff* *g:frawormap_AuVimDiff_Exit*
     :AuVimDiff command defines Exit mappings for all opened buffers. By 
     default lhs of this mapping is “X” with leader “<Leader>” (“<Leader>X”), 
@@ -555,9 +564,9 @@ starting with aurum://. Some things you should know:
   customized using |g:frawormap_mgid| and |g:frawormap_mgid_mapname|.
 - All buffers that define mappings also define Exit mapping (with default 
   LHS=X)
-- OpenAny/AnnotateAny mappings require one of Command-T, Ctrlp or FuzzyFinder 
-  plugins installed. Otherwise they will show |inputlist()| that is unusable 
-  with large number of files.
+- OpenAny/AnnotateAny mappings require one of Command-T, Ctrlp, FuzzyFinder, 
+  unite, ku or tlib plugins installed. Otherwise they will show |inputlist()| 
+  that is unusable with large number of files.
   Note: currently if you install two or all of them the behavior is undefined 
         (depends on how keys “commandt”, “ctrlp” and “fuf” are arranged inside 
         a |Dictionary|).
@@ -1045,6 +1054,17 @@ usestatwin                                                *g:aurum_usestatwin*
     Bool. Determines whether sequential calls to |:AuStatus| with same 
     arguments should use existing status window or open a new one.
     Default: 1.
+
+statwincmd                                                *g:aurum_statwincmd*
+    String, one of “j”, “k”, “h”, “l”, “w”, “W”, “t”, “b”, “p”, “c”.
+    Determines what window should be switched to when running |aurum://status| 
+    mappings. See |window-move-cursor| for the description of most keys.
+    No error will be given if there is no window in desired direction, 
+    mappings will just use status buffer’s own window.
+    Value “c” is special: window will be |:close|d and cursor will be moved to 
+    whatever window vim selects. In other cases status window won’t be closed.
+    Ignored if there is only one window left.
+    Default: “c”.
 
 remembermsg                                              *g:aurum_remembermsg*
     Bool. Determines whether message typed in commit buffer should be saved 
@@ -1916,6 +1936,8 @@ Python driver was not tested under windows (wine) at all.
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
     1.0: Renamed g:aurum_usewin option to |g:aurum_vimdiffusewin|.
+    1.1: Made _r.vimdiff.split accept multiple difftargets and a list of 
+         _r.fname args as a single difftarget
 @%aurum/log:
     0.1: Added |aurum-style-git| and |aurum-style-gitoneline| log styles, 
          added skipping of $rev if |aurum-repo.hasrevisions| is false, made it 

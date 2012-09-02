@@ -3,8 +3,9 @@ scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/resources': '0.0',
             \                       '@/os': '0.0',})
 let s:_messages={
-            \'plinst': 'If you install Command-T, Ctrlp or FuzzyFinder '.
-            \          'you will be prompted with much less sucking interface',
+            \'plinst': 'If you install Command-T, Ctrlp, FuzzyFinder, unite, '.
+            \          'ku or tlib you will be prompted with '.
+            \          'much less sucking interface',
         \}
 let s:r={}
 "▶1 update
@@ -30,24 +31,24 @@ function s:F.listplugs.commandt.init()
     endtry
 endfunction
 function s:F.listplugs.commandt.call(files, cbargs, pvargs)
-    let [b:aurum_callback_fun; b:aurum_addargs]=a:cbargs
+    let [b:aurum_cbfun; b:aurum_cbargs]=a:cbargs
     ruby $aurum_old_command_t = $command_t
     ruby $command_t = $aurum_command_t
     ruby $command_t.show_aurum_finder
     autocmd BufUnload <buffer> ruby $command_t = $aurum_old_command_t
 endfunction
 "▶2 ctrlp
-function s:Accept(mode, str)
+function s:CtrlpAccept(mode, str)
     let d={}
-    let d.cbfun=b:aurum_callback_fun
-    let addargs=b:aurum_addargs
+    let d.cbfun=b:aurum_cbfun
+    let cbargs=b:aurum_cbargs
     call ctrlp#exit()
-    return call(d.cbfun, [a:str]+addargs, {})
+    return call(d.cbfun, [a:str]+cbargs, {})
 endfunction
-let s:_functions+=['s:Accept']
+let s:_functions+=['s:CtrlpAccept']
 let s:ctrlp_ext_var={
             \'init': '<SNR>'.s:_sid.'_Eval("s:ctrlp_files")',
-            \'accept': '<SNR>'.s:_sid.'_Accept',
+            \'accept': '<SNR>'.s:_sid.'_CtrlpAccept',
             \'lname': 'changeset files',
             \'sname': 'changeset file',
             \'type': 'path',
@@ -69,7 +70,7 @@ endfunction
 function s:F.listplugs.ctrlp.call(files, cbargs, pvargs)
     let s:ctrlp_files=a:files
     call ctrlp#init(s:ctrlp_id)
-    let [b:aurum_callback_fun; b:aurum_addargs]=a:cbargs
+    let [b:aurum_cbfun; b:aurum_cbargs]=a:cbargs
 endfunction
 "▶2 fuf
 let s:F.listplugs.fuf={}
@@ -86,6 +87,90 @@ function s:F.listplugs.fuf.call(files, cbargs, pvargs)
     call fuf#aurum#setAuVars({'files': a:files, 'cbargs': a:cbargs,
                 \                               'pvargs': a:pvargs})
     call fuf#launch('aurum', '', 0)
+endfunction
+"▶2 tlib
+" TODO it is possible that tlib is present, but tlib#input#List is not used for 
+"      listing files and hence is “unfamiliar” interface. It should be checked 
+"      last. Also add an option for the user to explicitely select one of the 
+"      plugins.
+let s:F.listplugs.tlib={}
+function s:F.listplugs.tlib.init()
+    try
+        runtime autoload/tlib/input.vim
+        return exists('*tlib#input#List')
+    catch
+        return 0
+    endtry
+endfunction
+function s:F.listplugs.tlib.call(files, cbargs, pvargs)
+    let file=tlib#input#List('s', 'Select changeset file', a:files)
+    if empty(file)
+        return 0
+    endif
+    return call(a:cbargs[0], [file]+a:cbargs[1:], {})
+endfunction
+"▶2 ku
+let s:F.listplugs.ku={}
+function s:KuOpen(candidate)
+    return call(b:aurum_cbfun, [a:candidate.word]+b:aurum_cbargs, {})
+endfunction
+let s:_functions+=['s:KuOpen']
+let s:ku_files=[]
+function s:F.kulist(_)
+    if !exists('b:aurum_files')
+        let b:aurum_files=s:ku_files
+    endif
+    return map(copy(b:aurum_files), '{"word": v:val}')
+endfunction
+function s:F.listplugs.ku.init()
+    try
+        if !exists('*ku#define_source')
+            runtime autoload/ku.vim
+        endif
+        if exists('*ku#define_source')
+            call ku#define_kind({
+                        \                'name': 'csfiles',
+                        \'default_action_table': {'open':
+                        \                   function('<SNR>'.s:_sid.'_KuOpen')},
+                        \   'default_key_table': {},
+                        \})
+            call ku#define_source({
+                        \             'name': 'aurum',
+                        \            'kinds': ['csfiles'],
+                        \'gather_candidates': s:F.kulist,
+                        \})
+            return 1
+        else
+            return 0
+        endif
+    catch
+        return 0
+    endtry
+endfunction
+function s:F.listplugs.ku.call(files, cbargs, pvargs)
+    let [b:aurum_cbfun; b:aurum_cbargs]=a:cbargs
+    let s:ku_files=a:files
+    call ku#start(['aurum'])
+endfunction
+"▶2 unite
+let s:F.listplugs.unite={}
+function s:F.listplugs.unite.init()
+    try
+        if !exists('*unite#start')
+            " XXX For some reason when doing “runtime autoload/unite.vim” vim 
+            "     sources this file for the second time when it finds “function! 
+            "     unite#version” statement. In this case s:save_cpo is unlet 
+            "     when second sourcing is finished and trying to use it when 
+            "     first sourcing is finished results in an error.
+            call unite#version()
+        endif
+        return exists('*unite#start')
+    catch
+        return 0
+    endtry
+endfunction
+function s:F.listplugs.unite.call(files, cbargs, pvargs)
+    call unite#start([['aurum', a:files, a:cbargs]])
 endfunction
 "▶1 promptuser
 function s:r.promptuser(files, cbargs, pvargs)
@@ -123,5 +208,5 @@ endfunction
 "▶1 Post maputils resource
 call s:_f.postresource('maputils', s:r)
 "▶1
-call frawor#Lockvar(s:, 'plug,ctrlp_id,ctrlp_files')
+call frawor#Lockvar(s:, 'plug,ctrlp_id,ctrlp_files,ku_files')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

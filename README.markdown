@@ -4,7 +4,7 @@ integration for your projects. Features:
 
   - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line405-0)).
 
-  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line677-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line161-0)).
+  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line684-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line161-0)).
 
   - Viewing uncommited changes in a vimdiff, as well as changes between 
     specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line448-0)). It is also possible to open multiple 
@@ -15,7 +15,7 @@ integration for your projects. Features:
   - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line409-0)).
 
   - Commiting changes ([:AuCommit](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line102-0)), commit messages are remembered in case of 
-    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1049-0)).
+    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1067-0)).
 
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
@@ -23,12 +23,12 @@ integration for your projects. Features:
     supports git and subversion revisions (in case you are using hg-git and 
     hgsubversion respectively).
 
-  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line497-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line493-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line501-0) functions 
+  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line504-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line500-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line508-0) functions 
     that are to be used from modeline.
 
   - Frontends for various other VCS commands.
 
-Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line839-0)), 
+Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line846-0)), 
 all mappings are customizable.
 
 

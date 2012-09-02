@@ -15,7 +15,7 @@ execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.0',
             \                '@%aurum/maputils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \                    '@%aurum/edit': '1.0',
-            \                 '@%aurum/vimdiff': '1.0',
+            \                 '@%aurum/vimdiff': '1.1',
             \                            '@/os': '0.0',
             \                      '@/mappings': '0.0',})
 let s:_messages={
@@ -263,11 +263,11 @@ function s:F.callbacks.vimdiff(file, bvar, hex, ...)
     if a:0 && a:1
         execute 'silent edit'
                     \ fnameescape(s:_r.os.path.join(a:bvar.repo.path, a:file))
-        call s:_r.vimdiff.split(s:_r.fname('file',a:bvar.repo,a:hex,a:file), 0)
+        call s:_r.vimdiff.split([['file', a:bvar.repo, a:hex, a:file]], 0)
     elseif !empty(cs.parents)
         call s:_r.run('silent edit', 'file', a:bvar.repo, a:hex, a:file)
-        call s:_r.vimdiff.split(s:_r.fname('file', a:bvar.repo, cs.parents[0],
-                    \                      a:file), 0)
+        call s:_r.vimdiff.split([['file', a:bvar.repo, cs.parents[0], a:file]],
+                    \           0)
     else
         call s:_f.throw('nopars', a:hex)
     endif

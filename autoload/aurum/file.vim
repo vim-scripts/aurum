@@ -137,7 +137,7 @@ function s:F.runfilemap(action)
             let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev, 1).hex
             let file=s:_r.fname('file', bvar.repo, rev, bvar.file)
             let cmd.=':call call(<SNR>'.s:_sid.'_Eval("s:_r.vimdiff.split"), '.
-                        \       '['.string(file).", 0], {})\n:wincmd p\n"
+                        \       '['.string(file).", 0], {})\n"
         endif
     elseif a:action is# 'diff' || a:action is# 'revdiff'
         let opts='repo '.escape(bvar.repo.path, ' ')

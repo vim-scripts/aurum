@@ -1,6 +1,6 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.0',
             \                    '@%aurum/edit': '1.3',
             \                          '@aurum': '1.0',
             \                      '@/mappings': '0.0',
@@ -16,37 +16,37 @@ let s:_messages={
             \ 'nodrev': 'Unsure what revision should be diffed with',
         \}
 let s:lastfullid=0
-"▶1 diffrestore
-let s:diffsaveopts=['diff', 'foldcolumn', 'foldenable', 'foldmethod',
-            \       'foldlevel', 'scrollbind', 'cursorbind', 'wrap']
-call filter(s:diffsaveopts, 'exists("+".v:val)')
-function s:F.diffrestore(buf, onenter)
-    if !bufexists(a:buf) || !exists('t:auvimdiff_origbufvar') ||
-                \t:auvimdiff_origbufvar.bufnr!=a:buf
-        return
-    endif
-    let dbvar=t:auvimdiff_origbufvar
-    if a:onenter
-        if has_key(dbvar, 'diffbuf')
-            if bufexists(dbvar.diffbuf)
-                return
-            else
-                call s:F.diffrestore(a:buf, 0)
-            endif
-        elseif !has_key(dbvar, 'diffsaved')
-            return
-        endif
-        augroup AuVimDiff
-            autocmd! BufEnter <buffer>
-        augroup END
+"▶1 restore
+function s:F.restore(dbvar)
+    if empty(t:auvimdiff_diffbufvars)
+        unlet t:auvimdiff_diffbufvars
         unlet t:auvimdiff_origbufvar
-        if b:changedtick!=dbvar.diffsaved.changedtick
-            return
-        endif
-        let curpos=getpos('.')
-        call winrestview(dbvar.diffsaved.winview)
+        unlet t:auvimdiff_prevbuffers
+    endif
+    augroup AuVimDiff
+        autocmd! BufEnter,BufWipeOut <buffer>
+    augroup END
+    let hastickchange=0
+    if has_key(a:dbvar, 'diffsaved')
+        let buf=bufnr('%')
+        for [option, value] in items(a:dbvar.diffsaved)
+            call setbufvar(buf, '&'.option, value)
+        endfor
+    endif
+    if !has_key(a:dbvar, 'changedtick') ||
+                \b:changedtick!=a:dbvar.changedtick
+        let hastickchange=1
+    endif
+    let curpos=getpos('.')
+    if !hastickchange && has_key(a:dbvar, 'winview')
+        call winrestview(a:dbvar.winview)
+    endif
+    if has_key(a:dbvar, 'filetype')
+        let &l:filetype=a:dbvar.filetype
+    endif
+    if !hastickchange && has_key(a:dbvar, 'closedfolds')
         normal! zR
-        for line in dbvar.diffsaved.closedfolds
+        for line in a:dbvar.closedfolds
             try
                 execute line.'foldclose'
             catch /\VVim(foldclose):E490:/
@@ -54,24 +54,54 @@ function s:F.diffrestore(buf, onenter)
                 break
             endtry
         endfor
-        call setpos('.', curpos)
-    else
-        for option in s:diffsaveopts
-            call setbufvar(a:buf, '&'.option, dbvar.diffsaved[option])
-        endfor
-        if has_key(dbvar, 'diffbuf')
-            if exists('t:auvimdiff_diffbufvar')
-                unlet t:auvimdiff_diffbufvar
-            endif
-            unlet dbvar.diffbuf
-        endif
-        if bufnr('%')==a:buf
-            call s:F.diffrestore(a:buf, 1)
-        endif
-        if exists('t:auvimdiff_prevbuffers')
-            unlet t:auvimdiff_prevbuffers
+    endif
+    call setpos('.', curpos)
+endfunction
+"▶1 diffrestore
+let s:F.diffrestore={}
+"▶2 diffrestore.onotherenter
+function s:F.diffrestore.onotherenter(buf, abuf, dbvar, ddbvars)
+    if has_key(a:dbvar, 'bufnr')
+        if bufexists(a:dbvar.bufnr)
+            return
+        else
+            call s:F.diffrestore.onwipe(a:buf, a:abuf, a:dbvar, a:ddbvars)
         endif
     endif
+    let ddbvar=remove(a:ddbvars, a:abuf)
+    return s:F.restore(a:ddbvars[a:abuf])
+endfunction
+"▶2 diffrestore.onenter
+function s:F.diffrestore.onenter(buf, abuf, dbvar, ddbvars)
+    if !empty(filter(copy(a:dbvar.diffbufs), 'bufwinnr(v:val)!=-1'))
+        return
+    endif
+    return s:F.restore(a:dbvar)
+endfunction
+"▶2 diffrestore.onotherwipe
+function s:F.diffrestore.onotherwipe(buf, abuf, dbvar, ddbvars)
+    call filter(a:dbvar.diffbufs, 'v:val isnot '.a:abuf)
+    unlet a:ddbvars[a:abuf]
+endfunction
+"▶2 diffrestore.onwipe
+function s:F.diffrestore.onwipe(buf, abuf, dbvar, ddbvars)
+    call map(copy(a:ddbvars), 'remove(v:val, "srcbuf")')
+    let toremove=keys(filter(copy(a:ddbvars),
+                \            '!v:val.existed && bufexists(v:val.bufnr)'))
+    if !empty(toremove)
+        call feedkeys("\<C-\>\<C-n>:silent bwipeout ".join(toremove)."\n", 'n')
+    endif
+endfunction
+"▶2 diffrestore.call
+function s:F.diffrestore.call(buf, func)
+    if !bufexists(a:buf) || !exists('t:auvimdiff_origbufvar') ||
+                \t:auvimdiff_origbufvar.bufnr!=a:buf ||
+                \!exists('t:auvimdiff_diffbufvars')
+        return
+    endif
+    let dbvar=t:auvimdiff_origbufvar
+    let ddbvars=t:auvimdiff_diffbufvars
+    return s:F.diffrestore[a:func](a:buf, +expand('<abuf>'), dbvar, ddbvars)
 endfunction
 "▶1 findwindow
 function s:F.findwindow()
@@ -91,79 +121,115 @@ function s:F.findwindow()
     endfor
     return r
 endfunction
-"▶1 diffsplit
-function s:F.diffsplit(difftarget, usewin)
-    if !empty(filter(range(1, winnr('$')), 'getwinvar(v:val, "&diff")'))
-        tab split
-    endif
-    let buf=bufnr('%')
-    let t:auvimdiff_origbufvar={'bufnr': buf}
-    let existed=bufexists(a:difftarget)
-    let dbvar=t:auvimdiff_origbufvar
-    let diffsaved={}
-    let filetype=&filetype
-    let dbvar.diffsaved=diffsaved
+"▶1 save
+let s:diffsaveopts=['diff', 'foldcolumn', 'foldenable', 'foldmethod',
+            \       'foldlevel', 'scrollbind', 'cursorbind', 'wrap']
+function s:F.save(buf, dbvar)
+    let a:dbvar.diffsaved={}
     for option in s:diffsaveopts
-        let diffsaved[option]=getbufvar(buf, '&'.option)
+        let a:dbvar.diffsaved[option]=getbufvar(a:buf, '&'.option)
     endfor
-    let diffsaved.winview=winsaveview()
-    let cursor=getpos('.')[1:]
-    let diffsaved.changedtick=b:changedtick
+    let a:dbvar.winview=winsaveview()
+    let a:dbvar.cursor=getpos('.')[1:]
+    let a:dbvar.changedtick=b:changedtick
     let closedfolds=[]
-    let diffsaved.closedfolds=closedfolds
+    let a:dbvar.closedfolds=closedfolds
     for line in range(1, line('$'))
         if foldclosed(line)!=-1
             execute line.'foldopen'
             call insert(closedfolds, line)
         endif
     endfor
-    call s:_f.mapgroup.map('AuVimDiff', buf)
-    "▶2 `usewin' option support
-    " Uses left/right or upper/lower window if it has similar dimensions
-    if (a:usewin==-1 ? s:_f.getoption('vimdiffusewin') : a:usewin)
-                \&& winnr('$')>1
-        diffthis
-        if s:F.findwindow()
-            let prevbuf=s:_r.prevbuf()
-            execute 'silent edit' fnameescape(a:difftarget)
-            diffthis
-        else
-            execute 'silent diffsplit' fnameescape(a:difftarget)
-        endif
+endfunction
+"▶1 open :: cmd, target::Either path fnameargs → existed::Bool
+function s:F.open(cmd, target)
+    if type(a:target)==type('')
+        let r=bufexists(a:target)
+        execute 'silent' a:cmd fnameescape(a:target)
+        return r
     else
-        execute 'silent diffsplit' fnameescape(a:difftarget)
+        return call(s:_r.mrun, ['silent '.a:cmd]+a:target, {})
+    endif
+endfunction
+"▶1 diffsplit
+function s:F.diffsplit(difftargets, usewin)
+    "▶2 Open new tab if current already has diffsplit
+    if !empty(filter(range(1, winnr('$')), 'getwinvar(v:val, "&diff")'))
+        tab split
+    endif
+    "▶2 Compatibility: allow one difftarget appear as string
+    if type(a:difftargets)==type('')
+        let difftargets=[a:difftargets]
+    else
+        let difftargets=a:difftargets
     endif
     "▲2
-    if bufwinnr(buf)!=-1
-        execute bufwinnr(buf).'wincmd w'
-        call cursor(cursor)
-        wincmd p
-    endif
-    if &filetype isnot# filetype
-        let &filetype=filetype
-    endif
-    let dbuf=bufnr('%')
-    let t:auvimdiff_prevbuffers={dbuf : 0}
-    let t:auvimdiff_diffbufvar={'bufnr': dbuf}
-    let ddbvar=t:auvimdiff_diffbufvar
-    let ddbvar.srcbuf=dbuf
-    let ddbvar.existed=existed
-    if exists('prevbuf')
-        let ddbvar.prevbuf=prevbuf
-        let t:auvimdiff_prevbuffers[dbuf]=prevbuf
-    endif
-    let dbvar.diffbuf=dbuf
-    call s:_f.mapgroup.map('AuVimDiff', dbuf)
+    let buf=bufnr('%')
+    let t:auvimdiff_origbufvar={'bufnr': buf, 'diffbufs': []}
+    let t:auvimdiff_diffbufvars={}
+    let dbvar=t:auvimdiff_origbufvar
+    let dbvar.changedtick=b:changedtick
+    call s:F.save(buf, dbvar)
+    call s:_f.mapgroup.map('AuVimDiff', buf)
+    let vertical=(stridx(&diffopt, 'vertical')!=-1)
+    let splitcmd=((vertical)?('v'):('')).'split'
+    let filetype=&filetype
+    diffthis
+    let i=0
+    for difftarget in difftargets
+        let ddbvar={}
+        "▶2 Open other buffer, respecting “usewin” option
+        " Uses left/right or upper/lower window if it has similar dimensions
+        if (!i && (a:usewin==-1 ? s:_f.getoption('vimdiffusewin') : a:usewin))
+                    \&& winnr('$')>1 && s:F.findwindow()
+            let prevbuf=s:_r.prevbuf()
+            let existed=s:F.open('edit', difftarget)
+        else
+            let existed=s:F.open(splitcmd, difftarget)
+        endif
+        "▲2
+        let dbuf=bufnr('%')
+        if existed
+            call s:F.save(dbuf, ddbvar)
+        else
+            setlocal bufhidden=wipe
+        endif
+        diffthis
+        if &filetype isnot# filetype
+            let ddbvar.filetype=&filetype
+            let &filetype=filetype
+        endif
+        let t:auvimdiff_diffbufvars[dbuf]=ddbvar
+        let t:auvimdiff_prevbuffers={dbuf : 0}
+        let ddbvar.bufnr=dbuf
+        let ddbvar.srcbuf=buf
+        let ddbvar.existed=existed
+        if exists('prevbuf')
+            let ddbvar.prevbuf=prevbuf
+            let t:auvimdiff_prevbuffers[dbuf]=prevbuf
+        endif
+        let dbvar.diffbufs+=[dbuf]
+        call s:_f.mapgroup.map('AuVimDiff', dbuf)
+        augroup AuVimDiff
+            execute 'autocmd BufEnter   <buffer='.dbuf.'> '.
+                        \':call s:F.diffrestore.call('.buf.', "onotherenter")'
+            execute 'autocmd BufWipeOut <buffer='.dbuf.'> '.
+                        \':call s:F.diffrestore.call('.buf.', "onotherwipe")'
+        augroup END
+        let i+=1
+    endfor
+    execute bufwinnr(buf).'wincmd w'
+    call cursor(dbvar.cursor)
     augroup AuVimDiff
-        execute 'autocmd BufWipeOut <buffer> '.
-                    \':call s:F.diffrestore('.buf.', 0)'
         execute 'autocmd BufEnter   <buffer='.buf.'> '.
-                    \':call s:F.diffrestore('.buf.', 1)'
+                    \':call s:F.diffrestore.call('.buf.', "onenter")'
+        execute 'autocmd BufWipeOut <buffer='.buf.'> '.
+                    \':call s:F.diffrestore.call('.buf.', "onwipe")'
     augroup END
 endfunction
 let s:_augroups+=['AuVimDiff']
 "▶1 exit
-function s:F.exit()
+function s:F.exit(...)
     let buf=bufnr('%')
     let cmd="\<C-\>\<C-n>"
     "▶2 AuV full was used
@@ -186,9 +252,9 @@ function s:F.exit()
                     \"endif\n"
         return cmd
     "▶2 diffsplit() was not used
-    elseif !exists('t:auvimdiff_diffbufvar') ||
+    elseif !exists('t:auvimdiff_diffbufvars') ||
                 \!exists('t:auvimdiff_origbufvar') ||
-                \(buf!=t:auvimdiff_diffbufvar.bufnr &&
+                \(!has_key(t:auvimdiff_diffbufvars, buf) &&
                 \ buf!=t:auvimdiff_origbufvar.bufnr)
         if &diff && exists('t:auvimdiff_prevbuffers')
             for dbuf in map(filter(range(1, winnr('$')),
@@ -214,51 +280,37 @@ function s:F.exit()
     endif
     "▲2
     let dbvar=t:auvimdiff_origbufvar
-    let ddbvar=t:auvimdiff_diffbufvar
     let isorig=(buf==dbvar.bufnr)
     call s:_f.mapgroup.unmap('AuVimDiff', buf)
     let cmd.=":diffoff!\n"
     "▶2 Original buffer
-    if isorig
-        if bufexists(dbvar.diffbuf)
-            call s:_f.mapgroup.unmap('AuVimDiff', dbvar.diffbuf)
-            if bufwinnr(dbvar.diffbuf)!=-1
-                if has_key(ddbvar, 'prevbuf') && bufexists(ddbvar.prevbuf)
-                    let cmd.=':'.bufwinnr(dbvar.diffbuf)."wincmd w\n".
-                                \':buffer '.ddbvar.prevbuf."\n".
-                                \"\<C-w>p"
-                endif
-                if !ddbvar.existed
-                    let cmd.=':if bufexists('.dbvar.diffbuf.') | '.
-                                \   'bwipeout '.dbvar.diffbuf.' | '.
-                                \"endif\n"
-                endif
-            else
-                let cmd.=':if bufexists('.dbvar.diffbuf.') | '.
-                            \   'bwipeout '.dbvar.diffbuf.' | '.
+    for ddbvar in filter(values(t:auvimdiff_diffbufvars),
+                \        'bufexists(v:val.bufnr)')
+        call s:_f.mapgroup.unmap('AuVimDiff', ddbvar.bufnr)
+        let bwnr=bufwinnr(ddbvar.bufnr)
+        if bwnr!=-1
+            if has_key(ddbvar, 'prevbuf') && bufexists(ddbvar.prevbuf)
+                let cmd.=':'.bwnr."wincmd w\n".
+                            \':buffer '.ddbvar.prevbuf."\n".
+                            \"\<C-w>p"
+            endif
+            if !ddbvar.existed
+                let cmd.=':if bufexists('.ddbvar.bufnr.') | '.
+                            \   'bwipeout '.ddbvar.bufnr.' | '.
                             \"endif\n"
             endif
-        endif
-        let cmd.=':call <SNR>'.s:_sid."_Eval(".
-                    \               "'s:F.diffrestore(".buf.", 0)')\n"
-    "▶2 Opened buffer
-    else
-        if has_key(ddbvar, 'prevbuf') && bufexists(ddbvar.prevbuf)
-            let cmd.=':buffer '.ddbvar.prevbuf."\n"
-        endif
-        if bufexists(ddbvar.srcbuf)
-            call s:_f.mapgroup.unmap('AuVimDiff', ddbvar.srcbuf)
-            if bufwinnr(ddbvar.srcbuf)!=-1
-                let cmd.=':'.bufwinnr(ddbvar.srcbuf)."wincmd w\n"
-            endif
-        endif
-        if !ddbvar.existed
-            let cmd.=':if bufexists('.buf.') | '.
-                        \   'bwipeout '.buf.' | '.
+        else
+            let cmd.=':if bufexists('.ddbvar.bufnr.') | '.
+                        \   'bwipeout '.ddbvar.bufnr.' | '.
                         \"endif\n"
         endif
-        let cmd.=':call <SNR>'.s:_sid."_Eval(".
-                    \           "'s:F.diffrestore(".ddbvar.srcbuf.", 0)')\n"
+    endfor
+    "▶2 Opened buffer
+    if bufexists(dbvar.bufnr)
+        call s:_f.mapgroup.unmap('AuVimDiff', dbvar.bufnr)
+        if bufwinnr(dbvar.bufnr)!=-1
+            let cmd.=':'.bufwinnr(ddbvar.srcbuf)."wincmd w\n"
+        endif
     endif
     "▲2
     return cmd
@@ -285,41 +337,12 @@ function s:F.openfile(usewin, hasbuf, repo, revs, file)
         let t:auvimdiff_prevbuffers[bufnr('%')]=prevbuf
         let fbuf=bufnr('%')
     endif
-    call s:_f.mapgroup.map('AuVimDiff', fbuf)
     "▶2 Open subsequent buffers
-    let i=0
-    for rev in a:revs[1:]
-        if rev is 0
-            let f=a:file
-        else
-            let f=s:_r.fname('file', a:repo, rev, a:file)
-        endif
-        if !i && a:hasbuf && len(a:revs)==2
-            let existed=bufexists(f)
-            call s:F.diffsplit(f, a:usewin)
-            if !existed
-                setlocal bufhidden=wipe
-            endif
-        else
-            if !i && a:usewin && winnr('$')>1
-                diffthis
-                if s:F.findwindow()
-                    let prevbuf=s:_r.prevbuf()
-                    execute 'silent edit' fnameescape(f)
-                    diffthis
-                    let t:auvimdiff_prevbuffers[bufnr('%')]=prevbuf
-                else
-                    execute 'silent diffsplit' fnameescape(f)
-                    let t:auvimdiff_prevbuffers[bufnr('%')]=0
-                endif
-            else
-                execute 'silent diffsplit' fnameescape(f)
-                let t:auvimdiff_prevbuffers[bufnr('%')]=0
-            endif
-            call s:_f.mapgroup.map('AuVimDiff', bufnr('%'))
-        endif
-        let i+=1
-    endfor
+    let difftargets=map(a:revs[1:],
+                \'((v:val is 0)?'.
+                \   '(a:file):'.
+                \   '(["file", a:repo, v:val, a:file]))')
+    call s:F.diffsplit(difftargets, a:usewin)
     "▲2
     return fbuf
 endfunction
@@ -479,10 +502,8 @@ function s:cmd.function(opts, ...)
                     let args+=[file]
                 endif
             endif
-        elseif empty(file)
-            let args+=[[], 0]
         else
-            let args+=[file, 0]
+            let args+=[[], 0]
         endif
         return call(s:F.fullvimdiff, args, {})
     else

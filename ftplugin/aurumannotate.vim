@@ -12,7 +12,7 @@ endif
 setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
-            \                '@%aurum/vimdiff': '1.0',
+            \                '@%aurum/vimdiff': '1.1',
             \               '@%aurum/annotate': '1.0',
             \               '@%aurum/cmdutils': '4.0',
             \               '@%aurum/maputils': '0.0',
@@ -97,11 +97,7 @@ function s:F.runmap(action, ...)
                     setlocal bufhidden=wipe
                     unlet existed
                 endif
-                call s:_r.vimdiff.split(s:_r.fname('file',bvar.repo,rev2,file),
-                            \           -1)
-                if empty(rev1)
-                    wincmd p
-                endif
+                call s:_r.vimdiff.split([['file', bvar.repo, rev2, file]], -1)
             endif
         else
             if empty(rev1)
