@@ -530,7 +530,6 @@ endfunction
 function s:git.grep(repo, pattern, files, revisions, ic, wdfiles)
     let args=['-e', a:pattern, '--']+a:files
     let kwargs={'full-name': 1, 'extended-regexp': 1, 'n': 1, 'z': 1}
-    let gitargs=[a:repo, 'grep', args, kwargs, 1]
     let r=[]
     if !empty(a:revisions)
         let revs=[]
@@ -544,15 +543,27 @@ function s:git.grep(repo, pattern, files, revisions, ic, wdfiles)
             unlet s
         endfor
         call extend(args, revs, 2)
-        for [revfile, lnum, text] in s:F.parsegrep(call(s:F.git, gitargs, {}))
+    endif
+    let [lines, exit_code]=s:F.git(a:repo, 'grep', args, kwargs, 1, 0)
+    if exit_code
+        " Grep failed because it has found nothing
+        if lines ==# ['']
+            return []
+        " Grep failed for another reason
+        else
+            call s:_f.throw('grepf', a:repo.path, join(lines, "\n"))
+        endif
+    endif
+    if empty(a:revisions)
+        for [file, lnum, text] in s:F.parsegrep(lines)
+            let r+=[{'filename': file, 'lnum': lnum, 'text': text}]
+        endfor
+    else
+        for [revfile, lnum, text] in s:F.parsegrep(lines)
             let cidx=stridx(revfile, ':')
             let rev=revfile[:(cidx-1)]
             let file=revfile[(cidx+1):]
             let r+=[{'filename': [rev, file], 'lnum': lnum, 'text': text}]
-        endfor
-    else
-        for [file, lnum, text] in s:F.parsegrep(call(s:F.git, gitargs, {}))
-            let r+=[{'filename': file, 'lnum': lnum, 'text': text}]
         endfor
     endif
     return r
@@ -633,9 +644,9 @@ function s:git.getrepoprop(repo, prop)
                     \        'branchf')[:-2]
         return get(filter(branches, 'v:val[0] is# "*"'), 0, '')[2:]
     elseif a:prop is# 'url'
-        let [r, exit_code]=get(s:F.git(a:repo, 'config',
-                    \                  ['remote.origin.pushurl'], {}, 0),
-                    \          0, 0)
+        let [l, exit_code]=s:F.git(a:repo, 'config',
+                    \              ['remote.origin.pushurl'], {}, 0, 0)
+        let r=get(l, 0, 0)
         if exit_code || r is 0
             let r=get(s:F.git(a:repo, 'config', ['remote.origin.url'], {}, 0),
                         \0, 0)
@@ -657,7 +668,10 @@ function s:git.getrepoprop(repo, prop)
 endfunction
 "▶1 pushpull :: cmd, repo, dryrun, force[, URL[, rev]] → + ?
 function s:F.pushpull(cmd, repo, dryrun, force, ...)
-    let kwargs={'all': 1}
+    let kwargs1={}
+    let kwargs2={'all': 1}
+    let args=[]
+    let cmd=a:cmd
     let args=[]
     if a:0
         if a:1 isnot 0
@@ -670,16 +684,24 @@ function s:F.pushpull(cmd, repo, dryrun, force, ...)
             let args+=[a:2]
         endif
     endif
-    if (a:cmd is# 'fetch' && !empty(args)) || len(args)>2
-        unlet kwargs.all
+    if (a:cmd is# 'pull' && !empty(args)) || len(args)>2
+        unlet kwargs2.all
     endif
     if a:force
-        let kwargs.force=1
+        let kwargs2.force=1
     endif
     if a:dryrun
-        let kwargs['dry-run']=1
+        if cmd is# 'pull'
+            let cmd='fetch'
+        endif
+        let kwargs2['dry-run']=1
     endif
-    return s:F.git(a:repo, a:cmd, args, kwargs, 0, 'ppf', a:cmd)
+    if a:cmd is# 'pull'
+        let kwargs1['ff-only']=1
+    endif
+    let args=s:_r.utils.kwargstolst(kwargs1)+s:_r.utils.kwargstolst(kwargs2)
+                \+args
+    return s:F.gitm(a:repo, a:cmd, args, {}, 0, 'ppf', a:cmd)
 endfunction
 "▶1 git.push :: repo, dryrun, force[, URL[, rev]]
 function s:git.push(...)
@@ -687,7 +709,7 @@ function s:git.push(...)
 endfunction
 "▶1 git.pull :: repo, dryrun, force[, URL[, rev]]
 function s:git.pull(...)
-    return call(s:F.pushpull, ['fetch']+a:000, {})
+    return call(s:F.pushpull, ['pull']+a:000, {})
 endfunction
 "▶1 git.repo :: path → repo
 function s:git.repo(path)

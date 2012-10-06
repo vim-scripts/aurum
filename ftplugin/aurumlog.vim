@@ -256,7 +256,7 @@ function s:F.callbacks.filehistory(file, bvar, hex)
                 \ 'crrestrict': 'files'})
     call s:_r.run('silent edit', 'log', a:bvar.repo, opts)
 endfunction
-"▶1 vimdiff
+"▶2 vimdiff
 function s:F.callbacks.vimdiff(file, bvar, hex, ...)
     let cs=a:bvar.repo.changesets[a:hex]
     call s:F.cwin(a:bvar)

@@ -1,6 +1,6 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.2', {'@%aurum/cmdutils': '4.0',
             \                    '@%aurum/edit': '1.0',
             \                          '@aurum': '1.0',
             \                       '@/options': '0.0',
@@ -19,6 +19,9 @@ call map(copy(s:statchars), 'extend(s:showchars, {v:val            : v:key})')
 call map(copy(s:allshow),   'extend(s:showchars, {toupper(v:val[0]): v:val})')
 "▶1 parseshow :: [Either type tabbr] → [type]
 function s:F.parseshow(show)
+    if index(a:show, 'all')!=-1
+        return copy(s:allshow)
+    endif
     let r=[]
     for type in a:show
         if type[0]=~#'^\l'
@@ -39,15 +42,9 @@ function s:F.setup(read, repo, opts)
     let requiresclean=0
     let requiresignored=0
     if has_key(opts, 'show')
-        if index(opts.show, 'all')==-1
-            let show=s:F.parseshow(opts.show)
-            let requiresclean=(index(show, 'clean')!=-1)
-            let requiresignored=(index(show, 'ignored')!=-1)
-        else
-            let show=s:allshow
-            let requiresclean=1
-            let requiresignored=1
-        endif
+        let show=s:F.parseshow(opts.show)
+        let requiresclean=(index(show, 'clean')!=-1)
+        let requiresignored=(index(show, 'ignored')!=-1)
     else
         let show=s:defshow
     endif

@@ -1,9 +1,9 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@/resources': '0.0',
+execute frawor#Setup('1.1', {'@/resources': '0.0',
             \                  '@/options': '0.0',
             \                     '@aurum': '1.0',
-            \             '@%aurum/status': '1.0',
+            \             '@%aurum/status': '1.2',
             \           '@%aurum/cmdutils': '4.0',
             \            '@%aurum/bufvars': '0.0',
             \               '@%aurum/edit': '1.0',
@@ -91,7 +91,7 @@ let s:statmsgs.unknown=s:statmsgs.added
 let s:statmsgs.deleted=s:statmsgs.removed
 " TODO Investigate why closing commit buffer on windows consumes next character
 " XXX Do not change names of options used here, see :AuRecord
-function s:F.commit(repo, opts, files, status, types)
+function s:F.commit(repo, opts, files, status, types, ...)
     let user=''
     let date=''
     let message=''
@@ -101,6 +101,9 @@ function s:F.commit(repo, opts, files, status, types)
                 \'map(copy(v:val),"extend(revstatus,{v:val : ''".v:key."''})")')
     if !empty(a:files)
         call filter(revstatus, 'index(a:files, v:key)!=-1')
+    endif
+    if empty(revstatus)
+        call s:_f.throw('nocom')
     endif
     for key in filter(['user', 'date', 'message'], 'has_key(a:opts, v:val)')
         let l:{key}=a:opts[key]
@@ -115,7 +118,10 @@ function s:F.commit(repo, opts, files, status, types)
     endif
     "▲2
     if empty(message)
-        call s:_r.run('silent new', 'commit', a:repo, user, date, cb, a:files)
+        call s:_r.run(get(a:000, 0, 'silent new'),
+                    \ 'commit', a:repo, user, date, cb, a:files)
+        let bvar=s:_r.bufvars[bufnr('%')]
+        let bvar.revstatus=revstatus
         if exists('g:AuPreviousRepoPath') &&
                     \   g:AuPreviousRepoPath is# a:repo.path &&
                     \exists('g:AuPreviousTip') &&
@@ -159,7 +165,12 @@ function s:F.finish(bvar)
     call a:bvar.repo.functions.commit(a:bvar.repo, message, a:bvar.files,
                 \                     a:bvar.user, a:bvar.date,
                 \                     a:bvar.closebranch)
+    call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
     let a:bvar.did_message=1
+    if has_key(a:bvar, 'sbvar')
+        call a:bvar.bwfunc(a:bvar)
+        let a:bvar.bwfunc=a:bvar.sbvar.bwfunc
+    endif
     call feedkeys("\<C-\>\<C-n>:bwipeout!\n")
 endfunction
 "▶1 commfunc

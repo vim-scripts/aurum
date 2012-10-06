@@ -8,9 +8,71 @@ endif
 setlocal noswapfile
 setlocal nomodeline
 execute frawor#Setup('0.0', {'@/mappings': '0.0',
+            \                      '@/os': '0.0',
             \           '@%aurum/bufvars': '0.0',
-            \            '@%aurum/commit': '1.0',})
-"▶1 com.runcommap
+            \          '@%aurum/maputils': '0.0',
+            \           '@%aurum/vimdiff': '1.1',
+            \            '@%aurum/commit': '1.0',
+            \              '@%aurum/edit': '1.0',})
+"▶1 listfiles
+function s:F.listfiles(bvar)
+    if has_key(a:bvar, 'revstatus')
+        return keys(a:bvar.revstatus)
+    elseif !empty(a:bvar.files)
+        return a:bvar.files
+    else
+        let status=a:bvar.repo.functions.status(a:bvar.repo, 0, 0, a:bvar.files)
+        let status=filter(copy(status), 'index(s:defstats, v:key)!=-1')
+        let revstatus={}
+        call map(copy(a:status), 'map(copy(v:val),'.
+                    \              '"extend(revstatus,{v:val:''".v:key."''})")')
+        let a:bvar.revstatus=revstatus
+        return keys(a:bvar.revstatus)
+    endif
+endfunction
+"▶1 getfile
+let s:defstats=['added', 'removed', 'modified']
+function s:F.getfile(bvar)
+    let files=s:F.listfiles(a:bvar)
+    let file=matchstr(getline('.'), '\v(^\#\ \S+\ )@<=.*$')
+    if !empty(file) && index(files, file)!=-1
+        return file
+    endif
+    let file=expand('<cfile>')
+    if index(files, file)!=-1
+        return file
+    endif
+    return 0
+endfunction
+"▶1 vimdiffcb
+function s:F.vimdiffcb(file, bvar, hex)
+    execute 'silent tabnew'
+                \ fnameescape(s:_r.os.path.join(a:bvar.repo.path, a:file))
+    return s:_r.vimdiff.split([['file', a:bvar.repo, a:hex, a:file]], 0)
+endfunction
+"▶1 vimdiffrecordcb
+function s:F.vimdiffrecordcb(file, bvar, hex)
+    let [lwnr, rwnr, swnr]=a:bvar.sbvar.getwnrs()
+
+    execute lwnr.'wincmd w'
+    let file=s:_r.os.path.join(a:bvar.repo.path, a:file)
+    let existed=bufexists(file)
+    execute 'silent edit' fnameescape(file)
+    if !existed
+        setlocal bufhidden=wipe
+    endif
+    diffthis
+
+    execute rwnr.'wincmd w'
+    let existed=s:_r.run('silent edit', 'file', a:bvar.repo, a:hex, a:file)
+    if !existed
+        setlocal bufhidden=wipe
+    endif
+    diffthis
+
+    execute lwnr.'wincmd w'
+endfunction
+"▶1 runcommap
 function s:F.runcommap(count, action)
     let buf=bufnr('%')
     let bvar=s:_r.bufvars[buf]
@@ -50,9 +112,22 @@ function s:F.runcommap(count, action)
                     \                                      bvar.recallcs.hex,
                     \                                      cnt)
         call append(0, split(bvar.recallcs.description, "\n", 1))
-    endif
-    if has_key(bvar, 'sbvar')
-        call bvar.sbvar.recunload(bvar.sbvar)
+    elseif a:action is# 'vimdiff'
+        let file=s:F.getfile(bvar)
+        let hex=bvar.repo.functions.getworkhex(bvar.repo)
+        let cbargs=[((has_key(bvar, 'sbvar'))?
+                    \   (s:F.vimdiffrecordcb):
+                    \   (s:F.vimdiffcb)), bvar, hex]
+        if file is 0
+            let pvargs=[s:_r.maputils.readfilewrapper, bvar.repo, hex]
+            return s:_r.maputils.promptuser(s:F.listfiles(bvar), cbargs, pvargs)
+        else
+            return call(cbargs[0], [file]+cbargs[1:], {})
+        endif
+    elseif a:action is# 'fullvimdiff'
+        return s:_r.vimdiff.full(bvar.repo,
+                    \            [0, bvar.repo.functions.getworkhex(bvar.repo)],
+                    \            1, s:F.listfiles(bvar), 0)
     endif
 endfunction
 "▶1 AuCommitMessage mapping group
@@ -63,10 +138,12 @@ function s:F.mapwrapper(...)
                 \           "{})\n"
 endfunction
 call s:_f.mapgroup.add('AuCommitMessage', {
-            \ 'Commit': {'lhs': 'i', 'rhs': ['commit']    },
-            \   'Prev': {'lhs': 'J', 'rhs': ['recallprev']},
-            \   'Next': {'lhs': 'K', 'rhs': ['recallnext']},
-            \   'Exit': {'lhs': 'X', 'rhs': ['discard']   },
+            \ 'Commit': {'lhs':  'i', 'rhs': ['commit'     ]},
+            \   'Prev': {'lhs':  'J', 'rhs': ['recallprev' ]},
+            \   'Next': {'lhs':  'K', 'rhs': ['recallnext' ]},
+            \  'Vdiff': {'lhs':  'D', 'rhs': ['vimdiff'    ]},
+            \ 'FVdiff': {'lhs': 'gD', 'rhs': ['fullvimdiff']},
+            \   'Exit': {'lhs':  'X', 'rhs': ['discard'    ]},
         \}, {'mode': 'in', 'silent': 1, 'leader': '<LocalLeader>',
         \    'func': s:F.mapwrapper})
 "▶1

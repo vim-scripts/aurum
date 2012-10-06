@@ -2,7 +2,7 @@
 scriptencoding utf-8
 execute frawor#Setup('1.0', {'@%aurum/cmdutils': '4.0',
             \                 '@%aurum/bufvars': '0.0',
-            \                    '@%aurum/edit': '1.0',
+            \                    '@%aurum/edit': '1.4',
             \                          '@aurum': '1.0',
             \                     '@/resources': '0.0',
             \                         '@/table': '0.1',})
@@ -171,10 +171,26 @@ function s:cmd.function(opts)
     call s:F.setannbuf(s:_r.bufvars[bufnr('%')], annbuf)
 endfunction
 let s:_augroups+=['AuAnnotateBW']
+"▶1 plstrgen
+function s:F.plstrgen(bvar)
+    let cs=a:bvar.repo.functions.getcs(a:bvar.repo, a:bvar.rev)
+    let r=[cs.rev]
+    if !empty(get(cs, 'tags'))
+        let r+=['['.join(cs.tags).']']
+    endif
+    if !empty(get(cs, 'bookmarks'))
+        let r+=['['.join(cs.bookmarks).']']
+    endif
+    if cs.branch isnot# 'default'
+        let r+=['('.(cs.branch).')']
+    endif
+    return join(r)
+endfunction
 "▶1 aurum://annotate
 call s:_f.newcommand({'function': s:F.setup,
             \        'arguments': 2,
-            \         'filetype': 'aurumannotate',})
+            \         'filetype': 'aurumannotate',
+            \         'plstrgen': s:F.plstrgen,})
 "▶1 Post resource
 call s:_f.postresource('annotate', {'setannbuf': s:F.setannbuf,
             \                        'foldopen': s:F.foldopen,})

@@ -57,8 +57,15 @@ won’t be able to use its python API).
 
 Plugin requires some additional plugins:
   - frawor (https://bitbucket.org/ZyX_I/frawor)
-  - Command-T, Ctrlp, FuzzyFinder, unite, ku or tlib for |:AuFile| prompt 
-    option and a number of OpenAny/AnnotateAny mappings (optional).
+  - (optional) ansi_esc_echo (https://bitbucket.org/ZyX_I/ansi_esc_echo)
+  - (optional) one of
+      - Command-T (vimscript #3025)
+      - ctrlp (vimscript #3736)
+      - FuzzyFinder (vimscript #1984)
+      - unite (vimscript #3396)
+      - ku (vimscript #2337)
+      - tlib (vimscript #1863)
+    for |:AuFile| prompt option and a number of OpenAny/AnnotateAny mappings.
 (with their dependencies).
 
 Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
@@ -108,15 +115,16 @@ AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
     tracked files will be commited (equivalent to running “!hg commit”).
     Possible options:
     Option  Description ~
-    type    Either one of modified/added/removed/deleted/unknown or string 
+    type    Either one of modified/added/removed/deleted/unknown, string 
             containing capitalized first letters of mentined status names 
-            (additionally “?” for unknown and “!” for deleted). May be 
-            specified more then once. Determines what files should be matched 
-            against given globs: “AuCommit **” is equivalent to “AuCommit 
-            all”, but “AuCommit type MARDU **” will also add untracked and 
-            remove missing files (like “hg commit -A”). Does not affect 
-            “:AuCommit all” and “:AuCommit”, latter will always add current 
-            file if it was untracked.
+            (additionally “?” for unknown and “!” for deleted), or “all” that 
+            is equivalent to specifying all statuses. May be specified more 
+            then once. Determines what files should be matched against given 
+            globs: “AuCommit **” is equivalent to “AuCommit all”, but 
+            “AuCommit type MARDU **” will also add untracked and remove 
+            missing files (like “hg commit -A”). Does not affect “:AuCommit 
+            all” and “:AuCommit”, latter will always add current file if it 
+            was untracked.
     message Commit message.
     user    Committer.
     date    Commit date in form yy-mm-dd_HH:MM:SS. Both date and time parts 
@@ -623,8 +631,12 @@ aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
     type you can’t use this with |:read|.
     Local mappings (mgid=AuCommitMessage, default leader: "<LocalLeader>"):
                                                  *g:frawormap_AuCommitMessage*
-                                          *g:frawormap_AuCommitMessage_Commit*
-                                              *aurum-m-AuCommitMessage_Commit*
+       *g:frawormap_AuCommitMessage_Commit* *g:frawormap_AuCommitMessage_Prev*
+       *g:frawormap_AuCommitMessage_Vdiff*  *g:frawormap_AuCommitMessage_Next*
+       *g:frawormap_AuCommitMessage_FVdiff*
+           *aurum-m-AuCommitMessage_Commit*     *aurum-m-AuCommitMessage_Prev*
+           *aurum-m-AuCommitMessage_Vdiff*      *aurum-m-AuCommitMessage_Next*
+           *aurum-m-AuCommitMessage_FVdiff*
     Mapname  LHS  Description ~
     Commit    i   Finish writing commit message and commit changes
     Prev      J   Recalls commit message from working directory revision or 
@@ -642,6 +654,10 @@ aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
                         message will be inserted before the first line of the 
                         buffer.
     Next      K   Like above, but works for descendants.
+    Vdiff     D   Open a vimdiff split with the selected file (uses file under 
+                  cursor or prompts user).
+    FVdiff   gD   Open a number of vimdiff splits with all files to be 
+                  committed.
 
     Note These mappings are defined for aurumcommit filetype.
 
@@ -940,10 +956,10 @@ User       gu       l      Shows revisions committed by current user
 Date       gM       l      Shows revisions committed in the current month
 Branch     gb       l      Shows revisions that have the same branch
 Rev        gr       l      Shows revisions that are descendants of the current
-FVdiff     gD   a D lS  g  Shows full vimdiff between current revision and WD
+FVdiff     gD   acD lS  g  Shows full vimdiff between current revision and WD
                            (status and diff: between two current revisions)
 RFVdiff    gC   a   ls     Shows changes done in current rev as full vimdiff
-Vdiff       D   a Df S  g  Shows vimdiff between cur. rev. and WD for file
+Vdiff       D   acDf S  g  Shows vimdiff between cur. rev. and WD for file
                            (status and diff: between two current revisions)
 RVdiff      C   a  f s     Shows changes to file in cur. rev. as a vimdiff
 Fdiff      gd   a   lS  g  Shows diff between current revision and working dir
@@ -1932,6 +1948,7 @@ Python driver was not tested under windows (wine) at all.
     1.1: Added “requiresbvar” _f.newcommand option.
     1.2: Added “mgroup” _f.newcommand option and mrun resource.
     1.3: Added prevbuf function.
+    1.4: Added “plstrgen” _f.newcommand option.
 @%aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
@@ -1951,8 +1968,11 @@ Python driver was not tested under windows (wine) at all.
 @%aurum/status:
     1.0: Renamed |:AuStatus| “rev1” and “rev2” options to “rev” and “wdrev” 
          respectively. Same for |aurum://status| “rev1” and “rev2” options.
+    1.1: Added |:AuStatus| changes.
+    1.2: Made _r.status.parseshow handle “all” “status”.
 @%aurum/commit:
     1.0: Added fifth argument to _r.commit.commit().
+    1.1: Added sixth optional argument to _r.commit.commit()
 @%aurum/annotate:
     1.0: Removed one argument to _r.annotate.setannbuf().
 @%aurum/cmdutils:

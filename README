@@ -32,8 +32,15 @@ won’t be able to use its python API).
 
 Plugin requires some additional plugins:
   • frawor (https://bitbucket.org/ZyX_I/frawor)
-  • Command-T, Ctrlp, FuzzyFinder, unite, ku or tlib for :AuFile [3] prompt 
-    option and a number of OpenAny/AnnotateAny mappings (optional).
+  • (optional) ansi_esc_echo (https://bitbucket.org/ZyX_I/ansi_esc_echo)
+  • (optional) one of
+      • Command-T (vimscript #3025)
+      • ctrlp (vimscript #3736)
+      • FuzzyFinder (vimscript #1984)
+      • unite (vimscript #3396)
+      • ku (vimscript #2337)
+      • tlib (vimscript #1863)
+    for :AuFile [3] prompt option and a number of OpenAny/AnnotateAny mappings.
 (with their dependencies).
 
 Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
@@ -42,17 +49,17 @@ Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It
 Project page: https://bitbucket.org/ZyX_I/aurum
 Documentation: http://vimpluginloader.sourceforge.net/doc/aurum.txt.html
 
-[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line407-0 (:AuRecord)
-[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line686-0 (aurum://file)
-[3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line163-0 (:AuFile)
-[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line450-0 (:AuVimDiff)
-[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line262-0 (:AuLog)
-[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line411-0 (:AuStatus)
-[7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line104-0 (:AuCommit)
-[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1069-0 (g:aurum_remembermsg)
-[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line205-0 (:AuHyperlink)
-[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line506-0 (aurum#changeset())
-[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line502-0 (aurum#repository())
-[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line510-0 (aurum#status())
-[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line848-0 (aurum-mappings)
+[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line415-0 (:AuRecord)
+[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line702-0 (aurum://file)
+[3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line171-0 (:AuFile)
+[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line458-0 (:AuVimDiff)
+[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line270-0 (:AuLog)
+[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line419-0 (:AuStatus)
+[7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line111-0 (:AuCommit)
+[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1085-0 (g:aurum_remembermsg)
+[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line213-0 (:AuHyperlink)
+[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line514-0 (aurum#changeset())
+[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line510-0 (aurum#repository())
+[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line518-0 (aurum#status())
+[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line864-0 (aurum-mappings)
 

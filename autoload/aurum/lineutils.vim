@@ -20,7 +20,7 @@ endfunction
 function s:F.parsecmdarg()
     let r={}
     for arg in filter(split(v:cmdarg),
-                \     'v:val =~# ''\V\^++\v%(%(enc|ff)\=|%(no)bin)''')
+                \     'v:val =~# ''\V\^++\v%(%(enc|ff)\=|%(no)?bin)''')
         let idx=stridx(arg, '=')
         let r[arg[2]]=arg[(idx+1):]
     endfor

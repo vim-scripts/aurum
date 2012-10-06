@@ -5,7 +5,7 @@ execute frawor#Setup('0.0', {'@/options': '0.0',
             \               '@/mappings': '0.0',
             \                   '@aurum': '1.0',
             \             '@aurum/cache': '2.1',
-            \           '@%aurum/commit': '1.0',
+            \           '@%aurum/commit': '1.1',
             \         '@%aurum/cmdutils': '4.0',
             \        '@%aurum/lineutils': '0.0',
             \             '@%aurum/edit': '1.0',
@@ -176,6 +176,11 @@ endfunction
 "▶1 unload
 function s:F.unload(bvar)
     let sbvar=get(a:bvar, 'sbvar', a:bvar)
+    let sbuf=get(a:bvar, 'sbuf', -1)
+    if sbuf isnot 0 && bufexists(sbuf)
+        unlet sbvar.bwfunc
+        execute 'bwipeout!' sbuf
+    endif
     for [o, val] in items(sbvar.savedopts)
         execute 'let &g:'.o.'=val'
     endfor
@@ -279,6 +284,19 @@ function s:F.edit(bvar, fname, ro)
     if getwinvar(0, 'aurecid') is# 'AuRecordLeft'
         call s:_f.mapgroup.map('AuRecordLeft', bufnr('%'))
     endif
+endfunction
+"▶1 srestore
+function s:F.srestore(bvar)
+    let sbuf=get(a:bvar, 'sbuf', -1)
+    if !bufexists(sbuf)
+        return s:F.unload(get(a:bvar, sbuf, 0))
+    endif
+    let sbvar=a:bvar.sbvar
+    execute 'silent botright sbuffer' sbuf
+    execute 'resize' sbvar.swheight
+    let w:aurecid='AuRecordStatus'
+    setlocal bufhidden=wipe
+    return 1
 endfunction
 "▶1 runstatmap
 let s:statchars='-^+*'
@@ -487,15 +505,23 @@ function s:F.runstatmap(action, ...)
             call s:_f.warn('recnof')
             return
         endif
-        aboveleft let r=s:_r.commit.commit(bvar.repo, bvar.recopts, files,
-                    \                      bvar.status, keys(s:ntypes))
+        setlocal bufhidden=hide
+        try
+            let r=s:_r.commit.commit(bvar.repo, bvar.recopts, files,
+                        \            bvar.status, keys(s:ntypes), 'silent edit')
+        finally
+            if bufwinnr(buf)!=-1
+                call setbufvar(buf, '&bufhidden', 'wipe')
+            endif
+        endtry
         if r
             call s:F.unload(bvar)
         else
             let w:aurecid='AuRecordCommitMessage'
             let cbvar=s:_r.bufvars[bufnr('%')]
             let cbvar.sbvar=bvar
-            let cbvar.bwfunc=s:F.unload
+            let cbvar.sbuf=buf
+            let cbvar.bwfunc=s:F.srestore
         endif
         return
     endif

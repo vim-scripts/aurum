@@ -105,19 +105,22 @@ class VIMEncode(json.JSONEncoder):
         return '"'+str(obj).replace('\\', '\\\\').replace('"', '\\"')+'"'
 
 class PrintUI(ui.ui):
+    def __init__(self, *args, **kwargs):
+        super(PrintUI, self).__init__(*args, **kwargs)
+        self._colinfo=None
+        self.fout=self
+
     # ui.ui for some reason does not support outputting unicode
     def write(self, *args, **kwargs):
         if self._buffers:
             self._buffers[-1].extend([str(a) for a in args])
         else:
-            colinfo=None
             for a in args:
-                colinfo=echom(a, colinfo)
+                self._colinfo=echom(a, self._colinfo)
 
     def write_err(self, *args, **kwargs):
-        colinfo=None
         for a in args:
-            colinfo=echoe(a, colinfo)
+            self._colinfo=echoe(a, self._colinfo)
 
 class CaptureUI(PrintUI):
     def __init__(self):
@@ -136,9 +139,9 @@ class CaptureUI(PrintUI):
         return r
 
 class CaptureToBuf(PrintUI):
-    def __init__(self, buf):
-        self._vimbuffer=buf
-        super(CaptureToBuf, self).__init__()
+    def __init__(self, *args, **kwargs):
+        self._vimbuffer=vim.current.buffer
+        super(CaptureToBuf, self).__init__(*args, **kwargs)
 
     def write(self, *args, **kwargs):
         target=self._buffers[-1] if self._buffers else self._vimbuffer
@@ -331,7 +334,7 @@ def diff(*args, **kwargs):
 
 @outermethod
 def diffToBuffer(*args, **kwargs):
-    ui=CaptureToBuf(vim.current.buffer)
+    ui=CaptureToBuf()
     dodiff(ui, *args, **kwargs)
     if len(vim.current.buffer)>1 and vim.current.buffer[-1] == '':
         vim.current.buffer[-1:]=[]

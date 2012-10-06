@@ -122,7 +122,8 @@ let s:cmds={
             \'Commit':    { 'fwc': '{  repo '.s:nogetrepoarg.
             \                      ' *?type      (either (in [modified added '.
             \                                                'removed deleted '.
-            \                                                'unknown] ~start,'.
+            \                                                'unknown all] '.
+            \                                               '~start,'.
             \                                            'match /\v^[MARDU?!]+$/))'.
             \                      '  ?message   type ""'.
             \                      '  ?user      type ""'.

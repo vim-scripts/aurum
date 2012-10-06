@@ -2,33 +2,33 @@
 This plugin provides a vim <--> VCS (currently mercurial, git and subversion) 
 integration for your projects. Features:
 
-  - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line405-0)).
+  - Partially committing changes ([:AuRecord](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line415-0)).
 
-  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line684-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line161-0)).
+  - Viewing file state at particular revision ([aurum://file](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line702-0), [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line171-0)).
 
   - Viewing uncommited changes in a vimdiff, as well as changes between 
-    specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line448-0)). It is also possible to open multiple 
+    specific revisions ([:AuVimDiff](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line458-0)). It is also possible to open multiple 
     tabs with all changes to all files viewed as side-by-side diffs.
 
-  - Viewing revisions log ([:AuLog](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line260-0)). Output is highly customizable.
+  - Viewing revisions log ([:AuLog](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line270-0)). Output is highly customizable.
 
-  - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line409-0)).
+  - Viewing working directory status ([:AuStatus](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line419-0)).
 
-  - Commiting changes ([:AuCommit](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line102-0)), commit messages are remembered in case of 
-    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1067-0)).
+  - Commiting changes ([:AuCommit](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line111-0)), commit messages are remembered in case of 
+    rollback ([g:aurum_remembermsg](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1085-0)).
 
   - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
-    attached: useful for sharing) ([:AuHyperlink](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line203-0)). For mercurial it also 
+    attached: useful for sharing) ([:AuHyperlink](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line213-0)). For mercurial it also 
     supports git and subversion revisions (in case you are using hg-git and 
     hgsubversion respectively).
 
-  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line504-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line500-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line508-0) functions 
+  - [aurum#changeset()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line514-0), [aurum#repository()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line510-0) and [aurum#status()](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line518-0) functions 
     that are to be used from modeline.
 
   - Frontends for various other VCS commands.
 
-Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line846-0)), 
+Most commands can be reached with a set of mappings (see [aurum-mappings](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line864-0)), 
 all mappings are customizable.
 
 
@@ -43,6 +43,24 @@ won’t be able to use its python API).
 Plugin requires some additional plugins:
 
   - [frawor](https://bitbucket.org/ZyX_I/frawor)
+
+  - (optional) [ansi_esc_echo](https://bitbucket.org/ZyX_I/ansi_esc_echo)
+
+  - (optional) one of
+
+      - Command-T (vimscript #3025)
+
+      - ctrlp (vimscript #3736)
+
+      - FuzzyFinder (vimscript #1984)
+
+      - unite (vimscript #3396)
+
+      - ku (vimscript #2337)
+
+      - tlib (vimscript #1863)
+
+    for [:AuFile](http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line171-0) prompt option and a number of OpenAny/AnnotateAny mappings.
 
 (with their dependencies).
 

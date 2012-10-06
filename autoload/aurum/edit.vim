@@ -1,6 +1,7 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('1.3', {'@/resources': '0.0',
+execute frawor#Setup('1.4', {'@/resources': '0.0',
+            \                       '@/os': '0.0',
             \               '@%aurum/repo': '5.0',
             \          '@%aurum/lineutils': '0.0',
             \            '@%aurum/bufvars': '0.0',
@@ -287,6 +288,11 @@ function s:F.runcmd(cdescr, amatch, args)
                         \                 | endif
         augroup END
     endif
+    if exists('g:Powerline_loaded')
+        if has_key(a:cdescr, 'plstrgen')
+            let bvar.ploptions=a:cdescr.plstrgen(bvar)
+        endif
+    endif
     file
 endfunction
 let s:_augroups+=['AurumNoInsert']
@@ -317,6 +323,7 @@ function s:cmd.function(rw)
     " XXX On windows all forward slashes are transformed to backward in @%,
     "     all backward are transformed to forward in <amatch>
     let buf=expand('<abuf>')
+    " FIXME expand("<amatch>") truncates long filenames
     let amatch=expand('<amatch>')
     let tail=amatch[len('aurum://'):]
     let command=tolower(matchstr(tail, '\v^\w+'))
@@ -476,13 +483,15 @@ function s:F.newcommand(plugdict, fdict, cdescr)
         let cdescr.mgroup=a:cdescr.mgroup
         let cdescr.mmap=a:plugdict.g._f.mapgroup.map
     endif
-    "▶2 Function keys: `write'
-    if has_key(a:cdescr, 'write')
-        if !exists('*a:cdescr.write')
-            call s:_f.throw('nfun', cname, a:plugdict.id, 'write')
+    "▶2 Function keys: “write”, “plstrgen”
+    for key in ['write', 'plstrgen']
+        if has_key(a:cdescr, key)
+            if !exists('*a:cdescr.'.key)
+                call s:_f.throw('nfun', cname, a:plugdict.id, key)
+            endif
+            let cdescr[key]=a:cdescr[key]
         endif
-        let cdescr.write=a:cdescr.write
-    endif
+    endfor
     "▲2
     let cdescr.id=cname
     let cdescr.plid=a:plugdict.id
