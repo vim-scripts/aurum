@@ -1,7 +1,7 @@
 "▶1
 scriptencoding utf-8
 if !exists('s:_pluginloaded')
-    execute frawor#Setup('2.1', {'@/resources': '0.0',
+    execute frawor#Setup('2.3', {'@/resources': '0.0',
                 \                  '@/options': '0.0',}, 0)
     finish
 elseif s:_pluginloaded
@@ -18,6 +18,11 @@ let s:_options={
         \}
 let s:cachebvars={}
 let s:r={}
+let s:_messages={
+            \ 'nfunc': 'Argument must be a callable function reference',
+            \ 'pldef': 'Plugin has already defined one wiper function',
+            \'dbldef': 'Function %s was already added by another plugin',
+        \}
 "▶1 bufwipeout
 function s:F.bufwipeout()
     let buf=+expand('<abuf>')
@@ -66,9 +71,34 @@ function s:r.wipe(key)
     " empty() is here only to avoid possible “Using smth as a number” error
     call map(copy(s:cachebvars), 'has_key(v:val,a:key) && '.
                 \                                  'empty(remove(v:val,a:key))')
+    call map(copy(s:wipers), 'call(v:val, [a:key], {})')
 endfunction
+"▶1 r.getinterval
+function s:r.getinterval(key)
+    return s:_f.getoption(a:key.'cachetime')
+endfunction
+"▶1 addwiper feature
+let s:wipers=[]
+let s:feature={}
+function s:feature.cons(plugdict, fdict, Func)
+    if !exists('*a:Func')
+        call s:_f.throw('nfunc')
+    elseif has_key(a:fdict, 'func')
+        call s:_f.throw('pldef', string(a:fdict.func))
+    elseif index(s:wipers, a:Func)!=-1
+        call s:_f.throw('dbldef', string(a:Func))
+    endif
+    let s:wipers+=[a:Func]
+    let a:fdict.func=a:Func
+endfunction
+function s:feature.unload(plugdict, fdict)
+    if has_key(a:fdict, 'func')
+        call filter(s:wipers, 'v:val isnot# a:fdict.func')
+    endif
+endfunction
+call s:_f.newfeature('addwiper', s:feature)
 "▶1 Post cache resource
 call s:_f.postresource('cache', s:r)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,cachebvars')
+call frawor#Lockvar(s:, '_pluginloaded,cachebvars,wipers')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

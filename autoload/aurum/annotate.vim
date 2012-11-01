@@ -108,7 +108,7 @@ function s:F.setannbuf(bvar, annbuf)
         execute 'autocmd BufWipeOut,BufHidden <buffer='.a:annbuf.'> '.
                     \':if bufexists('.buf.') | '.
                     \   'call feedkeys("\<C-\>\<C-n>'.
-                    \                 ':silent! bw '.buf.'\n") | '.
+                    \                 ':silent! bw '.buf.'\n\<C-l>") | '.
                     \ 'endif'
     augroup END
 endfunction

@@ -13,7 +13,7 @@ function s:F.bufwipeout()
             call feedkeys("\<C-\>\<C-n>:call ".
                     \      "call(".eval."('s:bufvars[".buf."].bwfunc'), ".
                     \           "[".eval."('s:bufvars[".buf."]')], {}) | ".
-                    \"call ".eval."('remove(s:bufvars, ".buf.")')\n", 'n')
+                    \"call ".eval."('remove(s:bufvars, ".buf.")')\n\<C-l>", 'n')
             return
         endif
         unlet s:bufvars[buf]

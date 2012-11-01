@@ -236,7 +236,7 @@ let s:ignfiles=['patch', 'renames', 'copies', 'files', 'diff', 'open']
 call s:_f.postresource('ignfiles', s:ignfiles)
 call s:_f.postresource('diffopts', s:diffoptslst)
 let s:tlist=['default', 'compact', 'git', 'svn', 'hgdef', 'hgdescr', 'cdescr',
-            \'gitoneline']
+            \'gitoneline', 'bzr', 'bzrshort', 'bzrline']
 call s:_f.postresource('tlist', s:tlist)
 call s:_f.postresource('allcachekeys', s:allcachekeys)
 "▶1 Completion helpers
@@ -336,26 +336,26 @@ call s:_f.newfeature('aurumcmd', s:feature)
 "▶1 Global mappings
 " TODO mapping that closes status window
 call s:_f.mapgroup.add('Aurum', {
-            \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'               },
-            \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit all<CR>'           },
-            \'Open':      {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'                 },
-            \'OpenAny':   {'lhs':  'O', 'rhs': ':<C-u>AuFile : : prompt<CR>'      },
-            \'Revert':    {'lhs': 'go', 'rhs': ':<C-u>AuFile : : replace<CR>'     },
-            \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'              },
-            \'FVdiff':    {'lhs': 'gD', 'rhs': ':<C-u>AuVimDiff full<CR>'         },
-            \'Diff':      {'lhs':  'd', 'rhs': ':<C-u>AuDiff :<CR>'               },
-            \'Fdiff':     {'lhs': 'gd', 'rhs': ':<C-u>AuDiff<CR>'                 },
-            \'Annotate':  {'lhs':  'a', 'rhs': ':<C-u>AuAnnotate<CR>'             },
-            \'Status':    {'lhs':  's', 'rhs': ':<C-u>AuStatus|wincmd p<CR>'      },
-            \'Record':    {'lhs':  'r', 'rhs': ':<C-u>AuRecord<CR>'               },
-            \'Log':       {'lhs':  'L', 'rhs': ':<C-u>AuLog<CR>'                  },
-            \'LogFile':   {'lhs':  'l', 'rhs': ':<C-u>AuLog : files :<CR>'        },
-            \'URL':       {'lhs':  'H', 'rhs': ':<C-u>AuHyperlink<CR>'            },
-            \'LineURL':   {'lhs':  'h', 'rhs': ':<C-u>AuHyperlink line 0<CR>'     },
-            \'Track':     {'lhs':  'A', 'rhs': ':<C-u>AuTrack<CR>'                },
-            \'Forget':    {'lhs':  'R', 'rhs': ':<C-u>AuJunk forget :<CR>'        },
-            \'Push':      {'lhs':  'P', 'rhs': ':<C-u>AuOther push<CR>'           },
-            \'Pull':      {'lhs':  'p', 'rhs': ':<C-u>AuOther pull | AuUpdate<CR>'},
+            \'Commit':    {'lhs':  'i', 'rhs': ':<C-u>AuCommit<CR>'          },
+            \'CommitAll': {'lhs':  'I', 'rhs': ':<C-u>AuCommit all<CR>'      },
+            \'Open':      {'lhs':  'o', 'rhs': ':<C-u>AuFile<CR>'            },
+            \'OpenAny':   {'lhs':  'O', 'rhs': ':<C-u>AuFile : : prompt<CR>' },
+            \'Revert':    {'lhs': 'go', 'rhs': ':<C-u>AuFile : : replace<CR>'},
+            \'Vdiff':     {'lhs':  'D', 'rhs': ':<C-u>AuVimDiff<CR>'         },
+            \'FVdiff':    {'lhs': 'gD', 'rhs': ':<C-u>AuVimDiff full<CR>'    },
+            \'Diff':      {'lhs':  'd', 'rhs': ':<C-u>AuDiff :<CR>'          },
+            \'Fdiff':     {'lhs': 'gd', 'rhs': ':<C-u>AuDiff<CR>'            },
+            \'Annotate':  {'lhs':  'a', 'rhs': ':<C-u>AuAnnotate<CR>'        },
+            \'Status':    {'lhs':  's', 'rhs': ':<C-u>AuStatus|wincmd p<CR>' },
+            \'Record':    {'lhs':  'r', 'rhs': ':<C-u>AuRecord<CR>'          },
+            \'Log':       {'lhs':  'L', 'rhs': ':<C-u>AuLog<CR>'             },
+            \'LogFile':   {'lhs':  'l', 'rhs': ':<C-u>AuLog : files :<CR>'   },
+            \'URL':       {'lhs':  'H', 'rhs': ':<C-u>AuHyperlink<CR>'       },
+            \'LineURL':   {'lhs':  'h', 'rhs': ':<C-u>AuHyperlink line 0<CR>'},
+            \'Track':     {'lhs':  'A', 'rhs': ':<C-u>AuTrack<CR>'           },
+            \'Forget':    {'lhs':  'R', 'rhs': ':<C-u>AuJunk forget :<CR>'   },
+            \'Push':      {'lhs':  'P', 'rhs': ':<C-u>AuOther push<CR>'      },
+            \'Pull':      {'lhs':  'p', 'rhs': ':<C-u>AuOther pull<CR>'      },
         \}, {'mode': 'n', 'silent': 1, 'leader': '<Leader>a'})
 "▶1 Autocommands
 function s:F.aurun(...)

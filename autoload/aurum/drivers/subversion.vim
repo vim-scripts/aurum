@@ -18,6 +18,7 @@ let s:_messages={
             \    'cif': 'Failed to commit changes to the repository %s: %s',
             \   'updf': 'Failed to update to revision %s '.
             \           'in the repository %s: %s',
+            \  'pullf': 'Failed to update repository %s: %s',
             \    'mvf': 'Failed to move file %s to %s in the repository %s: %s',
             \    'cpf': 'Failed to copy file %s to %s in the repository %s: %s',
             \    'rmf': 'Failed to remove file %s in the repository %s: %s',
@@ -55,6 +56,7 @@ let s:_messages={
             \           'after “====<…>====” separator line',
             \ 'punimp': 'Cannot “pull” from non-default location',
             \'pulnimp': 'Cannot pull: use update instead',
+            \'aconimp': 'Can only get current status for one file',
         \}
 let s:svn={}
 let s:iterfuncs={}
@@ -274,7 +276,7 @@ function s:F.getchangesets(repo, ...)
         if type(a:1)==type(0)
             let kwargs.limit=''.a:1
         else
-            let kwargs.revision=a:1
+            let kwargs.revision=''.a:1
         endif
     elseif a:0==2
         let kwargs.revision=a:1.':'.a:2
@@ -625,7 +627,7 @@ function s:svn.update(repo, rev, force)
         let kwargs.force=1
         let kwargs.accept='theirs-full'
     endif
-    let kwargs.revision=a:rev
+    let kwargs.revision=''.a:rev
     return s:F.svnm(a:repo, 'update', [], kwargs, 0, 'updf', a:rev)
 endfunction
 "▶1 svn.move :: repo, force, source, destination → + FS
@@ -796,7 +798,7 @@ function s:svn.pull(repo, dryrun, force, ...)
     if a:dryrun
         return s:F.svnm(a:repo, 'log', [], {'revision': 'HEAD:BASE'}, 0)
     else
-        call s:_f.throw('pulnimp')
+        return s:F.svnm(a:repo, 'update', [], {'force': a:force}, 0, 'pullf')
     endif
 endfunction
 "▶1 svn.repo :: path → repo
@@ -886,6 +888,27 @@ function s:iterfuncs.revrange(repo, opts)
                 \                                     a:opts.revrange[1]))
     return {'cslist': cslist, 'next': s:F.ancestorsnext}
 endfunction
+"▶1 astatus, agetcs, agetrepoprop
+if s:_r.repo.userepeatedcmd
+    try
+        python import aurum.rcdriverfuncs
+        let s:addafuncs=1
+    catch
+        let s:addafuncs=0
+    endtry
+    if s:addafuncs
+        function s:svn.astatus(repo, interval, ...)
+            if a:0<3 || a:1 isnot 0 || a:2 isnot 0 ||
+                        \type(a:3)!=type([]) || len(a:3)!=1
+                call s:_f.throw('aconimp')
+            endif
+            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                        \       'aurum.rcdriverfuncs.svn_status, '.
+                        \       'vim.eval("a:repo.path"), '.
+                        \       'vim.eval("a:3[0]"))')
+        endfunction
+    endif
+endif
 "▶1 Register driver
 call s:_f.regdriver('Subversion', s:svn)
 "▶1

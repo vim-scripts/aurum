@@ -48,6 +48,8 @@ let s:_messages={
             \ 'invrng': 'Range %s..%s is invalid for the repository %s, '.
             \           'as well as reverse',
             \    'ppf': 'Failed to run “git %s” for the repository %s: %s',
+            \'anbnimp': 'Can only get branch property using agetrepoprop',
+            \'aconimp': 'Can only get current status for one file',
         \}
 let s:git={}
 let s:_options={
@@ -331,11 +333,13 @@ function s:git.status(repo, ...)
             let files[file]=1
             if status[0] is# 'R'
                 let r.added+=[file]
-                let r.removed+=[remove(s, 0)]
+                let old=remove(s, 0)
+                if (a:0>2 && !empty(a:3)) ? (index(a:3, old)!=-1) : 1
+                    let r.removed+=[old]
+                endif
             elseif status[0] is# 'C'
                 let r.added+=[file]
-                let origfile=remove(s, 0)
-                " FIXME What should be done with origfile?
+                call remove(s, 0)
             elseif status[0] is# 'D'
                 let r.removed+=[file]
             elseif status[1] is# 'D'
@@ -775,6 +779,35 @@ function s:iterfuncs.revrange(repo, opts)
 endfunction
 let s:iterfuncs.changesets=s:iterfuncs.revrange
 let s:iterfuncs.ancestors=s:iterfuncs.revrange
+"▶1 astatus, agetcs, agetrepoprop
+if s:_r.repo.userepeatedcmd
+    try
+        python import aurum.rcdriverfuncs
+        let s:addafuncs=1
+    catch
+        let s:addafuncs=0
+    endtry
+    if s:addafuncs
+        function s:git.astatus(repo, interval, ...)
+            if a:0<3 || a:1 isnot 0 || a:2 isnot 0 ||
+                        \type(a:3)!=type([]) || len(a:3)!=1
+                call s:_f.throw('aconimp')
+            endif
+            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                        \       'aurum.rcdriverfuncs.git_status, '.
+                        \       'vim.eval("a:repo.path"), '.
+                        \       'vim.eval("a:3[0]"))')
+        endfunction
+        function s:git.agetrepoprop(repo, interval, prop)
+            if a:prop isnot# 'branch'
+                call s:_f.throw('anbnimp')
+            endif
+            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                        \       'aurum.rcdriverfuncs.git_branch, '.
+                        \       'vim.eval("a:repo.path"))')
+        endfunction
+    endif
+endif
 "▶1 Register driver
 call s:_f.regdriver('Git', s:git)
 "▶1

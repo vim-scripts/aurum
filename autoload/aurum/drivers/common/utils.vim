@@ -44,6 +44,7 @@ if has('python') && exists('*pyeval')
     endtry
 endif
 "▶1 utils.run :: cmd, hasnulls::0|1|2, path → [String] + shell
+" TODO Add utils.runtobuf for use in difftobuf functions
 function s:utils.run(cmd, hasnulls, cdpath)
     if a:hasnulls==2
         if has_key(s:F, 'readsystem')

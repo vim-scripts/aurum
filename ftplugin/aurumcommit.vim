@@ -12,7 +12,7 @@ execute frawor#Setup('0.0', {'@/mappings': '0.0',
             \           '@%aurum/bufvars': '0.0',
             \          '@%aurum/maputils': '0.0',
             \           '@%aurum/vimdiff': '1.1',
-            \            '@%aurum/commit': '1.0',
+            \            '@%aurum/commit': '1.2',
             \              '@%aurum/edit': '1.0',})
 "▶1 listfiles
 function s:F.listfiles(bvar)
@@ -24,8 +24,8 @@ function s:F.listfiles(bvar)
         let status=a:bvar.repo.functions.status(a:bvar.repo, 0, 0, a:bvar.files)
         let status=filter(copy(status), 'index(s:defstats, v:key)!=-1')
         let revstatus={}
-        call map(copy(a:status), 'map(copy(v:val),'.
-                    \              '"extend(revstatus,{v:val:''".v:key."''})")')
+        call map(copy(status),'map(copy(v:val),'.
+                    \             '"extend(revstatus,{v:val :''".v:key."''})")')
         let a:bvar.revstatus=revstatus
         return keys(a:bvar.revstatus)
     endif
@@ -44,33 +44,12 @@ function s:F.getfile(bvar)
     endif
     return 0
 endfunction
-"▶1 vimdiffcb
-function s:F.vimdiffcb(file, bvar, hex)
-    execute 'silent tabnew'
-                \ fnameescape(s:_r.os.path.join(a:bvar.repo.path, a:file))
-    return s:_r.vimdiff.split([['file', a:bvar.repo, a:hex, a:file]], 0)
-endfunction
-"▶1 vimdiffrecordcb
-function s:F.vimdiffrecordcb(file, bvar, hex)
-    let [lwnr, rwnr, swnr]=a:bvar.sbvar.getwnrs()
-
-    execute lwnr.'wincmd w'
-    let file=s:_r.os.path.join(a:bvar.repo.path, a:file)
-    let existed=bufexists(file)
-    execute 'silent edit' fnameescape(file)
-    if !existed
+"▶1 diffcb
+function s:F.diffcb(file, bvar, hex)
+    call a:bvar.findwindow()
+    if !s:_r.mrun('silent edit', 'diff', a:bvar.repo, 0, 0, [a:file], {})
         setlocal bufhidden=wipe
     endif
-    diffthis
-
-    execute rwnr.'wincmd w'
-    let existed=s:_r.run('silent edit', 'file', a:bvar.repo, a:hex, a:file)
-    if !existed
-        setlocal bufhidden=wipe
-    endif
-    diffthis
-
-    execute lwnr.'wincmd w'
 endfunction
 "▶1 runcommap
 function s:F.runcommap(count, action)
@@ -112,12 +91,17 @@ function s:F.runcommap(count, action)
                     \                                      bvar.recallcs.hex,
                     \                                      cnt)
         call append(0, split(bvar.recallcs.description, "\n", 1))
-    elseif a:action is# 'vimdiff'
+    elseif a:action is# 'fulldiff'
+        call bvar.findwindow()
+        if !s:_r.mrun('silent edit', 'diff', bvar.repo, 0, 0,
+                    \                        s:F.listfiles(bvar), {})
+            setlocal bufhidden=wipe
+        endif
+    elseif a:action is# 'diff' || a:action is# 'vimdiff'
         let file=s:F.getfile(bvar)
         let hex=bvar.repo.functions.getworkhex(bvar.repo)
-        let cbargs=[((has_key(bvar, 'sbvar'))?
-                    \   (s:F.vimdiffrecordcb):
-                    \   (s:F.vimdiffcb)), bvar, hex]
+        let cbargs=[(a:action is# 'diff' ? s:F.diffcb : bvar.vimdiffcb),
+                    \bvar, hex]
         if file is 0
             let pvargs=[s:_r.maputils.readfilewrapper, bvar.repo, hex]
             return s:_r.maputils.promptuser(s:F.listfiles(bvar), cbargs, pvargs)
@@ -141,6 +125,8 @@ call s:_f.mapgroup.add('AuCommitMessage', {
             \ 'Commit': {'lhs':  'i', 'rhs': ['commit'     ]},
             \   'Prev': {'lhs':  'J', 'rhs': ['recallprev' ]},
             \   'Next': {'lhs':  'K', 'rhs': ['recallnext' ]},
+            \   'Diff': {'lhs':  'd', 'rhs': ['diff'       ]},
+            \  'Fdiff': {'lhs': 'gd', 'rhs': ['fulldiff'   ]},
             \  'Vdiff': {'lhs':  'D', 'rhs': ['vimdiff'    ]},
             \ 'FVdiff': {'lhs': 'gD', 'rhs': ['fullvimdiff']},
             \   'Exit': {'lhs':  'X', 'rhs': ['discard'    ]},

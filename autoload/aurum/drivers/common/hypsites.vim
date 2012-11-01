@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('0.1', {'@/resources': '0.0',})
+execute frawor#Setup('0.2', {'@/resources': '0.0',})
 "▶1 s:hypsites
 let s:dport='domain.(empty(port)?"":":".port)'
 let s:link='shellescape("http://".'.s:dport.'.path)'
@@ -259,6 +259,7 @@ unlet s:ghpath s:roproj s:robase s:godomain s:gobase
 "  https://vimpluginloader.svn.sourceforge.net/svnroot/vimpluginloader
 "  http://conque.googlecode.com/svn/trunk
 "  https://zyx.repositoryhosting.com/svn/zyx_t1 / svn+ssh://svn@zyx.repositoryhosting.com/zyx/t1
+"  http://pysvn.tigris.org/svn/pysvn/trunk
 let s:svngcbase='"http://code.google.com/p/".'.s:gcproj
 let s:svngcfile='path[5:]."/".file'
 let s:hyp.svn=[
@@ -283,11 +284,21 @@ let s:hyp.svn=[
 \        'log': '"http://".domain."/viewvcs".path[4:]."?view=log"',
 \      'clone': '"svn://".domain.path',
 \       'push': '"svn+ssh://".user."@".domain.path',}],
+\['domain =~? "\\Vtigris.org\\$"',
+\ {     'html': '"http://".domain."/source/browse".path[4:]."/".file."?view=markup&revision=".hex',
+\        'raw': '"http://".domain."/source/browse/*checkout*".path[4:]."/".file."?revision=".hex',
+\   'annotate': '"http://".domain."/source/browse".path[4:]."/".file."?annotate=".hex', 'aline': '"id".(line-1)',
+\   'filehist': '"http://".domain."/source/browse".path[4:]."/".file."?view=log"',
+\      'clone': '"http://".domain.path',
+\       'push': 'url',}],
 \['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "https" && path[:3] is? "/svn"', s:rhdicts.svn.0],
 \['domain =~? "\\Vrepositoryhosting.com\\$" && protocol is? "svn+ssh"',                      s:rhdicts.svn.1],
 \]
 unlet s:svngcbase s:svngcfile
 unlet s:rhdicts
+"▶1 bazaar
+let s:hyp.bzr=[
+\]
 "▶1 post resource
 unlet s:gcproj s:dl s:bbdict s:dport
 call s:_f.postresource('hypsites', s:hyp)

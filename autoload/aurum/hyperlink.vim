@@ -1,5 +1,5 @@
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@aurum': '1.0',
+execute frawor#Setup('0.1', {'@aurum': '1.0',
             \      '@%aurum/cmdutils': '4.0',
             \             '@/options': '0.0',})
 let s:_messages={
@@ -84,12 +84,13 @@ function s:cmd.function(line1, line2, opts)
     endif
     "▲2
     let url=repo.functions.getrepoprop(repo, 'url')
-    let [protocol, user, domain, port, path]=
+    let [protocol, user, password, domain, port, path]=
                 \matchlist(url, '\v^%(([^:]+)\:\/\/)?'.
-                \                  '%(([^@/:]+)\@)?'.
+                \                  '%(([^@/:]+)'.
+                \                   '%(\:([^@/:]+))?\@)?'.
                 \                   '([^/:]*)'.
                 \                  '%(\:(\d+))?'.
-                \                   '(.*)$')[1:5]
+                \                   '(.*)$')[1:6]
     for [matcher, dict] in s:_f.getoption('hypsites')+repo.hypsites
         if eval(matcher)
             if !has_key(dict, utype)

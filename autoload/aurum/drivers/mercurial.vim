@@ -58,6 +58,7 @@ let s:_messages={
             \  'nocfg': 'No such property of repository %s: %s',
             \'failcfg': 'Failed to get property %s of repository %s',
             \'nlocbms': 'Bookmarks can’t be local',
+            \'anbnimp': 'Can only get branch property using agetrepoprop',
             \'parsefail': 'Failed to parse changeset information',
             \ 'filefail': 'Failed to get file %s '.
             \             'from the repository %s: %s',
@@ -650,13 +651,13 @@ endif
 " type :: "modified" | "added" | "removed" | "deleted" | "unknown" | "ignored"
 "       | "clean"
 if s:usepythondriver "▶2
+let s:revargsexpr='v:val is 0? '.
+                \       '"None":'.
+                \ 'v:key>=3?'.
+                \       '(empty(v:val)?"False":"True"):'.
+                \       '"vim.eval(''a:".(v:key+1)."'')"'
 function s:hg.status(repo, ...)
-    let revargs=join(map(copy(a:000), 'v:val is 0? '.
-                \                           '"None":'.
-                \                     '(v:key>3 && v:val is 1)?'.
-                \                           '"True":'.
-                \                           '"vim.eval(''a:".(v:key+1)."'')"'),
-                \    ',')
+    let revargs=join(map(copy(a:000), s:revargsexpr), ',')
     let d={}
     try
         execute s:pya.'get_status(vim.eval("a:repo.path"), '.revargs.')'
@@ -673,8 +674,7 @@ let s:statchars={
             \'I': 'ignored',
             \'C': 'clean',
         \}
-" TODO test whether zero revision may cause bugs in some commands
-function s:hg.status(repo, ...)
+function s:F.statargs(...)
     let args=[]
     let kwargs={'modified': 1,
                 \  'added': 1,
@@ -699,6 +699,11 @@ function s:hg.status(repo, ...)
             let args+=['--']+a:3
         endif
     endif
+    return [args, kwargs, reverse]
+endfunction
+" TODO test whether zero revision may cause bugs in some commands
+function s:hg.status(repo, ...)
+    let [args, kwargs, reverse]=call(s:F.statargs, a:000, {})
     let slines=s:F.hg(a:repo, 'status', args, kwargs, 0, 'stat')[:-2]
     if !empty(filter(copy(slines), '!has_key(s:statchars, v:val[0])'))
         call s:_f.throw('statfail', a:repo.path, join(slines, "\n"))
@@ -1046,15 +1051,19 @@ let s:difftrans={
             \    'dates': 'nodates',
         \}
 if s:usepythondriver "▶2
+function s:F.getdiffargs(repo, rev1, rev2, files, opts)
+    return       'vim.eval("a:repo.path"), '.
+                \(empty(a:rev1)  ? 'None' : 'vim.eval("a:rev1")' ).', '.
+                \(empty(a:rev2)  ? 'None' : 'vim.eval("a:rev2")' ).', '.
+                \(empty(a:files) ? '[]'   : 'vim.eval("a:files")').', '.
+                \'vim.eval("diffopts")'
+endfunction
 function s:hg.diff(repo, rev1, rev2, files, opts)
     let r=[]
     let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
     try
-        execute s:pya.'diff(vim.eval("a:repo.path"), '.
-                    \      'vim.eval("a:rev1"), '.
-                    \      'vim.eval("a:rev2"), '.
-                    \      'vim.eval("a:files"), '.
-                    \      'vim.eval("diffopts"))'
+        execute s:pya.'diff('.s:F.getdiffargs(a:repo, a:rev1, a:rev2, a:files,
+                    \                         a:opts).')'
     endtry
     return r
 endfunction
@@ -1116,11 +1125,8 @@ function s:hg.difftobuffer(repo, buf, rev1, rev2, files, opts)
     endif
     try
         let diffopts=s:_r.utils.diffopts(a:opts, a:repo.diffopts, s:difftrans)
-        execute s:pya.'diffToBuffer(vim.eval("a:repo.path"), '.
-                    \              'vim.eval("a:rev1"), '.
-                    \              'vim.eval("a:rev2"), '.
-                    \              'vim.eval("a:files"), '.
-                    \              'vim.eval("diffopts"))'
+        execute s:pya.'diffToBuffer('.s:F.getdiffargs(a:repo, a:rev1, a:rev2,
+                    \                                 a:files, a:opts).')'
     finally
         if oldbuf!=a:buf
             execute 'buffer' oldbuf
@@ -1208,6 +1214,9 @@ function s:F.pushpull(cmd, repo, force, ...)
         let kwargs.force=1
     elseif a:cmd is# 'push'
         let kwargs['new-branch']=1
+    endif
+    if a:cmd is# 'pull'
+        let kwargs.update=1
     endif
     return s:F.runcmd(a:repo, a:cmd, args, kwargs)
 endfunction
@@ -1315,6 +1324,55 @@ function s:F.ancestorsnext()
     endif
     return cs
 endfunction
+"▶1 astatus, agetcs, agetrepoprop
+if s:_r.repo.userepeatedcmd
+    if s:usepythondriver
+        function s:hg.astatus(repo, interval, ...)
+            let args = string(a:interval).', '.s:pp.'._get_status, '.
+                        \'vim.eval("a:repo.path"), '
+            let args.= join(map(copy(a:000), s:revargsexpr), ',')
+            return pyeval('aurum.repeatedcmd.new('.args.')')
+        endfunction
+        function s:hg.agetcs(repo, interval, rev)
+            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                        \                        s:pp.'._get_cs, '.
+                        \                       'vim.eval("a:repo.path"), '.
+                        \                       'vim.eval("a:rev"))')
+        endfunction
+        function s:hg.agetrepoprop(repo, interval, prop)
+            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                        \                        s:pp.'.get_one_prop, '.
+                        \                       'vim.eval("a:repo.path"), '.
+                        \                       'vim.eval("a:prop"))')
+        endfunction
+    else
+        try
+            python import aurum.rcdriverfuncs
+            let s:addafuncs=1
+        catch
+            let s:addafuncs=0
+        endtry
+        if s:addafuncs
+            function s:hg.astatus(repo, interval, ...)
+                let [args, kwargs, reverse]=call(s:F.statargs, a:000, {})
+                let arglist=s:_r.utils.kwargstolst(kwargs)+args
+                return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.hg_status, '.
+                            \       'vim.eval("a:repo.path"), '.
+                            \       'vim.eval("arglist"), '.
+                            \        (reverse ? 'True' : 'False').')')
+            endfunction
+            function s:hg.agetrepoprop(repo, interval, prop)
+                if a:prop isnot# 'branch'
+                    call s:_f.throw('anbnimp')
+                endif
+                return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.hg_branch, '.
+                            \       'vim.eval("a:repo.path"))')
+            endfunction
+        endif
+    endif
+endif
 "▶1 hg.svnrev :: repo, rev → svnrev
 function s:hg.svnrev(repo, rev)
     let lines=s:F.hg(a:repo, 'svn', ['info'], {'rev': ''.a:rev}, 0, 'svn')
@@ -1328,7 +1386,11 @@ endfunction
 "▶1 hg.gitrev :: repo, rev → githex
 if s:usepythondriver
 function s:hg.githex(repo, rev)
-    execute s:pya.'git_hash(vim.eval("a:repo.path"), vim.eval("a:rev"))'
+    let d={}
+    try
+        execute s:pya.'git_hash(vim.eval("a:repo.path"), vim.eval("a:rev"))'
+    endtry
+    return d.git_hex
 endfunction
 endif
 "▶1 Register driver

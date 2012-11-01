@@ -1,5 +1,5 @@
 "▶1
-execute frawor#Setup('5.3', {'@/resources': '0.0',
+execute frawor#Setup('5.5', {'@/resources': '0.0',
             \                       '@/os': '0.0',
             \                  '@/options': '0.0',
             \          '@%aurum/lineutils': '0.0',
@@ -272,6 +272,35 @@ endfunction
 function s:deffuncs.checkremote(...)
     return 0
 endfunction
+"▶1 aget, aremove
+let s:userepeatedcmd=0
+if has('python') && exists('*pyeval')
+    try
+        python import aurum.repeatedcmd
+        python reload(aurum.repeatedcmd)
+        let s:userepeatedcmd=1
+    catch
+    endtry
+endif
+if s:userepeatedcmd
+    augroup AuRCFinish
+        autocmd! VimLeave * python aurum.repeatedcmd.finish()
+    augroup END
+    let s:_augroups+=['AuRCFinish']
+    function s:deffuncs.aget(repo, rcid, ...)
+        return pyeval('aurum.repeatedcmd.get(vim.bindeval("a:rcid"), '.
+                    \                        (a:0 && a:1? 'True': 'False').')')
+    endfunction
+    function s:deffuncs.apause(repo, rcid)
+        python aurum.repeatedcmd.pause(vim.bindeval("a:rcid"))
+    endfunction
+    function s:deffuncs.aresume(repo, rcid)
+        python aurum.repeatedcmd.resume(vim.bindeval("a:rcid"))
+    endfunction
+    function s:deffuncs.aremove(repo, rcid)
+        python aurum.repeatedcmd.remove(vim.bindeval("a:rcid"))
+    endfunction
+endif
 "▶1 iterfuncs: cs generators
 " startfunc (here)  :: repo, opts → d
 "▶2 ancestors
@@ -363,13 +392,7 @@ endfunction
 function s:F.getrepo(path)
     "▶2 Pull in drivers if there are no
     if empty(s:drivers)
-        for src in s:_r.os.listdir(s:_r.os.path.join(s:_frawor.runtimepath,
-                    \              'autoload', 'aurum', 'drivers'))
-            if len(src)<5 || src[-4:] isnot# '.vim'
-                continue
-            endif
-            call FraworLoad('@%aurum/drivers/'.src[:-5])
-        endfor
+        runtime! autoload/aurum/drivers/*.vim
     endif
     "▶2 Get path
     if empty(a:path)
@@ -458,11 +481,12 @@ function s:F.getrepo(path)
     return repo
 endfunction
 "▶1 Post resource
-call s:_f.postresource('repo', {'get': s:F.getrepo,})
+call s:_f.postresource('repo', {'get': s:F.getrepo,
+            \        'userepeatedcmd': s:userepeatedcmd})
 "▶1 regdriver feature
 let s:requiredfuncs=['repo', 'getcs', 'checkdir']
 let s:optfuncs=['readfile', 'annotate', 'diff', 'status', 'commit', 'update',
-            \   'dirty', 'diffre', 'getrepoprop', 'forget', 'branch', 'label',
+            \   'diffre', 'getrepoprop', 'forget', 'branch', 'label',
             \   'push', 'pull']
 "▶2 regdriver :: {f}, name, funcs → + s:drivers
 function s:F.regdriver(plugdict, fdict, name, funcs)

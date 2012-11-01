@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('1.4', {'@/resources': '0.0',
+execute frawor#Setup('1.5', {'@/resources': '0.0',
             \                       '@/os': '0.0',
             \               '@%aurum/repo': '5.0',
             \          '@%aurum/lineutils': '0.0',
@@ -184,25 +184,30 @@ function s:F.encodeopts(opts)
     return r
 endfunction
 "▶1 copy
-function s:F.copy(read, file)
+function s:F.copy(buf, read, file)
     call s:_r.lineutils.setlines(readfile(a:file, 'b'), a:read)
     if !a:read
-        let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'copy'}
+        let s:_r.bufvars[a:buf]={'file': a:file, 'command': 'copy'}
         if exists('#filetypedetect#BufRead')
             execute 'doautocmd filetypedetect BufRead' fnameescape(a:file)
         endif
     endif
 endfunction
 "▶1 edit
-function s:F.edit(rw, file)
+function s:F.ewrite(bvar, lines, file)
+    return writefile(a:lines, a:file, 'b')
+endfunction
+function s:F.edit(buf, rw, file)
     if a:rw>=0
-        call s:F.copy(a:rw, a:file)
+        call s:F.copy(a:buf, a:rw, a:file)
         if !a:rw
             setlocal buftype=acwrite nomodified modifiable noreadonly
-            let s:_r.bufvars[bufnr('%')]={'file': a:file, 'command': 'edit'}
+            let s:_r.bufvars[a:buf]={'file': a:file, 'command': 'edit',
+                        \            'write': s:F.ewrite}
         endif
     elseif a:rw==-1
-        call writefile(s:_r.lineutils.wtransform(getline(1, '$')), a:file, 'b')
+        let bvar=s:_r.bufvars[a:buf]
+        call bvar.write(bvar, s:_r.lineutils.wtransform(getline(1, '$')), a:file)
         setlocal nomodified
     endif
 endfunction
@@ -329,9 +334,9 @@ function s:cmd.function(rw)
     let command=tolower(matchstr(tail, '\v^\w+'))
     let tail=tail[len(command)+1:]
     if command is# 'copy' && (a:rw==0 || a:rw==1)
-        return s:F.copy(a:rw, tail)
+        return s:F.copy(buf, a:rw, tail)
     elseif command is# 'edit' && abs(a:rw)<=1
-        return s:F.edit(a:rw, tail)
+        return s:F.edit(buf, a:rw, tail)
     endif
     call s:F.checkcmd(command)
     "▶2 Launch bvar.write if applicable

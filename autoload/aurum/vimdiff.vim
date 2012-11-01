@@ -89,7 +89,8 @@ function s:F.diffrestore.onwipe(buf, abuf, dbvar, ddbvars)
     let toremove=keys(filter(copy(a:ddbvars),
                 \            '!v:val.existed && bufexists(v:val.bufnr)'))
     if !empty(toremove)
-        call feedkeys("\<C-\>\<C-n>:silent bwipeout ".join(toremove)."\n", 'n')
+        call feedkeys("\<C-\>\<C-n>:silent bwipeout ".join(toremove)."\n\<C-l>",
+                    \ 'n')
     endif
 endfunction
 "▶2 diffrestore.call

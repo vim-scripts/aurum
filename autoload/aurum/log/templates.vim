@@ -72,6 +72,33 @@ let s:templates={
             \           "$empty\n".
             \           "$hide#$# $stat\n".
             \           "$hide#:#$patch\n",
+            \'bzr':     "revno: $rev\n".
+            \           "tags: $tags\n".
+            \           "revision-id: $hex\n".
+            \           "parent: $parents_\n".
+            \           "author: $user\n".
+            \           "branch nick: $branch\n".
+            \           "timestamp: $time#%a %Y-%m-%d %H:%M:%S#\n".
+            \           "message:\n".
+            \           "$hide#@# $description\n".
+            \           "$hide#$#$stat\n".
+            \           "$hide#:#$patch\n".
+            \           "$empty",
+            \'bzrshort': '$rev $user#expr:matchstr(@@@\,''\v^%(%(\ \<)@!.)*'')# '.
+            \               "$time#%Y-%m-%d#$tags#pref: {,suf:}#".
+            \               "$parents#expr:len(@@@)>1?' [merge]'\\:'',".
+            \                        "synreg:\\V\\( [merge]\\)\\?#\n".
+            \            "$hide#@# $description\n".
+            \            "$hide#$#$stat\n".
+            \            "$hide#:#$patch\n".
+            \            "$empty",
+            \'bzrline': '$rev: $user#expr:matchstr(@@@\,''\v^%(%(\ \<)@!.)*'')# '.
+            \               "$time#%Y-%m-%d#$tags#pref: {,suf:}#".
+            \               "$parents#expr:len(@@@)>1?' [merge]'\\:'',".
+            \                        "synreg:\\V\\( [merge]\\)\\?#".
+            \               " $summary\n".
+            \            "$hide#$#$stat\n".
+            \            "$hide#:#$patch",
         \}
 "▶1 s:kwexpr
 " TODO Add bisection status and phases

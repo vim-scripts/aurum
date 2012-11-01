@@ -15,4 +15,10 @@ def readsystem(cmd, cwd=None):
     exit_code=p.poll()
     stderr.write(p.stderr.read())
     return lines, exit_code
+
+def readlines(cmd, cwd=None):
+    p=Popen(cmd, shell=False, stdout=PIPE, stderr=None, cwd=cwd)
+    for line in p.stdout:
+        yield line[:-1]
+
 # vim: ft=python ts=4 sw=4 sts=4 et tw=100

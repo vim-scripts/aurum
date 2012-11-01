@@ -21,6 +21,7 @@ CONTENTS                                                      *aurum-contents*
         10.1. Mercurial                              |aurum-driver-Mercurial|
         10.2. Git                                    |aurum-driver-Git|
         10.3. Subversion                             |aurum-driver-Subversion|
+        10.4. Bazaar                                 |aurum-driver-Bazaar|
     11. Changelog                                    |aurum-changelog|
 
 ==============================================================================
@@ -633,9 +634,11 @@ aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
                                                  *g:frawormap_AuCommitMessage*
        *g:frawormap_AuCommitMessage_Commit* *g:frawormap_AuCommitMessage_Prev*
        *g:frawormap_AuCommitMessage_Vdiff*  *g:frawormap_AuCommitMessage_Next*
+       *g:frawormap_AuCommitMessage_Fdiff*  *g:frawormap_AuCommitMessage_Diff*
        *g:frawormap_AuCommitMessage_FVdiff*
            *aurum-m-AuCommitMessage_Commit*     *aurum-m-AuCommitMessage_Prev*
            *aurum-m-AuCommitMessage_Vdiff*      *aurum-m-AuCommitMessage_Next*
+           *aurum-m-AuCommitMessage_Fdiff*      *aurum-m-AuCommitMessage_Diff*
            *aurum-m-AuCommitMessage_FVdiff*
     Mapname  LHS  Description ~
     Commit    i   Finish writing commit message and commit changes
@@ -654,6 +657,9 @@ aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
                         message will be inserted before the first line of the 
                         buffer.
     Next      K   Like above, but works for descendants.
+    Diff      d   Open a diff with the selected file (uses file under cursor 
+                  or prompts user).
+    Fdiff    gd   Open a diff with all changes to be committed.
     Vdiff     D   Open a vimdiff split with the selected file (uses file under 
                   cursor or prompts user).
     FVdiff   gD   Open a number of vimdiff splits with all files to be 
@@ -665,9 +671,9 @@ aurum://diff:{repo}:{rev1}:{rev2}:{files}:{diffopts}            *aurum://diff*
     Open differencies between revisions {rev1} and {rev2} of files {files} 
     (semicolon-delimited list, semicolons in filenames can be escaped). For 
     {diffopts} see |aurum-diffoptions|. If one of {rev1} or {rev2} is empty 
-    then it will open the same diff as |:AuDiff| would if “rev1”, “rev2” and 
-    “changes” options were not given. If {files} is empty, then it will show 
-    all changes.
+    then it will open the same diff as |:AuDiff| would if “rev1” and/or “rev2” 
+    and “changes” options were not given. If {files} is empty, then it will 
+    show all changes.
     Local mappings (mgid=AuDiff, without leader by default):
                                                           *g:frawormap_AuDiff*
                          *g:frawormap_AuDiff_Next* *g:frawormap_AuDiff_FVdiff*
@@ -962,10 +968,10 @@ RFVdiff    gC   a   ls     Shows changes done in current rev as full vimdiff
 Vdiff       D   acDf S  g  Shows vimdiff between cur. rev. and WD for file
                            (status and diff: between two current revisions)
 RVdiff      C   a  f s     Shows changes to file in cur. rev. as a vimdiff
-Fdiff      gd   a   lS  g  Shows diff between current revision and working dir
+Fdiff      gd   ac  lS  g  Shows diff between current revision and working dir
                            (status: between two current revisions)
 RFdiff     gc   a   ls     Shows changes introduced by current revision
-Diff        d   a  flS  g  Shows diff between rev and WD for current file
+Diff        d   ac flS  g  Shows diff between rev and WD for current file
                            (status: between two current revisions)
 Rdiff       c   a  fls     Shows changes done in current rev to current file
 Prev/Next  J/K  acdfl      Go to previous/next revision
@@ -1081,6 +1087,27 @@ statwincmd                                                *g:aurum_statwincmd*
     whatever window vim selects. In other cases status window won’t be closed.
     Ignored if there is only one window left.
     Default: “c”.
+
+commitinfowincmd                                    *g:aurum_commitinfowincmd*
+    String, one of “j”, “k”, “h”, “l”, “w”, “W”, “t”, “b”, “p”, “s”, “v”, 
+    “largest_vertical”, “largest_horizontal”, “largest_adjacent”, “largest”. 
+    Determines what window should be switched to when running 
+    |aurum-m-AuCommit_Diff| and |aurum-m-AuCommit_Fdiff| mappings. See 
+    |window-move-cursor| and |open-window| for the description of the keys. 
+    Values, beginning with “largest_” are special: they select the largest 
+    window out of vertical, horizontal or all four directions respectively. 
+    The largest is determined by comparing |winwidth()|*|winheight()|, window 
+    width in this formula is capped with 80 columns.
+    Ignored when commit is done from |aurum-record| mode, in this case diff 
+    always opens in left window.
+    Default: “largest_adjacent”.
+
+commitautoopendiff                                *g:aurum_commitautoopendiff*
+    Bool. Determines whether diff should be opened when commit window is 
+    created. Uses |g:aurum_commitinfowincmd| to determine where diff should be 
+    opened. Opened diff will be automatically closed when commit buffer is 
+    closed.
+    Default: 0.
 
 remembermsg                                              *g:aurum_remembermsg*
     Bool. Determines whether message typed in commit buffer should be saved 
@@ -1347,6 +1374,27 @@ svn                                                          *aurum-style-svn*
       Guess bar is better name for baz
       And barbaz is not worse
 
+bzr                                                          *aurum-style-bzr*
+    Bzr-like style: >
+      revno: 1
+      tags: tip
+      revision-id: 454ae580ce74
+      parent: 000000000000
+      author: Bob <bob@example.com>
+      timestamp: Sun 2011-01-01 00:00:00
+      message:
+        Guess bar is better name for baz
+        And barbaz is not worse
+bzrshort                                                *aurum-style-bzrshort*
+    Bzr --short-like style: >
+      1 Bob 2011-01-01 {tip}
+        Guess bar is better name for baz
+        And barbaz is not worse
+
+bzrline                                                  *aurum-style-bzrline*
+    Bzr --line-like style: >
+      1 Bob 2011-01-01 {tip} Guess bar is better name for baz
+
 ==============================================================================
 7. Record mode                                                  *aurum-record*
 
@@ -1380,8 +1428,11 @@ Character  Meaning ~
            |aurum-m-AuRecord_Edit| mapping
 In status window there are additional mappings available (mgid=AuRecord, 
 without leader by default):                             *g:frawormap_AuRecord*
-                       *g:frawormap_AuRecord_Edit* *g:frawormap_AuRecord_Undo*
-                           *aurum-m-AuRecord_Edit*     *aurum-m-AuRecord_Undo*
+                    *g:frawormap_AuRecord_Edit* *g:frawormap_AuRecord_Undo*
+                    *g:frawormap_AuRecord_Redo* *g:frawormap_AuRecord_Earlier*
+                    *g:frawormap_AuRecord_Later*    *aurum-m-AuRecord_Later*
+                        *aurum-m-AuRecord_Redo*     *aurum-m-AuRecord_Earlier*
+                        *aurum-m-AuRecord_Edit*     *aurum-m-AuRecord_Undo*
 Mapping  LHS  Description ~
 Edit      O   Edit file under cursor. In original window there will be changed 
               version of file (for modified files) or nothing (files with 
@@ -1392,31 +1443,39 @@ Edit      O   Edit file under cursor. In original window there will be changed
               will be version of file modified in record mode and in original 
               window there will be backup of the file (or version from 
               repository if file in question was removed or deleted).
-Undo      u   Undo adds/removes of the file. Won’t undo changes made to the 
-              file using Edit mapping.
+Undo      u   Undo adds/removes of the file (|u|). Won’t undo changes made to 
+              the file using Edit mapping unless |g:aurum_fullundo| is set.
+Redo    <C-r> Like above, but redoes (|CTRL-R|).
+Earlier   g-  Like above, but uses |g-|. Unlike |g-| is subject to 'timeout'.
+Later     g+  Like above, but uses |g+|. Unlike |g+| is subject to 'timeout'.
+Note: undoing/redoing changes using other ways is not supported unless 
+      |g:aurum_fullundo| is set.
+
 :AuRecord also makes some AuStatus mappings change their meaning:
 Mapping                 New meaning ~
 |aurum-m-AuStatus_Track|  select changes made to file(s) for committing
 |aurum-m-AuStatus_Commit| finish record mode and commit selected changes
 |aurum-m-AuStatus_Forget| unselect changes made to file(s), don’t commit them
 
-Note that if you quit commit buffer or close status window you will also exit 
-     record mode discarding all changes you have made.
+Note that if you close status window you will also exit record mode discarding 
+     all changes you have made.
 
 :AuRecord defines the following mappings in recorded window 
 (mgid=AuRecordLeft, default leader: "<Leader>"):    *g:frawormap_AuRecordLeft*
           *g:frawormap_AuRecordLeft_Discard* *g:frawormap_AuRecordLeft_Exit*
           *g:frawormap_AuRecordLeft_Commit*  *g:frawormap_AuRecordLeft_Remove*
+          *g:frawormap_AuRecordLeft_Finish*      *aurum-m-AuRecordLeft_Finish*
               *aurum-m-AuRecordLeft_Discard*     *aurum-m-AuRecordLeft_Exit*
               *aurum-m-AuRecordLeft_Commit*      *aurum-m-AuRecordLeft_Remove*
 Mapping  LHS  Description ~
 Discard   x   Discard all changes made to edited file. If file is opened for 
-              the second time only unsaved changes will be discarded
+              the second time only unsaved changes will be discarded.
 Exit      X   Exit record mode, discarding all changes made to all files and 
-              not committing anything
-Commit    i   Commit selected changes and exit record mode
+              not committing anything.
+Commit    i   Commit selected changes and exit record mode.
 Remove    R   Like Discard, but also unselect it (makes difference if file is 
-              edited for the second time)
+              edited for the second time).
+Finish    A   Write changes and switch to status buffer.
 
 ==============================================================================
 8. Internal objects                                            *aurum-objects*
@@ -1432,9 +1491,6 @@ changesets :: {hex : cs}                               *aurum-repo.changesets*
 mutable :: a                                              *aurum-repo.mutable*
     Any mutable data needed by repository functions. This and previous keys 
     are the only ones that are not locked after repository object was created.
-csnum :: UInt                                               *aurum-repo.csnum*
-    Total number of revisions in repository. For any changeset 
-    cs.rev<repo.csnum. See also |aurum-cs.rev|.
 local :: Bool                                               *aurum-repo.local*
     1 if repository is local, 0 otherwise.
     Note that aurum is really useless for working with remote repositories.
@@ -1456,9 +1512,11 @@ hypsites :: [(expr, dict)]                               *aurum-repo.hypsites*
         hex        Changeset hash (|aurum-cs.hex|) (url≠clone,push).
         url        URL of remote repository from local repository 
                    configuration.
-        protocol, user, domain, port, path
-                   Parts of the URL: {protocol}://{user}@{domain}{path}, 
-                   {path} must start with either forward slash or colon.
+        protocol, user, password, domain, port, path
+                   For {protocol}://{user}:{password}@{domain}:{port}{path} 
+                   each variable contains the value of {varname}. {path} must 
+                   start with either forward slash or colon and contains 
+                   everything after it. Each part may be omitted.
         matcher    First item in the current pair.
         dict       Second item in the current pair.
         utype      URL type.
@@ -1698,11 +1756,13 @@ functions :: {String : FRef}                            *aurum-repo.functions*
   pull :: dryrun, force[, url[, rev]] -> _                     *aurum-rf-pull*
     Push or pull to given or default URL. If {rev} argument is present, then 
     push/pull only this revision. {dryrun} designates that nothing should be 
-    actually done, only what will be done should be shown.
+    actually done, only what will be done should be shown. When pulling it 
+    also updates working directory (for consistency: only mercurial supports 
+    convenient pulls without updates).
     Note: unlike other functions, this should expect any possible revision 
-    specification.
+          specification.
     Note 2: if URL is a directory, it is supposed to be related to repository 
-    root, not to current working directory.
+            root, not to current working directory.
 The following functions do not accept repo argument:
   repo :: path -> repo                                         *aurum-rf-repo*
     Creates new repository object using repository located at given path.
@@ -1729,6 +1789,27 @@ The following functions do not accept repo argument:
         function s:driver.getroot(path)
             return a:path
         endfunction
+<                                                          *aurum-repeatedcmd*
+The following functions accept repo argument, but may be absent (dummy ones 
+throwing nimp exception are not created):
+                                                            *aurum-rf-astatus*
+  astatus :: interval, [hex[, hex[, [ file ][, clean[, ign]]]]] -> rcid
+  agetcs :: interval, rev -> rcid                            *aurum-rf-agetcs*
+  agetrepoprop :: interval, propname -> rcid           *aurum-rf-agetrepoprop*
+    Register asyncronous repeated every {interval} seconds |aurum-rf-status|, 
+    |aurum-rf-getcs| or |aurum-rf-getrepoprop| calls (really their pure python 
+    replacements). Return an ID. Use |aurum-rf-aget| to get actual aurum-rf-* 
+    output. All currently existing implementations require python-2* with 
+    working threading module.
+  aget :: rcid[, now] -> ?                                     *aurum-rf-aget*
+    Output current value of repeatedly run function. With {now} set to true it 
+    is not using cache.
+  aremove :: rcid                                           *aurum-rf-aremove*
+    Stop repeating functions.
+  apause :: rcid                                             *aurum-rf-apause*
+  aresume :: rcid                                           *aurum-rf-aresume*
+    Pause and resume execution (i.e. process is not deleted like with aremove, 
+    but it only sleeps in paused state).
 
 ------------------------------------------------------------------------------
 8.2. Changeset                                               *aurum-changeset*
@@ -1805,8 +1886,13 @@ Optional functions:
                          "ancestors": Iterates recursively over 
                                       |aurum-cs.parents|, parents of the 
                                       parents and so on.
+  |aurum-rf-aget|          Uses aurum.repeatedcmd.get.
+  |aurum-rf-aremove|       Uses aurum.repeatedcmd.remove.
+  |aurum-rf-apause|        Uses aurum.repeatedcmd.pause.
+  |aurum-rf-aresume|       Uses aurum.repeatedcmd.resume.
 Other functions, mentioned in |aurum-repo.functions|, but not mentioned here, 
-throw an "nimp" exception.
+throw an "nimp" exception (except for |aurum-repeatedcmd| functions, they may 
+be absent, but they never throw "nimp").
 
 ==============================================================================
 10. Notes about various driver implementations            *aurum-driver-notes*
@@ -1851,6 +1937,7 @@ Python driver was not tested under windows (wine) at all.
 |aurum-cs.tags| contains list of all references pointing to given commit, not 
     just tags.
 |aurum-cs.rev| contains truncated hash (for use in |aurum://annotate|).
+|aurum-cs.phase| is always “unknown”.
 |aurum-rf-status|: if at least one of first two optional arguments is 
     non-zero, then then unknown and deleted files won’t be shown (if any). 
     Ignored files are shown only when the first two optional arguments are 
@@ -1890,6 +1977,7 @@ Python driver was not tested under windows (wine) at all.
 |aurum-cs.time| is always 0 if “date” programm from coreutils is missing.
 |aurum-cs.hex| contains the stringified value of |aurum-cs.rev| and thus is 
     not fixed-length.
+|aurum-cs.phase| is always “public”.
 |aurum-rf-diff|: Options "git", "iblanks", "dates", "alltext" are not 
     supported, option "reverse" is supported only if two revisions are given.
 |aurum-rf-status|: if at least one of first two optional arguments is 
@@ -1906,6 +1994,39 @@ Python driver was not tested under windows (wine) at all.
     “subdir*/ignored*” will ignore all files with names starting with 
     “ignored” in a directory “subdir*”, which is probably not what you 
     initially wanted.
+|aurum-rf-pull| uses “svn update” to pull and “svn log” for incoming.
+|aurum-rf-push| is not defined.
+
+------------------------------------------------------------------------------
+10.4. Bazaar                                             *aurum-driver-Bazaar*
+
+|aurum-rf-label|: Supported labels: tag (non-local).
+
+|aurum-cs.time| is always 0 if “date” programm from coreutils is missing.
+|aurum-cs.children| is always empty.
+|aurum-cs.phase| is always “unknown”.
+|aurum-rf-getchasgesets|, |aurum-rf-getcs| are unable to work with commits 
+    where description contains line with two spaces followed by 60 dashes.
+|aurum-rf-updatechangesets| is doing nothing.
+|aurum-rf-getrevhex| calls |aurum-rf-getcs| thus it may be slow.
+|aurum-rf-getcsprop| does not support “copies” property (because copies, 
+    unlike renames, are not supported by bazaar itself).
+|aurum-rf-status| assumes that when renaming old file name does not contain 
+    string “ => ” and all file names do not contain "\n  " or "\nsmth:".
+    Ignored files are shown only when the first two optional arguments are 
+    absent or equal to null.
+|aurum-rf-branch| renames branch instead of creating a new one.
+|aurum-rf-update| uses revert+update for forced update.
+|aurum-rf-grep| uses internal grep implementation based on 
+    |aurum-rf-readfile|. Thus it is slow, but supports vim |regexp|.
+    See more in |aurum-f-regdriver|.
+|aurum-rf-annotate| is not able to output line numbers.
+|aurum-rf-diff| requires “diff” programm from diffutils to be installed in 
+    order to pass any of diffoptions. Support for the reverse diff option is 
+    limited to the case when both revisions are specified.
+|aurum-rf-diffname| will work incorrectly if filenames containing “' => '” 
+    were renamed.
+|aurum-repo.iterfuncs| is missing (yet).
 
 ==============================================================================
 11. Changelog                                                *aurum-changelog*
@@ -1934,6 +2055,9 @@ Python driver was not tested under windows (wine) at all.
     5.1: Added repo.hasphases.
     5.2: Added repo.revreg.
     5.3: Added {ign} argument to |aurum-rf-status|.
+    5.4: Added |aurum-rf-astatus|, |aurum-rf-agetcs|, |aurum-rf-agetrepoprop|, 
+         |aurum-rf-aget| and |aurum-rf-aremove|.
+    5.5: Added |aurum-rf-apause| and |aurum-rf-aresume|.
 @aurum:
     0.1: Added |:AuBranch| and |:AuName|.
     0.2: Added |:AuOther|.
@@ -1949,6 +2073,7 @@ Python driver was not tested under windows (wine) at all.
     1.2: Added “mgroup” _f.newcommand option and mrun resource.
     1.3: Added prevbuf function.
     1.4: Added “plstrgen” _f.newcommand option.
+    1.5: Added possibility to use custom writer function for aurum://edit
 @%aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
@@ -1972,7 +2097,11 @@ Python driver was not tested under windows (wine) at all.
     1.2: Made _r.status.parseshow handle “all” “status”.
 @%aurum/commit:
     1.0: Added fifth argument to _r.commit.commit().
-    1.1: Added sixth optional argument to _r.commit.commit()
+    1.1: Added sixth optional argument to _r.commit.commit().
+    1.2: Added vimdiffcb and findwindow functions to aurum://commit bvar, 
+         added |g:aurum_commitinfowincmd| option
+    1.3: Added seventh optional argument to _r.commit.commit() and 
+         |g:aurum_commitautoopendiff| option.
 @%aurum/annotate:
     1.0: Removed one argument to _r.annotate.setannbuf().
 @%aurum/cmdutils:
@@ -1992,10 +2121,13 @@ Python driver was not tested under windows (wine) at all.
     1.0: Added _r.getcrf(), removed cachebvars export.
     2.0: Removed getcrf, added _r.cache.getcbvar.
     2.1: Added _r.cache.wipe().
+    2.2: Added _r.cache.getinterval().
+    2.3: Added addwiper feature.
 ftplugin/aurumlog:
     0.1: Added OpenAny and AnnotateAny mappings.
 @%aurum/drivers/common/hypsites:
     0.1: Added dict.hlines key (see version 0.4 of @aurum).
+    0.2: Added _r.hypsites.bzr list.
 @%aurum/drivers/common/utils:
     0.1: _r.utils.getcmd() now accepts kwargs key values 0 and [...]
     0.2: Added _r.utils.using_ansi_esc_echo
@@ -2006,5 +2138,7 @@ ftplugin/aurumlog:
          made _r.utils.run return a pair (output, exit_code)
 @%aurum/file:
     0.1: Added |:AuFile| prompt option.
+@%aurum/hyperlink:
+    0.1: Added support for password in URL.
 
 vim: ft=help:tw=78

@@ -5,14 +5,17 @@ execute frawor#Setup('0.0', {'@/options': '0.0',
             \               '@/mappings': '0.0',
             \                   '@aurum': '1.0',
             \             '@aurum/cache': '2.1',
-            \           '@%aurum/commit': '1.1',
+            \           '@%aurum/commit': '1.3',
             \         '@%aurum/cmdutils': '4.0',
             \        '@%aurum/lineutils': '0.0',
-            \             '@%aurum/edit': '1.0',
+            \             '@%aurum/edit': '1.5',
             \          '@%aurum/bufvars': '0.0',})
+let s:hasundo=exists('*undotree')
 let s:_options={
             \'recheight': {'default': 0,
             \               'filter': '(if type "" earg _  range 0 inf)'},
+            \'fullundo':  {'default': s:hasundo,
+            \               'filter': 'bool'},
         \}
 let s:_messages={
             \  'recex': 'There is already one AuRecord tab active '.
@@ -28,26 +31,53 @@ let s:_messages={
             \ 'recnof': 'No files were selected for commiting',
             \   'norm': 'Can’t remove file %s as it was not added',
             \   'noad': 'Can’t add file %s as it is already included',
+            \'noutree': 'No such item in saved undo tree. '.
+            \           'If you can reproduce this error file a bug report',
+            \'tooundo': 'Undone too much changes and cannot redo',
             \ 'undona': "Can’t undo changes. Possible reasons:\n".
-            \           "  1. Current change is the oldest one\n".
-            \           "  2. You did some changes manually and thus buffer ".
+            \           "  1. You did some changes manually and thus buffer ".
             \                "was reset\n".
-            \           "  3. You edited a file which discards undo ".
-            \                "information (supporting undoing edits is too ".
-            \                "complex)",
+            \           "  2. You edited a file which discards undo ".
+            \                "information unless g:aurum_fullundo is set",
             \ 'redona': "Can’t redo changes. Possible reasons:\n".
-            \           "  1. Current change is the newest one\n".
-            \           "  2. You did some changes manually and thus buffer ".
+            \           "  1. You did some changes manually and thus buffer ".
             \                "was reset\n".
-            \           "  3. You edited a file which discards undo ".
-            \                "information (supporting undoing edits is too ".
-            \                "complex)",
+            \           "  2. You edited a file which discards undo ".
+            \                "information unless g:aurum_fullundo is set",
         \}
+"▶1 commitvimdiffcb
+function s:F.commitvimdiffcb(file, bvar, hex)
+    let [lwnr, rwnr, swnr]=s:F.getwnrs()
+
+    execute lwnr.'wincmd w'
+    let file=s:_r.os.path.join(a:bvar.repo.path, a:file)
+    let existed=bufexists(file)
+    execute 'silent edit' fnameescape(file)
+    if !existed
+        setlocal bufhidden=wipe
+    endif
+    diffthis
+
+    execute rwnr.'wincmd w'
+    let existed=s:_r.run('silent edit', 'file', a:bvar.repo, a:hex, a:file)
+    if !existed
+        setlocal bufhidden=wipe
+    endif
+    diffthis
+
+    execute lwnr.'wincmd w'
+endfunction
+"▶1 commitfindwindow
+function s:F.commitfindwindow()
+    let [lwnr, rwnr, swnr]=s:F.getwnrs()
+    execute lwnr.'wincmd w'
+    return 1
+endfunction
 "▶1 write
 function s:F.write(bvar)
     call feedkeys("\<C-\>\<C-n>:call ".
             \      "call(<SNR>".s:_sid."_Eval('s:F.runstatmap'), ".
-            \           "['commit', ".expand('<abuf>')."], {})\n", 'n')
+            \           "['commit', ".expand('<abuf>')."], {})\n","n")
     call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
 endfunction
 "▶1 recfunc
@@ -94,7 +124,7 @@ function s:cmd.function(opts, ...)
     let bvar.reset=0
     let bvar.backupfiles={}
     let bvar.filesbackup={}
-    let bvar.newfiles=[]
+    let bvar.newfiles={}
     let bvar.lines=map(copy(bvar.chars), 'v:val." ".bvar.files[v:key]')
     let bvar.swheight=height
     let bvar.startundo=s:F.curundo()
@@ -110,17 +140,24 @@ function s:cmd.function(opts, ...)
                 \        'autowrite': &autowrite,
                 \     'autowriteall': &autowriteall,
                 \         'autoread': &autoread,}
-    setglobal noautowrite noautowriteall noautoread
-    if !bvar.startundo
-        setglobal undolevels=-1
+    let bvar.fullundo=(s:hasundo && s:_f.getoption('fullundo'))
+    if bvar.fullundo
+        let bvar.undotree={bvar.startundo : {}}
     endif
+    setglobal noautowrite noautowriteall noautoread
     setlocal noreadonly buftype=acwrite
+    augroup AuRecordVimLeave
+        execute 'autocmd! VimLeave * '.
+                    \   ':if has_key(s:_r.bufvars,'.bvar.bufnr.')'.
+                    \   '|  call s:F.unload(s:_r.bufvars.'.bvar.bufnr.')'.
+                    \   '|endif'
+    augroup END
     if empty(bvar.chars)
         bwipeout!
     endif
 endfunction
 "▶1 curundo :: () → UInt
-if exists('*undotree')
+if s:hasundo
     function s:F.curundo()
         return undotree().seq_cur
     endfunction
@@ -136,22 +173,30 @@ function s:F.reset(bvar)
     endfor
     let a:bvar.prevct=b:changedtick
     let a:bvar.reset=1
-    if a:bvar.startundo
-        let a:bvar.undolevels=&undolevels
+    if s:hasundo
         let a:bvar.startundo=s:F.curundo()
+        let savedundolevels=&undolevels
         setglobal undolevels=-1
+        execute "normal! A \<BS>\e"
+        let &undolevels=savedundolevels
+        if a:bvar.fullundo
+            let a:bvar.undotree={a:bvar.startundo : {}}
+        endif
     endif
 endfunction
 "▶1 supdate
-function s:F.supdate(bvar)
+function s:F.supdate(bvar, prevundo)
     if b:changedtick!=a:bvar.prevct
         let a:bvar.prevct=b:changedtick
         if a:bvar.reset
-            if has_key(a:bvar, 'undolevels')
-                let &g:undolevels=a:bvar.undolevels
-                unlet a:bvar.undolevels
-            endif
             let a:bvar.reset=0
+        endif
+        let curundo=s:F.curundo()
+        if              a:bvar.fullundo
+                    \&& has_key(a:bvar.undotree, a:prevundo)
+                    \&& curundo!=a:prevundo
+                    \&& !has_key(a:bvar.undotree, curundo)
+            let a:bvar.undotree[curundo]=copy(a:bvar.undotree[a:prevundo])
         endif
     endif
     setlocal nomodifiable
@@ -208,13 +253,20 @@ function s:F.unload(bvar)
     else
         return
     endif
-    call map(copy(sbvar.backupfiles), 's:F.restorebackup(v:val, v:key)')
-    call map(copy(sbvar.newfiles),    's:F.restorebackup(v:val,   0  )')
+    let backupfiles=copy(sbvar.backupfiles)
+    let newfiles=copy(sbvar.newfiles)
+    call filter(backupfiles, 'filereadable(v:key)')
+    call filter(newfiles,    'filereadable(v:key)')
+    call map(backupfiles, 's:F.restorebackup(v:val, v:key)')
+    call map(newfiles,    's:F.restorebackup(v:key,   0  )')
     for [buf, savedopts] in items(filter(sbvar.oldbufs, 'bufexists(v:key)'))
         for [opt, optval] in items(savedopts)
             call setbufvar(buf, '&'.opt, optval)
         endfor
     endfor
+    augroup AuRecordVimLeave
+        autocmd!
+    augroup END
 endfunction
 "▶1 getwnrs
 function s:F.getwnrs()
@@ -285,6 +337,7 @@ function s:F.edit(bvar, fname, ro)
         call s:_f.mapgroup.map('AuRecordLeft', bufnr('%'))
     endif
 endfunction
+let s:_augroups+=['AuRecordLeft']
 "▶1 srestore
 function s:F.srestore(bvar)
     let sbuf=get(a:bvar, 'sbuf', -1)
@@ -294,9 +347,299 @@ function s:F.srestore(bvar)
     let sbvar=a:bvar.sbvar
     execute 'silent botright sbuffer' sbuf
     execute 'resize' sbvar.swheight
+    call winrestview(a:bvar.winview)
+    redraw!
     let w:aurecid='AuRecordStatus'
     setlocal bufhidden=wipe
     return 1
+endfunction
+"▶1 restorefiles :: bvar, sline::UInt, eline::UInt → + FS
+function s:F.restorefiles(bvar, sline, eline)
+    for file in map(range(a:sline, a:eline), 'a:bvar.lines[v:val-1][2:]')
+        let fullpath=s:_r.os.path.join(a:bvar.repo.path, file)
+        let backupfile=a:bvar.filesbackup[fullpath]
+        call s:F.restorebackup(fullpath, backupfile)
+    endfor
+endfunction
+"▶1 undoup :: bvar → + bvar
+function s:F.undoup(bvar)
+    for line in range(1, line('$'))
+        let a:bvar.statuses[line-1]=stridx(s:statchars, getline(line)[0])
+    endfor
+    if a:bvar.fullundo
+        let curundo=s:F.curundo()
+        if !has_key(a:bvar.undotree, curundo)
+            call s:F.reset(a:bvar)
+            call s:_f.throw('noutree')
+        endif
+        for [file, contents] in items(a:bvar.undotree[curundo])
+            if contents is 0 && filereadable(file)
+                call delete(file)
+            else
+                call writefile(contents, file, 'b')
+            endif
+            unlet contents
+        endfor
+    endif
+endfunction
+"▶1 undoleafwrite :: bvar, lines::[String], path → + bvar, FS
+function s:F.undoleafwrite(bvar, lines, file)
+    if a:file is# a:bvar.file
+        let a:bvar.undoleaf[a:bvar.fullpath]=a:lines
+    endif
+    return a:bvar.ewrite(a:bvar, a:lines, a:file)
+endfunction
+"▶1 sactions
+let s:F.sactions={}
+"▶2 sactions.[v]add, sactions.[v]remove
+function s:F.sactions.add(action, bvar, buf)
+    if a:action[0] is# 'v'
+        let sline=line("'<")
+        let eline=line("'>")
+        if sline>eline
+            let [sline, eline]=[eline, sline]
+        endif
+    else
+        let sline=line('.')
+        let eline=line('.')+v:count1-1
+        if eline>line('$')
+            let eline=line('$')
+        endif
+    endif
+    let add=(a:action[-3:] is# 'add')
+    for line in range(sline, eline)
+        let status=a:bvar.statuses[line-1]
+        let oldstatus=status
+        if add
+            if status<2
+                let status+=2
+            elseif status==3
+                let status=2
+                call s:F.restorefiles(a:bvar, sline, eline)
+            endif
+        else
+            if status>1
+                let status-=2
+            elseif status==1
+                let status=0
+                call s:F.restorefiles(a:bvar, sline, eline)
+            endif
+        endif
+        if oldstatus==status
+            call s:_f.warn('no'.((add)?('ad'):('rm')), a:bvar.files[line-1])
+            continue
+        endif
+        let a:bvar.statuses[line-1]=status
+        call setline(line, s:statchars[status].a:bvar.lines[line-1])
+    endfor
+    return 1
+endfunction
+let s:F.sactions.vadd=s:F.sactions.add
+let s:F.sactions.remove=s:F.sactions.add
+let s:F.sactions.vremove=s:F.sactions.remove
+"▶2 sactions.discard
+function s:F.sactions.discard(action, bvar, buf)
+    call s:F.unload(a:bvar)
+    return 0
+endfunction
+"▶2 sactions.undo
+function s:F.sactions.undo(action, bvar, buf)
+    execute 'silent normal! '.v:count1.'u'
+    let curundo=s:F.curundo()
+    if curundo<a:bvar.startundo
+        while curundo<a:bvar.startundo
+            let pundo=curundo
+            silent redo
+            let curundo=s:F.curundo()
+            if curundo==pundo
+                call s:_f.throw('tooundo')
+                call s:F.reset(a:bvar)
+                setlocal nomodifiable
+                return 0
+            endif
+        endwhile
+    endif
+    return 1
+endfunction
+"▶2 sactions.redo, sactions.earlier, sactions.later
+let s:uactkey={
+            \'redo':    "\<C-r>",
+            \'earlier': "g+",
+            \'later':   "g-",
+        \}
+function s:F.sactions.redo(action, bvar, buf)
+    execute 'silent normal! '.v:count1.s:uactkey[a:action]
+    return 1
+endfunction
+let s:F.sactions.earlier=s:F.sactions.redo
+let s:F.sactions.later=s:F.sactions.earlier
+"▶2 sactions.edit
+function s:F.sactions.edit(action, bvar, buf)
+    let [lwnr, rwnr, swnr]=s:F.getwnrs()
+    let file=a:bvar.lines[line('.')-1][2:]
+    let type=a:bvar.types[line('.')-1]
+    let status=a:bvar.statuses[line('.')-1]
+    let modified=status%2
+    execute lwnr.'wincmd w'
+    diffoff!
+    let fullpath=s:_r.os.path.join(a:bvar.repo.path, file)
+    let ntype=get(s:ntypes, type, 0)
+    if !modified
+        if ntype is# 'm' || ntype is# 'a'
+            if has_key(a:bvar.filesbackup, fullpath)
+                let backupfile=a:bvar.filesbackup[fullpath]
+            else
+                let backupfile=fullpath.'.orig'
+                let i=0
+                while s:_r.os.path.exists(backupfile)
+                    let backupfile=fullpath.'.'.i.'.orig'
+                    let i+=1
+                endwhile
+            endif
+        elseif ntype is# 'r'
+            let a:bvar.newfiles[fullpath]=1
+        endif
+    endif
+    if ntype isnot 0
+        execute swnr.'wincmd w'
+        if !modified
+            let status=3
+            let a:bvar.statuses[line('.')-1]=status
+        endif
+        if a:bvar.fullundo
+            let prevundo=s:F.curundo()
+            let line=line('.')
+            call setline(line, s:statchars[status].a:bvar.lines[line-1])
+            call s:F.supdate(a:bvar, prevundo)
+            let curundo=s:F.curundo()
+        else
+            call s:F.reset(a:bvar)
+        endif
+        setlocal nomodifiable
+        execute lwnr.'wincmd w'
+        call s:F.edit(a:bvar, 'aurum://edit:'.fullpath, 0)
+        if a:bvar.fullundo
+            let ebvar=s:_r.bufvars[bufnr('%')]
+            let undoleaf=a:bvar.undotree[curundo]
+            let ebvar.undoleaf=undoleaf
+            let ebvar.fullpath=fullpath
+            let ebvar.ewrite=ebvar.write
+            let ebvar.write=s:F.undoleafwrite
+        endif
+        if ntype is# 'm' || (modified && ntype is# 'a')
+            if !modified
+                let fcontents=a:bvar.repo.functions.readfile(
+                            \     a:bvar.repo,
+                            \     a:bvar.repo.functions.getworkhex(a:bvar.repo),
+                            \     file)
+            endif
+            diffthis
+            execute rwnr.'wincmd w'
+            call s:F.edit(a:bvar, 'aurum://copy:'.
+                        \((modified)?(a:bvar.filesbackup[fullpath]):
+                        \            (fullpath)), 1)
+            diffthis
+            wincmd p
+        elseif modified
+            if ntype is# 'r'
+                diffthis
+                execute rwnr.'wincmd w'
+                call s:F.edit(a:bvar,
+                            \ ['file', a:bvar.repo,
+                            \  a:bvar.repo.functions.getworkhex(a:bvar.repo),
+                            \  file], 1)
+                diffthis
+                wincmd p
+            endif
+        else
+            if ntype is# 'a'
+                let fcontents=readfile(fullpath, 'b')
+            elseif ntype is# 'r'
+                let fcontents=a:bvar.repo.functions.readfile(
+                            \     a:bvar.repo,
+                            \     a:bvar.repo.functions.getworkhex(a:bvar.repo),
+                            \     file)
+            endif
+        endif
+        if !modified
+            if exists('backupfile')
+                let isexe=executable(fullpath)
+                if rename(fullpath, backupfile)
+                    call s:_f.warn('renfail', fullpath, backupfile)
+                    setlocal readonly nomodifiable
+                    execute swnr.'wincmd w'
+                    return 0
+                endif
+                let a:bvar.backupfiles[backupfile]=fullpath
+                let a:bvar.filesbackup[fullpath]=backupfile
+                if a:bvar.fullundo
+                    let undoleaf[fullpath]=0
+                    let undoleaf[backupfile]=readfile(backupfile, 'b')
+                    let oundoleafpart={fullpath   : copy(undoleaf[backupfile]),
+                                \      backupfile : 0}
+                    call map(a:bvar.undotree,
+                                \'extend(v:val, oundoleafpart, "keep")')
+                endif
+            else
+                let isexe=0
+            endif
+            let diff=&diff
+            if exists('fcontents')
+                silent %delete _
+                call s:_r.lineutils.setlines(fcontents, 0)
+                if diff
+                    diffupdate
+                endif
+            endif
+            silent write
+            if isexe && s:_r.os.name is# 'posix'
+                call system('chmod +x '.fnameescape(fullpath))
+            endif
+        endif
+        if !has_key(s:_r.bufvars, bufnr('%'))
+            let s:_r.bufvars[bufnr('%')]={}
+        endif
+        call extend(s:_r.bufvars[bufnr('%')], {'recfile': file,
+                    \                      'recmodified': modified,
+                    \                      'recfullpath': fullpath,
+                    \                       'recnewfile': 0,})
+        if exists('backupfile')
+            let s:_r.bufvars[bufnr('%')].recbackupfile=backupfile
+        else
+            let s:_r.bufvars[bufnr('%')].recnewfile=1
+        endif
+    endif
+    return 1
+endfunction
+"▶2 sactions.commit
+function s:F.sactions.commit(action, bvar, buf)
+    let files=filter(copy(a:bvar.files), 'a:bvar.statuses[v:key]>1')
+    if empty(files)
+        call s:_f.warn('recnof')
+        return 0
+    endif
+    setlocal bufhidden=hide
+    let winview=winsaveview()
+    try
+        let r=s:_r.commit.commit(a:bvar.repo, a:bvar.recopts, files,
+                    \            a:bvar.status, keys(s:ntypes), 'silent edit',
+                    \            {'vimdiffcb':  s:F.commitvimdiffcb,
+                    \             'findwindow': s:F.commitfindwindow,
+                    \             'bwfunc':     s:F.srestore,
+                    \             'sbvar':      a:bvar,
+                    \             'sbuf':       a:buf,
+                    \             'winview':    winview,})
+    finally
+        if bufwinnr(a:buf)!=-1
+            call setbufvar(a:buf, '&bufhidden', 'wipe')
+        endif
+    endtry
+    if r
+        call s:F.unload(a:bvar)
+    else
+        let w:aurecid='AuRecordCommitMessage'
+    endif
+    return 0
 endfunction
 "▶1 runstatmap
 let s:statchars='-^+*'
@@ -307,230 +650,46 @@ let s:ntypes={
             \'removed':  'r',
             \'deleted':  'r',
         \}
+let s:uactions=['undo', 'redo', 'earlier', 'later']
 function s:F.runstatmap(action, ...)
     "▶2 buf, bvar, reset
     let buf=get(a:000, 0, bufnr('%'))
     let bvar=s:_r.bufvars[buf]
     setlocal modifiable
     if !a:0 && b:changedtick!=bvar.prevct
-        call s:_f.warn('uchngs')
-        call s:F.reset(bvar)
-        setlocal nomodifiable
-        return
-    endif
-    "▶2 add/remove
-    if a:action[-3:] is# 'add' || a:action[-6:] is# 'remove'
-        if a:action[0] is# 'v'
-            let sline=line("'<")
-            let eline=line("'>")
-            if sline>eline
-                let [sline, eline]=[eline, sline]
-            endif
+        if bvar.fullundo && has_key(bvar.undotree, s:F.curundo())
+            call s:F.undoup(bvar)
         else
-            let sline=line('.')
-            let eline=line('.')+v:count1-1
-            if eline>line('$')
-                let eline=line('$')
-            endif
-        endif
-        let add=(a:action[-3:] is# 'add')
-        for line in range(sline, eline)
-            let status=bvar.statuses[line-1]
-            let oldstatus=status
-            if add
-                if status<2
-                    let status+=2
-                endif
-            else
-                if status>1
-                    let status-=2
-                endif
-            endif
-            if oldstatus==status
-                call s:_f.warn('no'.((add)?('ad'):('rm')), bvar.files[line-1])
-                continue
-            endif
-            let bvar.statuses[line-1]=status
-            call setline(line, s:statchars[status].bvar.lines[line-1])
-        endfor
-    "▶2 discard
-    elseif a:action is# 'discard'
-        call s:F.unload(bvar)
-        return
-    "▶2 undo
-    elseif a:action is# 'undo'
-        if !bvar.startundo
-            call s:_f.warn('noundo')
-            return
-        endif
-        if bvar.reset || s:F.curundo()<=bvar.startundo
-            setlocal nomodifiable
-            call s:_f.warn('undona')
-            return
-        endif
-        silent undo
-        for line in range(1, line('$'))
-            let bvar.statuses[line-1]=stridx(s:statchars, getline(line)[0])
-        endfor
-        if s:F.curundo()<bvar.startundo
-            silent redo
-        endif
-    "▶2 redo
-    elseif a:action is# 'redo'
-        if !bvar.startundo
-            call s:_f.warn('noundo')
-            return
-        endif
-        if bvar.reset || s:F.curundo()<=bvar.startundo
-            setlocal nomodifiable
-            call s:_f.warn('redona')
-            return
-        endif
-        silent redo
-        for line in range(1, line('$'))
-            let bvar.statuses[line-1]=stridx(s:statchars, getline(line)[0])
-        endfor
-    "▶2 edit
-    elseif a:action is# 'edit'
-        let [lwnr, rwnr, swnr]=s:F.getwnrs()
-        let file=bvar.lines[line('.')-1][2:]
-        let type=bvar.types[line('.')-1]
-        let status=bvar.statuses[line('.')-1]
-        let modified=status%2
-        execute lwnr.'wincmd w'
-        diffoff!
-        let fullpath=s:_r.os.path.join(bvar.repo.path, file)
-        let ntype=get(s:ntypes, type, 0)
-        if !modified
-            if ntype is# 'm' || ntype is# 'a'
-                let backupfile=fullpath.'.orig'
-                let i=0
-                while s:_r.os.path.exists(backupfile)
-                    let backupfile=fullpath.'.'.i.'.orig'
-                    let i+=1
-                endwhile
-            elseif ntype is# 'r'
-                let bvar.newfiles+=[fullpath]
-            endif
-        endif
-        if ntype isnot 0
-            execute swnr.'wincmd w'
-            if !modified
-                let status=3
-                let bvar.statuses[line('.')-1]=status
-            endif
+            call s:_f.warn('uchngs')
             call s:F.reset(bvar)
             setlocal nomodifiable
-            execute lwnr.'wincmd w'
-            call s:F.edit(bvar, 'aurum://edit:'.fullpath, 0)
-            if ntype is# 'm' || (modified && ntype is# 'a')
-                if !modified
-                    let fcontents=bvar.repo.functions.readfile(
-                                \     bvar.repo,
-                                \     bvar.repo.functions.getworkhex(bvar.repo),
-                                \     file)
-                endif
-                diffthis
-                execute rwnr.'wincmd w'
-                call s:F.edit(bvar, 'aurum://copy:'.
-                            \((modified)?(bvar.filesbackup[fullpath]):
-                            \            (fullpath)), 1)
-                diffthis
-                wincmd p
-            elseif modified
-                if ntype is# 'r'
-                    diffthis
-                    execute rwnr.'wincmd w'
-                    call s:F.edit(bvar,
-                                \ ['file', bvar.repo,
-                                \  bvar.repo.functions.getworkhex(bvar.repo),
-                                \  file], 1)
-                    diffthis
-                    wincmd p
-                endif
-            else
-                if ntype is# 'a'
-                    let fcontents=readfile(fullpath, 'b')
-                elseif ntype is# 'r'
-                    let fcontents=bvar.repo.functions.readfile(
-                                \     bvar.repo,
-                                \     bvar.repo.functions.getworkhex(bvar.repo),
-                                \     file)
-                endif
-            endif
-            if !modified
-                if exists('backupfile')
-                    let isexe=executable(fullpath)
-                    if rename(fullpath, backupfile)
-                        call s:_f.warn('renfail', fullpath, backupfile)
-                        setlocal readonly nomodifiable
-                        execute swnr.'wincmd w'
-                        return
-                    endif
-                    let bvar.backupfiles[backupfile]=fullpath
-                    let bvar.filesbackup[fullpath]=backupfile
-                else
-                    let isexe=0
-                endif
-                let diff=&diff
-                if exists('fcontents')
-                    silent %delete _
-                    call s:_r.lineutils.setlines(fcontents, 0)
-                    if diff
-                        diffupdate
-                    endif
-                endif
-                silent write
-                if isexe && s:_r.os.name is# 'posix'
-                    call system('chmod +x '.fnameescape(fullpath))
-                endif
-            endif
-            if !has_key(s:_r.bufvars, bufnr('%'))
-                let s:_r.bufvars[bufnr('%')]={}
-            endif
-            call extend(s:_r.bufvars[bufnr('%')], {'recfile': file,
-                        \                      'recmodified': modified,
-                        \                      'recfullpath': fullpath,
-                        \                       'recnewfile': 0,})
-            if exists('backupfile')
-                let s:_r.bufvars[bufnr('%')].recbackupfile=backupfile
-            else
-                let s:_r.bufvars[bufnr('%')].recnewfile=1
-            endif
-        endif
-    "▶2 commit
-    elseif a:action is# 'commit'
-        let files=filter(copy(bvar.files), 'bvar.statuses[v:key]>1')
-        if empty(files)
-            call s:_f.warn('recnof')
             return
         endif
-        setlocal bufhidden=hide
-        try
-            let r=s:_r.commit.commit(bvar.repo, bvar.recopts, files,
-                        \            bvar.status, keys(s:ntypes), 'silent edit')
-        finally
-            if bufwinnr(buf)!=-1
-                call setbufvar(buf, '&bufhidden', 'wipe')
-            endif
-        endtry
-        if r
-            call s:F.unload(bvar)
-        else
-            let w:aurecid='AuRecordCommitMessage'
-            let cbvar=s:_r.bufvars[bufnr('%')]
-            let cbvar.sbvar=bvar
-            let cbvar.sbuf=buf
-            let cbvar.bwfunc=s:F.srestore
-        endif
-        return
     endif
-    "▶2 bvar.prevct, bvar.reset, bvar.undolevels
-    if bufnr('%')==buf
-        call s:F.supdate(bvar)
+    "▶2 undo
+    let isundo=(index(s:uactions, a:action)!=-1)
+    if isundo
+        if !s:hasundo
+            call s:_f.warn('noundo')
+            return
+        endif
+        if bvar.reset
+            setlocal nomodifiable
+            call s:_f.warn(a:action.'na')
+            return
+        endif
+    endif
+    let prevundo=s:F.curundo()
+    "▶2 action
+    if s:F.sactions[a:action](a:action, bvar, buf)
+        if bufnr('%')==buf
+            if isundo && s:F.curundo()!=prevundo
+                call s:F.undoup(bvar)
+            endif
+            call s:F.supdate(bvar, prevundo)
+        endif
     endif
 endfunction
-let s:_augroups+=['AuRecordLeft']
 "▶1 runleftmap
 function s:F.runleftmap(action)
     let [lwnr, rwnr, swnr]=s:F.getwnrs()
@@ -549,16 +708,15 @@ function s:F.runleftmap(action)
             let sbvar=s:_r.bufvars[bufnr('%')]
             if bvar.recnewfile
                 call s:F.restorebackup(bvar.recfullpath, 0)
-                call filter(sbvar.newfiles, 'v:val isnot# bvar.recfullpath')
             else
                 call s:F.restorebackup(bvar.recfullpath, bvar.recbackupfile)
-                unlet sbvar.backupfiles[bvar.recbackupfile]
             endif
             let fidx=index(sbvar.files, bvar.recfile)
             let sbvar.statuses[fidx]=0
             setlocal modifiable
+            let prevundo=s:F.curundo()
             call setline(fidx+1, s:statchars[0].sbvar.lines[fidx])
-            call s:F.supdate(sbvar)
+            call s:F.supdate(sbvar, prevundo)
         endif
     elseif a:action is# 'commit'
         silent update
@@ -574,12 +732,16 @@ function s:F.runleftmap(action)
         if sbvar.statuses[fidx]>1
             let sbvar.statuses[fidx]-=2
             setlocal modifiable
+            let prevundo=s:F.curundo()
             call setline(fidx+1, s:statchars[sbvar.statuses[fidx]].
                         \        sbvar.lines[fidx])
-            call s:F.supdate(sbvar)
+            call s:F.supdate(sbvar, prevundo)
         else
             call s:_f.warn('norm', bvar.recfile)
         endif
+    elseif a:action is# 'finish'
+        silent write
+        execute swnr.'wincmd w'
     endif
 endfunction
 "▶1 rec mappings
@@ -592,14 +754,18 @@ function s:F.gml(...)
                 \          '{})<CR>'
 endfunction
 call s:_f.mapgroup.add('AuRecord', {
-            \   'Edit': {'lhs': 'O', 'rhs': s:F.gm('edit')  },
-            \   'Undo': {'lhs': 'u', 'rhs': s:F.gm('undo')  },
+            \   'Edit': {'lhs': 'O',     'rhs': s:F.gm('edit')   },
+            \   'Undo': {'lhs': 'u',     'rhs': s:F.gm('undo')   },
+            \   'Redo': {'lhs': '<C-r>', 'rhs': s:F.gm('redo')   },
+            \'Earlier': {'lhs': 'g-',    'rhs': s:F.gm('earlier')},
+            \  'Later': {'lhs': 'g+',    'rhs': s:F.gm('later')  },
         \}, {'mode': 'n', 'silent': 1, 'dontmap': 1})
 call s:_f.mapgroup.add('AuRecordLeft', {
             \'Discard': {'lhs': 'x', 'rhs': s:F.gml('discard')   },
             \   'Exit': {'lhs': 'X', 'rhs': s:F.gml('discardall')},
             \ 'Commit': {'lhs': 'i', 'rhs': s:F.gml('commit')    },
             \ 'Remove': {'lhs': 'R', 'rhs': s:F.gml('remove')    },
+            \ 'Finish': {'lhs': 'A', 'rhs': s:F.gml('finish')    },
         \}, {'mode': 'n', 'silent': 1, 'dontmap': 1, 'leader': '<Leader>'})
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded')

@@ -1,8 +1,7 @@
-for s:plug in ['@%aurum/repo',
-            \  '@%aurum/bufvars',
+for s:plug in ['@%aurum/bufvars',
             \  '@%aurum/lineutils',
             \  '@%aurum/log/templates',
-            \  '@%aurum/cache',
+            \  '@aurum/cache',
             \  '@%aurum/drivers/common/xml',
             \  '@%aurum/drivers/common/utils',
             \  '@%aurum/drivers/common/hypsites',]

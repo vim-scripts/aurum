@@ -1,11 +1,13 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.1', {'@/resources': '0.0',
+execute frawor#Setup('1.3', {'@/resources': '0.0',
             \                  '@/options': '0.0',
+            \                       '@/os': '0.0',
             \                     '@aurum': '1.0',
             \             '@%aurum/status': '1.2',
             \           '@%aurum/cmdutils': '4.0',
             \            '@%aurum/bufvars': '0.0',
+            \            '@%aurum/vimdiff': '1.1',
             \               '@%aurum/edit': '1.0',
             \               '@aurum/cache': '2.1',})
 let s:_messages={
@@ -17,6 +19,13 @@ let s:_messages={
 let s:_options={
             \'remembermsg':         {'default': 1, 'filter': 'bool'},
             \'bufleaveremembermsg': {'default': 1, 'filter': 'bool'},
+            \'commitautoopendiff':  {'default': 0, 'filter': 'bool'},
+            \'commitinfowincmd':    {
+            \   'default': 'largest_adjacent',
+            \   'checker': 'match /\v^%([jkhlwWtbpvs]|'.
+            \                          'largest%(_%(vertical|'.
+            \                                      'horizontal|'.
+            \                                      'adjacent))?)$/'},
         \}
 "▶1 parsedate string → [year, month, day, hour, minute, second]
 " Date must have one of the following formats (XXX it is not validated):
@@ -75,7 +84,86 @@ function s:F.parsedate(str)
     endif
     return r
 endfunction
-"▶1 commit :: repo, opts, files, status, types → + repo
+"▶1 vimdiffcb
+function s:F.vimdiffcb(file, bvar, hex)
+    execute 'silent tabnew'
+                \ fnameescape(s:_r.os.path.join(a:bvar.repo.path, a:file))
+    return s:_r.vimdiff.split([['file', a:bvar.repo, a:hex, a:file]], 0)
+endfunction
+"▶1 findwindow :: () -> winexisted::Bool
+function s:F.winsize(wnr)
+    let width=winwidth(a:wnr)
+    return (width>80 ? 80 : width)*winheight(a:wnr)
+endfunction
+function s:F.winsplit()
+    if winwidth(0)>=&textwidth*2
+        execute 'silent' (winwidth(0)-&textwidth)                'vsplit'
+    else
+        execute 'silent' (max([winheight(0)-5, winheight(0)/2]))  'split'
+    endif
+    return 0
+endfunction
+function s:F.findwindow()
+    let wcommand=s:_f.getoption('commitinfowincmd')
+    if len(wcommand)==1
+        let commit_mark=reltime()
+        let wscope=w:
+        let w:aurum_commit_mark=commit_mark
+        try
+            execute 'wincmd' wcommand
+            if              exists('w:aurum_commit_mark')
+                        \&& w:aurum_commit_mark is# commit_mark
+                return s:F.winsplit()
+            endif
+            return (stridx('sv', wcommand)==-1)
+        finally
+            call remove(wscope, 'aurum_commit_mark')
+        endtry
+    elseif wcommand is# 'largest'
+        let maxsize=0
+        let mwnr=0
+        for wnr in filter(range(1, winnr('$')), 'v:val!='.winnr())
+            let size=s:F.winsize(a:wnr)
+            if size>maxsize
+                let maxsize=size
+                let mwnr=a:wnr
+            endif
+        endfor
+        if mwnr
+            execute mwnr.'wincmd w'
+            return 1
+        else
+            return s:F.winsplit()
+        endif
+    else
+        let maxsize=0
+        let mwcmd=0
+        let wcmds={
+                    \'vertical':   ['j', 'k'],
+                    \'horizontal': ['h', 'l'],
+                    \'adjacent':   ['h', 'l', 'j', 'k'],
+                \}[wcommand[8:]]
+        let curwin=winnr()
+        for wcmd in wcmds
+            execute 'wincmd' wcmd
+            if winnr()!=curwin
+                let size=s:F.winsize(0)
+                wincmd p
+                if size>maxsize
+                    let maxsize=size
+                    let mwcmd=wcmd
+                endif
+            endif
+        endfor
+        if mwcmd is 0
+            return s:F.winsplit()
+        else
+            execute 'wincmd' mwcmd
+            return 1
+        endif
+    endif
+endfunction
+"▶1 commit :: repo, opts, files, status, types[, cmd[, bvarpart]] → + repo
 let s:defdate=['strftime("%Y")',
             \  'strftime("%m")',
             \  'strftime("%d")',
@@ -118,10 +206,14 @@ function s:F.commit(repo, opts, files, status, types, ...)
     endif
     "▲2
     if empty(message)
-        call s:_r.run(get(a:000, 0, 'silent new'),
+        call s:_r.run(((a:0 && a:1 isnot 0)? a:1 : 'silent new'),
                     \ 'commit', a:repo, user, date, cb, a:files)
         let bvar=s:_r.bufvars[bufnr('%')]
+        if a:0>1 && a:2 isnot 0
+            call extend(bvar, a:2)
+        endif
         let bvar.revstatus=revstatus
+        "▶2 Add previous message
         if exists('g:AuPreviousRepoPath') &&
                     \   g:AuPreviousRepoPath is# a:repo.path &&
                     \exists('g:AuPreviousTip') &&
@@ -131,6 +223,7 @@ function s:F.commit(repo, opts, files, status, types, ...)
             call cursor(line('$'), col([line('$'), '$']))
             unlet g:AuPreviousRepoPath g:AuPreviousTip g:AuPreviousCommitMessage
         endif
+        "▶2 Add comment
         let fmessage=[]
         for [file, state] in items(revstatus)
             let fmessage+=['# '.s:statmsgs[state].' '.file]
@@ -138,10 +231,64 @@ function s:F.commit(repo, opts, files, status, types, ...)
         call sort(fmessage)
         call append('.', fmessage)
         startinsert!
+        "▶2 Open diff
+        if s:_f.getoption('commitautoopendiff')
+            let winexisted=bvar.findwindow()
+            if winexisted
+                let prevbuf=bufnr('%')
+            else
+                let prevbuf=0
+            endif
+            let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, 0, 0,
+                        \                                keys(revstatus), {})
+            if !existed
+                setlocal bufhidden=wipe
+            endif
+            let dbuf=bufnr('%')
+            let dtabpagenr=tabpagenr()
+            silent! %foldopen!
+            wincmd p
+            augroup AuCommitAutoCloseDiff
+                execute 'autocmd BufWipeOut <buffer> '.
+                            \':call s:F.closediffbuf('.dbuf.', '.
+                            \                          dtabpagenr.', '.
+                            \                          prevbuf.', '
+                            \                          existed.', '.
+                            \                          winexisted.')'
+            augroup END
+        endif
+        "▲2
         return 0
     else
         call a:repo.functions.commit(a:repo, message, a:files, user, date, cb)
         return 1
+    endif
+endfunction
+let s:_augroups+=['AuCommitAutoCloseDiff']
+"▶1 closediffbuf
+function s:F.closediffbuf(dbuf, dtabpagenr, prevbuf, existed, winexisted)
+    if bufexists(a:dbuf) && count(tabpagebuflist(a:dtabpagenr), a:dbuf)==1
+        let cmds=[]
+        let switchcmds=[]
+        if (a:prevbuf && bufexists(a:prevbuf)) || a:winexisted
+            let curtab=tabpagenr()
+            if curtab!=a:dtabpagenr
+                let cmds+=['tabnext '.a:dtabpagenr]
+                call insert(switchcmds, 'tabnext '.curtab)
+            endif
+            let cmds+=['execute bufwinnr('.a:dbuf.') "wincmd w"']
+            call insert(switchcmds, 'wincmd p')
+            if a:prevbuf && bufexists(a:prevbuf)
+                let cmds+=['buffer '.a:prevbuf]
+            else
+                let cmds+=['bnext']
+            endif
+        endif
+        if !a:existed
+            let cmds+=['if bufexists('.a:dbuf.')', 'bwipeout '.a:dbuf, 'endif']
+        endif
+        let cmds+=switchcmds
+        return feedkeys("\<C-\>\<C-n>:".join(cmds, '|')."\n\<C-l>", 'n')
     endif
 endfunction
 "▶1 savemsg :: message, bvar → + g:
@@ -171,7 +318,7 @@ function s:F.finish(bvar)
         call a:bvar.bwfunc(a:bvar)
         let a:bvar.bwfunc=a:bvar.sbvar.bwfunc
     endif
-    call feedkeys("\<C-\>\<C-n>:bwipeout!\n")
+    call feedkeys("\<C-\>\<C-n>:bwipeout!\n\<C-l>")
 endfunction
 "▶1 commfunc
 function s:cmd.function(opts, ...)
@@ -240,7 +387,8 @@ function s:commit.function(read, repo, user, date, cb, files)
     augroup END
     return {'user': a:user, 'date': a:date, 'files': a:files,
                 \'closebranch': !!a:cb, 'write': s:F.finish,
-                \'did_message': 0}
+                \'did_message': 0, 'vimdiffcb': s:F.vimdiffcb,
+                \'findwindow': s:F.findwindow,}
 endfunction
 let s:_augroups+=['AuCommit']
 function s:commit.write(lines, repo, user, date, cb, files)
