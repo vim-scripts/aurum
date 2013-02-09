@@ -3,10 +3,11 @@ scriptencoding utf-8
 execute frawor#Setup('0.0', {'@/options': '0.0',
             \                     '@/os': '0.0',
             \               '@/mappings': '0.0',
-            \                   '@aurum': '1.0',
-            \             '@aurum/cache': '2.1',
+            \              '@/functions': '0.1',
+            \                    '@/fwc': '0.0',
+            \            '@%aurum/cache': '2.4',
             \           '@%aurum/commit': '1.3',
-            \         '@%aurum/cmdutils': '4.0',
+            \         '@%aurum/cmdutils': '4.3',
             \        '@%aurum/lineutils': '0.0',
             \             '@%aurum/edit': '1.5',
             \          '@%aurum/bufvars': '0.0',})
@@ -78,12 +79,22 @@ function s:F.write(bvar)
     call feedkeys("\<C-\>\<C-n>:call ".
             \      "call(<SNR>".s:_sid."_Eval('s:F.runstatmap'), ".
             \           "['commit', ".expand('<abuf>')."], {})\n","n")
-    call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
+    call map(copy(s:_r.cache.allkeys), 's:_r.cache.wipe(v:val)')
 endfunction
 "▶1 recfunc
 " TODO investigate why closing record tab is causing next character consumption
 "      under wine
-function s:cmd.function(opts, ...)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'{  repo      '.s:_r.cmdutils.comp.repo.
+            \'  ?message     type ""'.
+            \'  ?date        type ""'.
+            \'  ?user        type ""'.
+            \' !?closebranch'.
+            \'} '.
+            \'+ '.s:_r.cmdutils.comp.file, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(opts, ...)
     if !empty(filter(range(1, tabpagenr('$')),
                 \    'gettabvar(v:val, "aurecid") is# "AuRecordTab"'))
         call s:_f.throw('recex')

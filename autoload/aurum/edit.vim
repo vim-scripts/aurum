@@ -2,10 +2,10 @@
 scriptencoding utf-8
 execute frawor#Setup('1.5', {'@/resources': '0.0',
             \                       '@/os': '0.0',
+            \                '@/functions': '0.1',
             \               '@%aurum/repo': '5.0',
             \          '@%aurum/lineutils': '0.0',
-            \            '@%aurum/bufvars': '0.0',
-            \                     '@aurum': '1.0',})
+            \            '@%aurum/bufvars': '0.0',})
 let s:commands={}
 let s:_messages={
             \    'ucmd': 'Unknown command: %s',
@@ -324,7 +324,8 @@ let s:okeys={
             \ 'num': '+opts[o]',
             \ 'str': 's:F.ounescape(opts[o])',
         \}
-function s:cmd.function(rw)
+let s:_aufunctions.event={}
+function s:_aufunctions.event.function(rw)
     " XXX On windows all forward slashes are transformed to backward in @%,
     "     all backward are transformed to forward in <amatch>
     let buf=expand('<abuf>')
@@ -597,5 +598,5 @@ call s:_f.postresource('fname',     s:F.fname)
 call s:_f.postresource('globtopat', s:F.globtopat)
 call s:_f.postresource('prevbuf',   s:F.prevbuf)
 "▶1
-call frawor#Lockvar(s:, '_pluginloaded,_r,commands')
+call frawor#Lockvar(s:, '_r,commands')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

@@ -19,3 +19,12 @@ function Powerline#Functions#aurum#GetOptions()
     return get(get(s:_r.bufvars, bufnr('%'), {}), 'ploptions', '')
 endfunction
 let s:_functions+=['Powerline#Functions#aurum#GetOptions']
+function Powerline#Functions#aurum#GetProgress()
+    if !exists('b:aurum_log_progress')
+        return ''
+    endif
+    return printf('%-*s %3d%%', winwidth(0)-b:aurum_log_reservedwidth,
+                \               repeat('#', b:aurum_log_barwidth),
+                \               b:aurum_log_progress)
+endfunction
+let s:_functions+=['Powerline#Functions#aurum#GetProgress']

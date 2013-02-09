@@ -1,17 +1,19 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.1',
-            \                '@%aurum/maputils': '0.0',
+execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.3',
+            \                '@%aurum/maputils': '0.1',
             \                 '@%aurum/bufvars': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/vimdiff': '1.0',
             \                    '@%aurum/edit': '1.2',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                            '@/os': '0.0',
             \                      '@/mappings': '0.0',})
 let s:_messages={
-            \'wfail': 'Writing to %s failed',
-            \'dfail': 'Failed to delete %s',
+            \ 'wfail': 'Writing to %s failed',
+            \ 'dfail': 'Failed to delete %s',
+            \'nopars': 'Revision %s has no parents',
         \}
 "▶1 callbacks
 let s:F.callbacks={}
@@ -40,7 +42,22 @@ function s:F.callbacks.replace(file, repo, rev, cmd, hasbuf)
     call winrestview(winview)
 endfunction
 "▶1 AuFile
-function s:cmd.function(rev, file, opts)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'[:=(0)   type ""'.
+            \'[:=(0)   either (match /\L/, path fr)]]'.
+            \'{  repo   '.s:_r.cmdutils.comp.repo.
+            \' !?replace'.
+            \' !?prompt'.
+            \'  ?cmd    '.s:_r.cmdutils.comp.cmd.
+            \'}', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \[['\V:=(0)\s\+either (\[^)]\+)', 'path', ''],
+            \ ['\V:=(0)\s\+type ""',
+            \               'either (type "" '.s:_r.cmdutils.comp.rev.')', ''],
+            \ ['\v\[(.{-})\]',                '\1',   ''],
+            \],
+            \s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(rev, file, opts)
     let opts=copy(a:opts)
     if a:rev isnot 0 && a:rev isnot ':'
         let opts.rev=a:rev
@@ -110,56 +127,76 @@ endfunction
 call s:_f.newcommand(s:file)
 unlet s:file
 "▶1 aurum://file mappings
-let s:mmgroup=':call <SNR>'.s:_sid.'_Eval("s:_f.mapgroup.map(''AuFile'', '.
-            \                                               "bufnr('%'))\")\n"
-function s:F.runfilemap(action)
+function s:F.runmap(action)
     let buf=bufnr('%')
     let bvar=s:_r.bufvars[buf]
-    let cmd="\<C-\>\<C-n>"
     if a:action is# 'exit'
-        let cmd.=s:_r.cmdutils.closebuf(bvar)
+        execute s:_r.cmdutils.closebuf(bvar)
     elseif a:action is# 'update'
         call s:_r.maputils.update(bvar.repo, bvar.rev, v:count)
-        return ''
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))
-        let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev, c).hex
-        let cmd.=':edit '.fnameescape(s:_r.fname('file', bvar.repo, rev,
-                    \                            bvar.file))."\n"
-        let cmd.=s:mmgroup
-        let cmd.=":bwipeout ".buf."\n"
-    elseif a:action is# 'vimdiff' || a:action is# 'revvimdiff'
-        if a:action is# 'vimdiff'
-            let file=s:_r.os.path.normpath(s:_r.os.path.join(bvar.repo.path,
-                        \                                    bvar.file))
-            let cmd.=':diffsplit '.fnameescape(file)."\n"
-        else
-            let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev, 1).hex
-            let file=s:_r.fname('file', bvar.repo, rev, bvar.file)
-            let cmd.=':call call(<SNR>'.s:_sid.'_Eval("s:_r.vimdiff.split"), '.
-                        \       '['.string(file).", 0], {})\n"
+        let [rev, file]=s:_r.maputils.getnthparentfile(bvar.repo, bvar.rev,
+                    \                                  bvar.file, c)
+        let bhwipe=(&bufhidden is# 'wipe')
+        let existed=s:_r.mrun('silent edit', 'file', bvar.repo, rev, file)
+                    \|| !bhwipe
+        if bufexists(buf)
+            execute 'bwipeout' buf
         endif
-    elseif a:action is# 'diff' || a:action is# 'revdiff'
-        let opts='repo '.escape(bvar.repo.path, ' ')
-        if a:action is# 'diff'
-            let opts.=' rev2 '.bvar.rev
-        else
-            let opts.=' rev1 '.bvar.rev
+    elseif a:action is# 'vimdiff'
+        let file=s:_r.os.path.normpath(s:_r.os.path.join(bvar.repo.path,
+                    \                                    bvar.file))
+        call s:_r.vimdiff.split([file], -1)
+    elseif a:action is# 'revvimdiff'
+        let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev,
+                    \                            v:count1).hex
+        call s:_r.vimdiff.split([['file', bvar.repo, rev, bvar.file]], -1)
+    elseif a:action is# 'diff'
+        let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, '', bvar.rev,
+                    \                                [bvar.file], {})
+    elseif a:action is# 'revdiff'
+        let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, bvar.rev, '',
+                    \                                [bvar.file], {})
+    elseif a:action is# 'fulldiff'
+        let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, '', bvar.rev,
+                    \                                [], {})
+    elseif a:action is# 'revfulldiff'
+        let existed=s:_r.mrun('silent edit', 'diff', bvar.repo, bvar.rev, '',
+                    \                                [], {})
+    elseif a:action is# 'fullvimdiff'
+        call s:_r.vimdiff.full(bvar.repo, [0, bvar.rev], 1, [], 0)
+    elseif a:action is# 'revfullvimdiff'
+        let cs=bvar.repo.functions.getcs(bvar.repo, bvar.rev)
+        if empty(cs.parents)
+            call s:_f.throw('nopars', cs.hex)
         endif
-        let cmd.=':AuDiff '.opts."\n"
+        call s:_r.vimdiff.full(bvar.repo, [bvar.rev, cs.parents[0]], 1, [], 0)
     endif
-    return cmd
+    if exists('existed') && !existed
+        setlocal bufhidden=wipe
+    endif
 endfunction
+"▶2 s:m
+function s:m(...)
+    return ':<C-u>call call(<SID>Eval("s:F.runmap"), '.string(a:000).', {})<CR>'
+endfunction
+"▲2
 call s:_f.mapgroup.add('AuFile', {
-            \  'Next': {'lhs': 'K', 'rhs': ['next'      ]},
-            \  'Prev': {'lhs': 'J', 'rhs': ['previous'  ]},
-            \'Update': {'lhs': 'U', 'rhs': ['update'    ]},
-            \  'Exit': {'lhs': 'X', 'rhs': ['exit'      ]},
-            \  'Diff': {'lhs': 'd', 'rhs': [      'diff']},
-            \ 'Rdiff': {'lhs': 'c', 'rhs': ['rev'.'diff']},
-            \ 'Vdiff': {'lhs': 'D', 'rhs': [   'vimdiff']},
-            \'RVdiff': {'lhs': 'C', 'rhs': ['revvimdiff']},
-        \}, {'func': s:F.runfilemap, 'silent': 1, 'mode': 'n', 'dontmap': 1,})
+            \   'Next': {'lhs':  'K', 'rhs': s:m('next'          )},
+            \   'Prev': {'lhs':  'J', 'rhs': s:m('previous'      )},
+            \ 'Update': {'lhs':  'U', 'rhs': s:m('update'        )},
+            \   'Exit': {'lhs':  'X', 'rhs': s:m('exit'          )},
+            \   'Diff': {'lhs':  'd', 'rhs': s:m(          'diff')},
+            \  'Rdiff': {'lhs':  'c', 'rhs': s:m('rev'.    'diff')},
+            \  'Vdiff': {'lhs':  'D', 'rhs': s:m(       'vimdiff')},
+            \ 'RVdiff': {'lhs':  'C', 'rhs': s:m('rev'. 'vimdiff')},
+            \  'Fdiff': {'lhs': 'gd', 'rhs': s:m(   'full'.'diff')},
+            \ 'RFdiff': {'lhs': 'gc', 'rhs': s:m('revfull'.'diff')},
+            \ 'FVdiff': {'lhs': 'gD', 'rhs': s:m(   'fullvimdiff')},
+            \'RFVdiff': {'lhs': 'gC', 'rhs': s:m('revfullvimdiff')},
+        \}, {'silent': 1, 'mode': 'n', 'dontmap': 1,})
+delfunction s:m
 "▶1
 call frawor#Lockvar(s:, '_r,_pluginloaded')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

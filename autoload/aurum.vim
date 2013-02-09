@@ -1,7 +1,7 @@
 "▶1 
 scriptencoding utf-8
 execute frawor#Setup('0.1', {'@%aurum/repo': '5.4',
-            \                '@aurum/cache': '2.3',
+            \               '@%aurum/cache': '2.3',
             \            '@%aurum/cmdutils': '4.0',})
 "▶1 getcrf
 function s:F.id(val)

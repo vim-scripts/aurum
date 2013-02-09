@@ -112,6 +112,8 @@ function s:F.runcommap(count, action)
         return s:_r.vimdiff.full(bvar.repo,
                     \            [0, bvar.repo.functions.getworkhex(bvar.repo)],
                     \            1, s:F.listfiles(bvar), 0)
+    elseif a:action is# 'insprev'
+        call setline('.', split(g:AuPreviousCommitMessage, "\n", 1))
     endif
 endfunction
 "▶1 AuCommitMessage mapping group
@@ -130,6 +132,7 @@ call s:_f.mapgroup.add('AuCommitMessage', {
             \  'Vdiff': {'lhs':  'D', 'rhs': ['vimdiff'    ]},
             \ 'FVdiff': {'lhs': 'gD', 'rhs': ['fullvimdiff']},
             \   'Exit': {'lhs':  'X', 'rhs': ['discard'    ]},
+            \'InsPrev': {'lhs':  'p', 'rhs': ['insprev'    ]},
         \}, {'mode': 'in', 'silent': 1, 'leader': '<LocalLeader>',
         \    'func': s:F.mapwrapper})
 "▶1

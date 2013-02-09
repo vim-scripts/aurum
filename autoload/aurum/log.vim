@@ -1,21 +1,24 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.3',
             \           '@%aurum/log/templates': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \                    '@%aurum/edit': '1.1',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                       '@/options': '0.0',
             \                         '@/table': '0.1',})
 let s:F.glog={}
 let s:F.graph={}
+let s:ignfiles=['patch', 'renames', 'copies', 'files', 'diff', 'open']
 let s:_options={
-            \'ignorefiles':    {'default': [],'checker': 'list in _r.ignfiles'},
+            \'ignorefiles':    {'default': [],'checker': 'list in ignfiles'},
             \'closelogwindow': {'default': 1,  'filter': 'bool'               },
             \'procinput':      {'default': 1, 'checker': 'range 0 2'          },
             \'loglimit':       {'default': 0, 'checker': 'range 0 inf'        },
             \'autoaddlog':     {'default': 1,  'filter': 'bool'               },
+            \'showprogress':   {'default': 0,  'filter': 'bool'               },
         \}
 let s:_messages={
             \'nocontents': 'Log is empty',
@@ -26,11 +29,6 @@ let s:_messages={
 " iterfuncs :: {fname: { "start": startfunc, "next": nextfunc }}
 " startfunc (always) :: repo, opts, * → d
 let s:iterfuncs={}
-" XXX Check that completion and actual template lists match. This is needed to 
-"     prevent @aurum from depending on aurum/log/templates
-if sort(s:_r.template.tlist) !=# sort(s:_r.tlist)
-    call s:_f.warn('tnmatch')
-endif
 "▶1 addcols
 function s:F.addcols(special, cnum)
     let mapexpr='[v:val[0], v:val[1]+'.a:cnum.']+v:val[2:]'
@@ -971,14 +969,20 @@ function s:iterfuncs.glog.generate(repo, opts, bvar, read)
     endif
     let r.opts=a:opts
     "▶3 Initialize variables used for progress bar
-    let hasprogress=(get(a:opts, 'progress', 0) &&
-                \    (has_key(r.csd, 'csnum') || a:opts.limit))
+    let hasprogress=(   (   has_key(r.csd, 'csnum')
+                \        || a:opts.limit)
+                \    && (has_key(a:opts, 'progress')
+                \           ? a:opts.progress
+                \           : s:_f.getoption('showprogress')))
     if hasprogress
         let r.prevprogress=0
         let r.prevbarwidth=-1
         let r.csprocessed=0
         let r.csnum=get(r.csd, 'csnum', a:opts.limit)
         let r.oldstatusline=&l:statusline
+        let b:aurum_log_progress=0
+        let b:aurum_log_barwidth=0
+        let b:aurum_log_reservedwidth=35
     endif
     "▶3 Try to use cache
     let cid=hascheck.hasprogress.a:read.(join(reqprops, ';'))
@@ -1039,20 +1043,35 @@ function s:iterfuncs.glog.generate(repo, opts, bvar, read)
                     \  '        call s:iterfuncs.csshow.next(self.sd)']
     endif
     if hasprogress
+        let plprogress=(!!g:Powerline_loaded)
+        let pgmul=(plprogress ? 100 : 1000)
+        let reservedwidth=(plprogress ? b:aurum_log_reservedwidth : 9)
         let function+=['        let self.csprocessed+=1',
-                    \  '        let progress=self.csprocessed*1000/self.csnum',
-                    \  '        let barwidth=self.csprocessed*(winwidth(0)-9)/'.
+                    \  '        let progress=self.csprocessed*'.pgmul.'/'.
+                    \                       'self.csnum',
+                    \  '        let barwidth=self.csprocessed*'.
+                    \                       '(winwidth(0)-'.reservedwidth.')/'.
                     \                       'self.csnum',
                     \  '        if progress!=self.prevprogress || '.
-                    \             'barwidth!=self.prevbarwidth',
+                    \             'barwidth!=self.prevbarwidth',]
+        if plprogress
+            let function+=[
+                    \  '            let b:aurum_log_progress=progress',
+                    \  '            let b:aurum_log_barwidth=barwidth',
+                    \]
+        else
+            let function+=[
                     \  '            let &l:stl=printf("[%-*s] %3d.%s%%%%", '.
-                    \                                'winwidth(0)-9, '.
+                    \                                'winwidth(0)-'.
+                    \                                        reservedwidth.', '.
                     \                                'substitute('.
                     \                                  'repeat("=", barwidth),'.
                     \                                  '".$", ">", ""),'.
                     \                                'progress/10, '.
                     \                                'progress[-1:])',
-                    \  '            let self.prevprogress=progress',
+                    \]
+        endif
+        let function+=['            let self.prevprogress=progress',
                     \  '            let self.prevbarwidth=barwidth',
                     \  '            redrawstatus',
                     \  '        endif']
@@ -1088,6 +1107,8 @@ function s:iterfuncs.glog.iterate(...)
         let &l:stl=gd.oldstatusline
         redrawstatus
     endif
+    unlet! b:aurum_log_progress b:aurum_log_barwidth b:aurum_log_width
+    unlet! b:aurum_log_reservedwidth
     let bvar=a:3
     if get(bvar, 'autoaddlog', 0) && r!=-1
         let bvar.gd=gd
@@ -1218,8 +1239,47 @@ function s:F.setup(read, repo, opts, ...)
     return bvar
 endfunction
 let s:_augroups+=['AuLog']
+"▶1 branchlist
+function s:F.branchlist()
+    let repo=aurum#repository()
+    return repo.functions.getrepoprop(repo, 'brancheslist')
+endfunction
 "▶1 AuLog
-function s:cmd.function(repopath, opts)
+let s:datereg='%(\d\d%(\d\d)?|[*.])'.
+            \ '%(\-%(\d\d?|[*.])'.
+            \ '%(\-%(\d\d?|[*.])'.
+            \ '%([ _]%(\d\d?|[*.])'.
+            \ '%(\:%(\d\d?|[*.]))?)?)?)?'
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'['.s:_r.cmdutils.comp.repo.']'.
+            \'{ *  ?files    '.s:_r.cmdutils.comp.file.
+            \'  *  ?ignfiles in ignfiles ~start'.
+            \'     ?date     match /\v[<>]?\=?'.s:datereg.'|'.
+            \                       s:datereg.'\<\=?\>'.s:datereg.'/'.
+            \'     ?search   isreg'.
+            \'     ?user     isreg'.
+            \'     ?branch   type ""'.
+            \' ! +1?limit    range 1 inf'.
+            \'     ?revision '.s:_r.cmdutils.comp.rev.
+            \'   +2?revrange '.join(repeat([s:_r.cmdutils.comp.rev], 2)).
+            \'     ?style    in _r.template.tlist'.
+            \'     ?template idof variable'.
+            \' !   ?merges'.
+            \' !   ?patch'.
+            \' !   ?stat'.
+            \' !   ?showfiles'.
+            \' !   ?showrenames'.
+            \' !   ?showcopies'.
+            \' !   ?procinput'.
+            \' !   ?autoaddlog'.
+            \' !   ?progress'.
+            \s:_r.cmdutils.comp.diffopts.
+            \'    ?cmd      '.s:_r.cmdutils.comp.cmd.
+            \'}', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \[['\vbranch\s+\Vtype ""', 'branch in *F.branchlist', '']],
+            \s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(repopath, opts)
     let opts=copy(a:opts)
     if has_key(opts, 'files')
         if opts.files[0] is# ':'
@@ -1256,7 +1316,7 @@ call s:_f.newcommand({
             \             'bool': ['merges', 'patch', 'stat', 'showfiles',
             \                      'showrenames', 'showcopies', 'procinput',
             \                      'autoaddlog'],
-            \              'num': ['limit']+s:_r.diffopts,
+            \              'num': ['limit']+s:_r.cmdutils.diffopts,
             \              'str': ['date', 'search', 'user', 'branch',
             \                      'revision', 'style', 'template',
             \                      'crrestrict'],

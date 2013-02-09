@@ -1,5 +1,5 @@
-from aurum.utils import readlines
-from copy import deepcopy
+from aurum.utils   import readlines
+from aurum.auutils import emptystatdct
 
 hgstatchars={
     'M': 'modified',
@@ -10,19 +10,10 @@ hgstatchars={
     'I': 'ignored',
     'C': 'clean',
 }
-emptystatdct={
-    'modified': [],
-    'added'   : [],
-    'removed' : [],
-    'deleted' : [],
-    'unknown' : [],
-    'ignored' : [],
-    'clean'   : [],
-}
 
 def hg_status(path, args, reverse=False):
-    r=deepcopy(emptystatdct)
-    for line in readlines(['hg']+args, cwd=path):
+    r=emptystatdct()
+    for line in readlines(['hg', 'status']+args, cwd=path):
         r[hgstatchars[line[0]]].append(line[2:])
     if reverse:
         r['deleted'], r['unknown'] = r['unknown'], r['deleted']
@@ -33,7 +24,7 @@ def hg_branch(path):
     return readlines(['hg', 'branch'], cwd=path).next()
 
 def git_status(path, fname):
-    r=deepcopy(emptystatdct)
+    r=emptystatdct()
     try:
         line=readlines(['git', 'status', '--porcelain', '--', fname],
                        cwd=path).next()
@@ -87,9 +78,9 @@ svnstatchars=[
     },
 ]
 def svn_status(path, fname):
-    r=deepcopy(emptystatdct)
+    r=emptystatdct()
     try:
-        line=readlines(['svn', 'status', '--', fname]).next()
+        line=readlines(['svn', 'status', '--', fname], cwd=path).next()
         status=line[:7]
         for schar, colschars in zip(status, svnstatchars):
             if schar in colschars:
@@ -98,5 +89,34 @@ def svn_status(path, fname):
     except StopIteration:
         r['clean'].append(fname)
     return r
+
+bzrstatstats={
+    'added'       : 'added',
+    'removed'     : 'removed',
+    'renamed'     : 'removed',
+    'modified'    : 'modified',
+    'kind changed': 'modified',
+    'conflicts'   : 'modified',
+    'unknown'     : 'unknown',
+    'nonexistent' : 'unknown',
+    'missing'     : 'deleted',
+    'ignored'     : 'ignored',
+}
+
+def bzr_status(path, fname):
+    r=emptystatdct()
+    try:
+        line=readlines(['bzr', 'status', '--', fname], cwd=path).next()
+        if line[-1] != ':':
+            raise ValueError('Expected colon at the end of first line')
+        line=line[:-1]
+        if line != 'nonexistent':
+            r[bzrstatstats[line]].append(fname)
+    except StopIteration:
+        r['clean'].append(fname)
+    return r
+
+def bzr_branch(path):
+    return "\n".join(readlines(['bzr', 'nick'], cwd=path))
 
 # vim: ft=python ts=4 sw=4 sts=4 et tw=100

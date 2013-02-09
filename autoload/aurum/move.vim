@@ -1,19 +1,30 @@
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '4.0',
-            \          '@%aurum/edit': '1.0',
-            \                  '@/os': '0.0',
-            \               '@/table': '0.0',})
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.3',
+            \                    '@%aurum/edit': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
+            \                            '@/os': '0.0',
+            \                         '@/table': '0.0',})
 let s:_messages={
             \'nomv': 'No movable files found',
             \'_mvheader': ['Source', 'Destination'],
         \}
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings _ '.
+            \'{  repo '.s:_r.cmdutils.comp.repo.
+            \' ?!copy'.
+            \' ?!rightrepl'.
+            \' ?!leftpattern'.
+            \' ?!pretend'.
+            \'} '.
+            \'+ '.s:_r.cmdutils.comp.file, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
 " :AuM          — move current file to current directory
 " :AuM dir      — move current file to given directory
 " :AuM pat  pat — act like `zmv -W': use second pat to construct new file name
 " :AuM pat+ dir — move given file(s) to given directory
 " :AuM pat+     — move given file(s) to current directory
-function s:cmd.function(bang, opts, ...)
+function s:_aufunctions.cmd.function(bang, opts, ...)
     if a:0 && !get(a:opts, 'leftpattern', 0) && a:opts.repo is# ':'
         let repo=s:_r.cmdutils.checkedgetrepo(a:1)
     else

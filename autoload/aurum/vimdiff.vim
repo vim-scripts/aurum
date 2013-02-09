@@ -1,8 +1,9 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.1', {'@%aurum/cmdutils': '4.3',
             \                    '@%aurum/edit': '1.3',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                      '@/mappings': '0.0',
             \                     '@/resources': '0.0',
             \                       '@/options': '0.0',
@@ -60,37 +61,49 @@ endfunction
 "▶1 diffrestore
 let s:F.diffrestore={}
 "▶2 diffrestore.onotherenter
-function s:F.diffrestore.onotherenter(buf, abuf, dbvar, ddbvars)
+function s:F.diffrestore.onotherenter(buf, abuf, dbvar, ddbvars, prevbuffers)
     if has_key(a:dbvar, 'bufnr')
         if bufexists(a:dbvar.bufnr)
             return
         else
-            call s:F.diffrestore.onwipe(a:buf, a:abuf, a:dbvar, a:ddbvars)
+            call s:F.diffrestore.onwipe(a:buf, a:abuf, a:dbvar, a:ddbvars,
+                        \               a:prevbuffers)
         endif
     endif
     let ddbvar=remove(a:ddbvars, a:abuf)
     return s:F.restore(a:ddbvars[a:abuf])
 endfunction
 "▶2 diffrestore.onenter
-function s:F.diffrestore.onenter(buf, abuf, dbvar, ddbvars)
+function s:F.diffrestore.onenter(buf, abuf, dbvar, ddbvars, prevbuffers)
     if !empty(filter(copy(a:dbvar.diffbufs), 'bufwinnr(v:val)!=-1'))
         return
     endif
     return s:F.restore(a:dbvar)
 endfunction
 "▶2 diffrestore.onotherwipe
-function s:F.diffrestore.onotherwipe(buf, abuf, dbvar, ddbvars)
+function s:F.diffrestore.onotherwipe(buf, abuf, dbvar, ddbvars, prevbuffers)
     call filter(a:dbvar.diffbufs, 'v:val isnot '.a:abuf)
     unlet a:ddbvars[a:abuf]
 endfunction
 "▶2 diffrestore.onwipe
-function s:F.diffrestore.onwipe(buf, abuf, dbvar, ddbvars)
+function s:F.diffrestore.onwipe(buf, abuf, dbvar, ddbvars, prevbuffers)
     call map(copy(a:ddbvars), 'remove(v:val, "srcbuf")')
     let toremove=keys(filter(copy(a:ddbvars),
                 \            '!v:val.existed && bufexists(v:val.bufnr)'))
     if !empty(toremove)
-        call feedkeys("\<C-\>\<C-n>:silent bwipeout ".join(toremove)."\n\<C-l>",
-                    \ 'n')
+        let cmd="\<C-\>\<C-n>:"
+        for buf in filter(toremove, 'bufwinnr(+v:val)!=-1 && '.
+                    \               'get(a:prevbuffers, v:val, 0)')
+            let cmd.=bufwinnr(+buf).'wincmd w|'.
+                        \'silent buffer '.a:prevbuffers[buf].'|'.
+                        \'wincmd p|'
+        endfor
+        let cmd.=    'try|'.
+                    \   'silent bwipeout '.join(toremove).'|'.
+                    \'catch /Vim(bwipeout):E517:/|'.
+                    \'endtry'.
+                    \"\n\<C-l>"
+        call feedkeys(cmd, 'n')
     endif
 endfunction
 "▶2 diffrestore.call
@@ -102,7 +115,9 @@ function s:F.diffrestore.call(buf, func)
     endif
     let dbvar=t:auvimdiff_origbufvar
     let ddbvars=t:auvimdiff_diffbufvars
-    return s:F.diffrestore[a:func](a:buf, +expand('<abuf>'), dbvar, ddbvars)
+    let prevbuffers=t:auvimdiff_prevbuffers
+    return s:F.diffrestore[a:func](a:buf, +expand('<abuf>'), dbvar, ddbvars,
+                \                  prevbuffers)
 endfunction
 "▶1 findwindow
 function s:F.findwindow()
@@ -456,7 +471,20 @@ function s:F.fullvimdiff(repo, revs, mt, files, areglobs, ...)
 endfunction
 "▶1 :AuVimDiff
 " TODO exclude binary files from full diff
-function s:cmd.function(opts, ...)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'{  repo  '.s:_r.cmdutils.comp.repo.
+            \'  ?file  '.s:_r.cmdutils.comp.file.
+            \' *?files (match /\W/)'.
+            \' !?full'.
+            \' !?untracked'.
+            \' !?onlymodified'.
+            \' !?curfile'.
+            \' !?usewin'.
+            \'}'.
+            \'+ '.s:_r.cmdutils.comp.rev, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \[['\V(match /\\W/)', '(path)', '']], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(opts, ...)
     "▶2 repo and revisions
     let full=get(a:opts, 'full', 0)
     let action=((full)?('getfiles'):('open'))

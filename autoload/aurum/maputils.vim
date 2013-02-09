@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@/resources': '0.0',
+execute frawor#Setup('0.1', {'@/resources': '0.0',
             \                       '@/os': '0.0',})
 let s:_messages={
             \'plinst': 'If you install Command-T, Ctrlp, FuzzyFinder, unite, '.
@@ -204,6 +204,32 @@ endfunction
 "▶1 readfilewrapper :: file, repo, rev → [String]
 function s:r.readfilewrapper(file, repo, rev)
     return a:repo.functions.readfile(a:repo, a:rev, a:file)
+endfunction
+"▶1 getnthparentfile :: repo, rev, file, n → (hex, file)
+function s:r.getnthparentfile(repo, rev, file, n)
+    let n=a:n
+    let shift=(n>0 ? 1 : -1)
+    let file=a:file
+    let hex=a:repo.functions.getrevhex(a:repo, a:rev)
+    while n
+        let cs=a:repo.functions.getnthparent(a:repo, hex, shift)
+        let rhex=(shift>0 ? hex : cs.hex)
+        if cs.hex is# hex
+            break
+        endif
+        let hex=cs.hex
+        let renames=a:repo.functions.getcsprop(a:repo, rhex, 'renames')
+        if shift<0
+            let rrenames={}
+            call map(copy(renames), 'extend(rrenames, {v:val : v:key})')
+            let renames=rrenames
+        endif
+        if get(renames, file, 0) isnot 0
+            let file=renames[file]
+        endif
+        let n-=shift
+    endwhile
+    return [hex, file]
 endfunction
 "▶1 Post maputils resource
 call s:_f.postresource('maputils', s:r)

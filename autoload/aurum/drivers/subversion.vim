@@ -2,9 +2,10 @@
 scriptencoding utf-8
 execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
-            \                   '@%aurum/drivers/common/utils': '1.0',
+            \                   '@%aurum/drivers/common/utils': '1.1',
             \                     '@%aurum/drivers/common/xml': '0.0',
-            \                                           '@/os': '0.0',})
+            \                                           '@/os': '0.0',
+            \                                       '@/python': '1.0',})
 let s:_messages={
             \  'rnimp': 'Reversing diff between working directory and '.
             \           'any revision is not implemented',
@@ -902,10 +903,11 @@ if s:_r.repo.userepeatedcmd
                         \type(a:3)!=type([]) || len(a:3)!=1
                 call s:_f.throw('aconimp')
             endif
-            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \        string(a:interval).', '.
                         \       'aurum.rcdriverfuncs.svn_status, '.
-                        \       'vim.eval("a:repo.path"), '.
-                        \       'vim.eval("a:3[0]"))')
+                        \        s:_r.utils.pystring(a:repo.path).', '.
+                        \        s:_r.utils.pystring(a:3[0]).')')
         endfunction
     endif
 endif

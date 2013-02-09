@@ -5,4 +5,5 @@ let g:Powerline#Segments#{s:seg}#segments = Pl#Segment#Init([s:seg,
             \ Pl#Segment#Create('status',     '%{Powerline#Functions#aurum#GetStatus()}'),
             \ Pl#Segment#Create('repository', '%{Powerline#Functions#aurum#GetRepoPath()}'),
             \ Pl#Segment#Create('options',    '%{Powerline#Functions#aurum#GetOptions()}'),
+            \ Pl#Segment#Create('progress',   '%{Powerline#Functions#aurum#GetProgress()}'),
             \])

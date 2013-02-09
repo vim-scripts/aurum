@@ -1,19 +1,31 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.3',
             \                '@%aurum/maputils': '0.0',
             \                 '@%aurum/bufvars': '0.0',
             \               '@%aurum/lineutils': '0.0',
             \                 '@%aurum/vimdiff': '1.0',
             \                    '@%aurum/edit': '1.2',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                      '@/mappings': '0.0',
             \                            '@/os': '0.0',})
 let s:_messages={
             \'nodfile': 'Failed to get file whose section is under the cursor',
         \}
 "▶1 difffunc
-function s:cmd.function(opts, ...)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'{  repo     '.s:_r.cmdutils.comp.repo.
+            \'  ?rev1     '.s:_r.cmdutils.comp.rev.
+            \'  ?rev2     '.s:_r.cmdutils.comp.rev.
+            \'  ?changes  '.s:_r.cmdutils.comp.rev.
+            \s:_r.cmdutils.comp.diffopts.
+            \'  ?cmd      '.s:_r.cmdutils.comp.cmd.
+            \'}'.
+            \'+ '.s:_r.cmdutils.comp.file, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(opts, ...)
     if a:0 && a:opts.repo is# ':'
         let repo=s:_r.cmdutils.checkedgetrepo(a:1)
     else
@@ -66,7 +78,7 @@ function s:cmd.function(opts, ...)
         return
     endif
     "▲2
-    let opts=filter(copy(a:opts), 'index(s:_r.diffopts, v:key)!=-1')
+    let opts=filter(copy(a:opts), 'index(s:_r.cmdutils.diffopts, v:key)!=-1')
     call s:_r.run(get(a:opts, 'cmd', 'silent edit'), 'diff', repo, rev1, rev2,
                 \ filelist, opts)
     if !has_key(a:opts, 'cmd')
@@ -171,7 +183,7 @@ call s:_f.mapgroup.add('AuDiff', {
 "▶1 aurum://diff
 let s:diff= {'arguments': 2,
             \ 'listargs': 1,
-            \  'options': {'num': s:_r.diffopts},
+            \  'options': {'num': s:_r.cmdutils.diffopts},
             \ 'filetype': 'diff',
             \   'mgroup': 'AuDiff',
             \}

@@ -1,10 +1,12 @@
 "▶1
 scriptencoding utf-8
+let s:pp='aurum.aubazaar'
 execute frawor#Setup('0.0', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
-            \                   '@%aurum/drivers/common/utils': '1.0',
+            \                   '@%aurum/drivers/common/utils': '1.2',
             \                                           '@/os': '0.1',
-            \                                      '@/options': '0.0',})
+            \                                      '@/options': '0.0',
+            \                                       '@/python': '1.0',})
 let s:_messages={
             \   'revnof': 'Failed to get working directory revision '.
             \             'from the repository %s: %s',
@@ -14,7 +16,6 @@ let s:_messages={
             \             'in the repository %s: %s',
             \      'lsf': 'Failed to list files in the changeset %s '.
             \             'from the repository %s: %s',
-            \    'statf': 'Failed to get status in the repository %s: %s',
             \'lsignoref': 'Failed to list ignored files '.
             \             'in the repository %s: %s',
             \   'labelf': 'Failed to set %s “%s” for the changeset %s '.
@@ -108,7 +109,7 @@ function s:F.parsecs(csdata, ...)
     let indent=stridx(remove(a:csdata, 0), '-')
     " FIXME children:[]
     let cs={'parents': [], 'copies': {}, 'children': [], 'phase': 'unknown',
-                \'bookmarks': [], 'tags': []}
+                \'bookmarks': [], 'tags': [], 'branch': 'default'}
     while !empty(a:csdata) && a:csdata[0]!~#'\v^\s*\-{60}$'
         let line=remove(a:csdata, 0)[(indent):]
         if line is# 'message:'
@@ -229,55 +230,92 @@ endfunction
 function s:bzr.gettiphex(repo)
     return a:repo.functions.getrevhex(a:repo, '-1')
 endfunction
-"▶1 getstatdict :: repo, kwargs → statdict
-function s:F.getstatdict(repo, args, kwargs)
-    let status=s:F.bzr(a:repo, 'status', a:args,
-                \      extend({'no-classify': 1}, a:kwargs), 0,
-                \      'statf')[:-2]
+"▶1 getstatdict :: repo, args, kwargs, renamed → statdict
+let s:emptystatdict=extend({'renames': {}}, deepcopy(s:_r.utils.emptystatdct))
+function s:F.getstatdict(repo, args, kwargs, renamed)
+    let lines=s:F.bzr(a:repo, 'status', a:args,
+                \      extend({'no-classify': 1, 'no-pending': 1, 'short': 1},
+                \             a:kwargs),
+                \      0)[:-2]
     let curstatus=0
-    let statdict={}
-    while !empty(status)
-        let line=remove(status, 0)
-        if line[:1] is# '  '
-            " XXX File name is not expected to contain " => "
-            let statdict[curstatus]+=[line[2:]]
-        elseif line =~# '\v^[a-z]+%(\ [a-z]+)*\:$'
-            let curstatus=line[:-2]
-            let statdict[curstatus]=[]
-        elseif !empty(get(statdict, curstatus, 0))
-            " XXX Support for file with newlines is very limited here: it 
-            "     does not expect them containing "\n  " or "\nabc:". Bazaar 
-            "     crashes when trying to commit file with newline in its 
-            "     name, though it is probably not a problem
-            let statdict[curstatus][-1].="\n".line
+    if a:renamed
+        let statdict=deepcopy(s:emptystatdict)
+    else
+        let statdict=deepcopy(s:_r.utils.emptystatdct)
+    endif
+    while !empty(lines)
+        let line=remove(lines, 0)
+        let status=line[:2]
+        if (status!~#'^[ +\-?RIXCP][ KNMD!][ *]$' || line[3] isnot# ' ')
+                    \&& curstatus isnot 0
+            let statdict[curstatus][-1].=line
+        endif
+        let file=line[4:]
+        if status[0] is# 'R'
+            let idx=stridx(file, ' => ')
+            if idx==-1
+                call s:_f.throw('rene', file)
+            elseif idx==0
+                call s:_f.throw('renze', file)
+            endif
+            let old=file[:(idx-1)]
+            let new=file[idx+4:]
+            if empty(new)
+                call s:_f.throw('renz2e', file)
+            endif
+            if a:renamed
+                let statdict.renames[new] = old
+            endif
+            let statdict.removed += [old]
+            let statdict.added   += [new]
+            let curstatus='added'
+        elseif status[0] is# ' '
+            if status[1] is# 'N'
+                let statdict.added    += [file]
+                let curstatus='added'
+            elseif stridx('D!', status[1])!=-1
+                let statdict.deleted  += [file]
+                let curstatus='deleted'
+            elseif status[2] is# '*' || stridx('KM', status[1])!=-1
+                let statdict.modified += [file]
+                let curstatus='modified'
+            else
+                let statdict.clean    += [file]
+                let curstatus='clean'
+            endif
+        elseif status[0] is# '-'
+            let statdict.removed+=[file]
+            let curstatus='removed'
+        elseif status[0] is# '+'
+            if status[1] is# '!'
+                let statdict.deleted  += [file]
+                let curstatus='deleted'
+            else
+                let statdict.added    += [file]
+                let curstatus='added'
+            endif
+        elseif status[0] is# '?'
+            let statdict.unknown+=[file]
+            let curstatus='unknown'
+        elseif status[0] is# 'I'
+            let statdict.ignored+=[file]
+            let curstatus='ignored'
+        " elseif status[0] is# 'X'
+            " Nonexistent file
         endif
     endwhile
     return statdict
 endfunction
-"▶1 getrenames :: statdict → renames
-function s:F.getrenames(statdict)
-    if !has_key(a:statdict, 'renamed')
-        return {}
-    endif
-    let renames={}
-    for rename in a:statdict.renamed
-        let idx=stridx(rename, " => ")
-        if idx==-1
-            call s:_f.throw('rene', rename)
-        elseif idx==0
-            call s:_f.throw('renze', rename)
-        endif
-        let old=rename[:(idx-1)]
-        let new=rename[idx+4:]
-        try
-            let renames[new]=old
-        catch /^Vim(let):E713:/
-            call s:_f.throw('renz2e', rename)
-        endtry
-    endfor
-    return renames
-endfunction
 "▶1 bzr.setcsprop :: repo, cs, propname → propvalue
+if s:usepythondriver "▶2
+function s:bzr.setcsprop(repo, cs, prop)
+    try
+        execute s:pya.'get_cs_prop(vim.eval("a:repo.path"), '.
+                    \             'vim.eval("a:cs.hex"), '.
+                    \             'vim.eval("a:prop"))'
+    endtry
+endfunction
+else "▶2
 function s:bzr.setcsprop(repo, cs, prop)
     if a:prop is# 'allfiles'
         let r=s:_r.utils.nullnl(
@@ -287,27 +325,34 @@ function s:bzr.setcsprop(repo, cs, prop)
                     \        'lsf', a:cs.hex))[:-2]
     elseif       a:prop is# 'renames' || a:prop is# 'changes' ||
                 \a:prop is# 'files'   || a:prop is# 'removes'
-        let statdict=s:F.getstatdict(a:repo, [], {'change': 'revid:'.a:cs.hex})
-        let a:cs.removes=[]
-        let a:cs.files=[]
-        call map(['added', 'modified', 'kind changed'],
-                    \'extend(a:cs.files, get(statdict, v:val, []))')
-        if has_key(statdict, 'removed')
-            let a:cs.removes+=statdict.removed
-        endif
-        let a:cs.renames=s:F.getrenames(statdict)
-        let a:cs.removes+=sort(values(a:cs.renames))
-        let a:cs.files  +=sort(keys(  a:cs.renames))
-        let a:cs.changes=a:cs.removes+a:cs.files
+        let statdict=s:F.getstatdict(a:repo, [], {'change': 'revid:'.a:cs.hex},
+                    \                1)
+        let a:cs.removes  = copy(statdict.removed)
+        let a:cs.files    = statdict.added+statdict.modified
+        let a:cs.renames  = statdict.renames
+        let a:cs.changes  = a:cs.removes+a:cs.files
         return a:cs[a:prop]
     endif
     let a:cs[a:prop]=r
     return r
 endfunction
+endif
 "▶1 bzr.status :: repo[, rev1[, rev2[, files[, clean[, ign]]]]] → {type:[file]}
-let s:statstats={'added': 'added', 'removed': 'removed', 'modified': 'modified',
-            \    'kind changed': 'modified', 'unknown': 'unknown',
-            \    'missing': 'deleted'}
+if s:usepythondriver "▶2
+let s:revargsexpr='v:val is 0? '.
+                \       '"None":'.
+                \ 'v:key>=3?'.
+                \       '(empty(v:val)?"False":"True"):'.
+                \       '"vim.eval(''a:".(v:key+1)."'')"'
+function s:bzr.status(repo, ...)
+    let revargs=join(map(copy(a:000), s:revargsexpr), ',')
+    let d={}
+    try
+        execute s:pya.'get_status(vim.eval("a:repo.path"), '.revargs.')'
+    endtry
+    return d
+endfunction
+else "▶2
 function s:bzr.status(repo, ...)
     let args=['--']+((a:0>2 && a:3 isnot 0)?(a:3):([]))
     let statdict=s:F.getstatdict(a:repo, args,
@@ -317,19 +362,13 @@ function s:bzr.status(repo, ...)
                 \                   ({'revision': a:1.'..'}):
                 \                ((a:0>1 && a:2 isnot 0)?
                 \                   ({'revision': a:2.'..'}):
-                \                   ({})))))
-    let r=deepcopy(s:_r.utils.emptystatdct)
-    " XXX There cannot be deleted files similar to mercurial, but there can be 
-    "     files that have 2 statuses
-    "     (missing is a bit different: it is shown after deleting added file)
-    for [sdkey, skey] in items(filter(copy(s:statstats),
-                \                     'has_key(statdict, v:key)'))
-        let r[skey]+=statdict[sdkey]
-    endfor
-    let renames=s:F.getrenames(statdict)
-    call filter(r.modified, '!has_key(renames, v:val)')
-    let r.added+=sort(keys(renames))
-    let r.removed+=sort(values(renames))
+                \                   ({})))), 0)
+    let r=deepcopy(statdict)
+    if a:0>2 && !empty(a:3)
+        " getstatdict may have added unneeded information for renamed files
+        call filter(r.added,   'index(a:3, v:val)!=-1')
+        call filter(r.removed, 'index(a:3, v:val)!=-1')
+    endif
     if a:0>1 && a:1 is 0 && a:2 isnot 0
         let [r.deleted, r.unknown]=[r.unknown, r.deleted]
         let [r.added,   r.removed]=[r.removed, r.added  ]
@@ -351,13 +390,16 @@ function s:bzr.status(repo, ...)
         let files=r.modified+r.added+r.removed+r.deleted+r.unknown
         let r.clean=filter(allfiles, 'index(files, v:val)==-1')
     endif
-    if (a:0>4 && a:5 && a:1 is 0 && a:2 is 0)
+    " Ignored files are listed in “bzr status” output, but only if they are 
+    " specified on the command-line.
+    if (a:0>4 && a:5 && a:1 is 0 && a:2 is 0 && empty(a:3))
         let r.ignored=s:_r.utils.nullnl(
                     \ s:F.bzr(a:repo, 'ls', args, {'ignored': 1, 'null': 1}, 2,
                     \                 'lsignoref', a:repo))[:-2]
     endif
     return r
 endfunction
+endif
 "▶1 bzr.commit :: repo, message[, files[, user[, date[, _]]]]
 function s:bzr.commit(repo, message, ...)
     let kwargs={}
@@ -465,8 +507,9 @@ function s:bzr.annotate(repo, rev, file)
     " XXX Bazaar annotation respects renames, but it does not show old filename, 
     "     thus rename information is to be used
     for [id, lists] in items(idamap)
-        let renames=s:F.getrenames(s:F.getstatdict(a:repo, ['--', a:file],
-                    \                              {'revision': a:rev.'..'.id}))
+        let renames=s:F.getstatdict(a:repo, ['--', a:file],
+                    \                       {'revision': a:rev.'..'.id},
+                    \               1).renames
         let file=get(renames, a:file, a:file)
         call map(lists, 'insert(v:val, '.string(file).')')
     endfor
@@ -539,12 +582,27 @@ function s:bzr.diffname(repo, line, diffre, opts)
     endif
 endfunction
 "▶1 bzr.getrepoprop :: repo, propname → a
+if s:usepythondriver "▶2
+function s:bzr.getrepoprop(repo, prop)
+    let d={}
+    try
+        execute s:pya.'get_repo_prop(vim.eval("a:repo.path"), '.
+                    \               'vim.eval("a:prop"))'
+    endtry
+    return d[a:prop]
+endfunction
+else "▶2
 function s:bzr.getrepoprop(repo, prop)
     if a:prop is# 'branch'
         return join(s:F.bzr(a:repo, 'nick', [], {}, 0, 'nickf')[:-2], "\n")
     elseif a:prop is# 'url'
-        return s:F.bzr(a:repo, 'config', ['parent_location'], {}, 0,
-                    \  'configf')[:-2]
+        let [url, exit_code]=s:F.bzr(a:repo, 'config', ['push_location'], {}, 0,
+                    \                0)
+        if exit_code
+            return s:F.bzr(a:repo, 'config', ['parent_location'], {}, 0,
+                        \  'configf')[0]
+        endif
+        return url[0]
     elseif a:prop is# 'brancheslist'
         return []
         " FIXME Use “bzr branches”?
@@ -556,6 +614,7 @@ function s:bzr.getrepoprop(repo, prop)
     endif
     call s:_f.throw('nocfg', a:prop, a:repo.path)
 endfunction
+endif
 "▶1 bzr.push :: repo, dryrun, force[, URL[, rev]]
 function s:bzr.push(repo, dryrun, force, ...)
     if a:dryrun
@@ -610,8 +669,67 @@ endfunction
 function s:bzr.checkdir(dir)
     return s:_r.os.path.isdir(s:_r.os.path.join(a:dir, '.bzr'))
 endfunction
-"▶1 iterfuncs
+"▶1 TODO iterfuncs
 " TODO
+"▶1 astatus, agetcs, agetrepoprop
+if s:_r.repo.userepeatedcmd
+    if s:usepythondriver
+        if exists('*pyeval')
+            function s:bzr.astatus(repo, interval, ...)
+                let args = string(a:interval).', '.s:pp.'._get_status, '.
+                            \'vim.eval("a:repo.path"), '
+                let args.= join(map(copy(a:000), s:revargsexpr), ',')
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.args.')')
+            endfunction
+        else
+            function s:bzr.astatus(repo, interval, ...)
+                let args = string(a:interval).', '.s:pp.'._get_status, '.
+                            \'vim.eval("a:repo.path"), '
+                let args.= join(map(copy(a:000), s:revargsexpr), ',')
+                execute 'python vim.command("return "+'.
+                            \       'aurum.auutils.nonutf_dumps('.
+                            \               'aurum.repeatedcmd.new('.args.')))'
+            endfunction
+        endif
+        function s:bzr.agetrepoprop(repo, interval, prop)
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \                 string(a:interval).', '.
+                        \                'aurum.auutils.get_one_prop, '.
+                        \                 s:pp.'._get_repo_prop, '.
+                        \                 s:_r.utils.pystring(a:repo.path).', '.
+                        \                 string(a:prop).')')
+        endfunction
+    else
+        try
+            python import aurum.rcdriverfuncs
+            let s:addafuncs=1
+        catch
+            let s:addafuncs=0
+        endtry
+        if s:addafuncs
+            function s:bzr.astatus(repo, interval, ...)
+                if a:0<3 || a:1 isnot 0 || a:2 isnot 0 ||
+                            \type(a:3)!=type([]) || len(a:3)!=1
+                    call s:_f.throw('aconimp')
+                endif
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.bzr_status, '.
+                            \        s:_r.utils.pystring(a:repo.path).', '.
+                            \        s:_r.utils.pystring(a:3[0]).')')
+            endfunction
+            function s:bzr.agetrepoprop(repo, interval, prop)
+                if a:prop isnot# 'branch'
+                    call s:_f.throw('anbnimp')
+                endif
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.bzr_branch, '.
+                            \        s:_r.utils.pystring(a:repo.path).')')
+            endfunction
+        endif
+    endif
+endif
 "▶1 Register driver
 call s:_f.regdriver('Bazaar', s:bzr)
 "▶1

@@ -1,8 +1,18 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@/resources': '0.0',
-            \                       '@/os': '0.2'})
+execute frawor#Setup('1.2', {'@/resources': '0.0',
+            \                       '@/os': '0.2',
+            \                   '@/python': '1.0',})
 let s:utils={}
+"▶1 _unload
+function s:._unload()
+python <<EOF
+try :
+    reload(aurum.auutils)
+except Exception :
+    pass
+EOF
+endfunction
 "▶1 utils.kwargstolst :: kwargs → [str]
 function s:utils.kwargstolst(kwargs)
     let r=[]
@@ -37,6 +47,7 @@ if has('python') && exists('*pyeval')
     try
         " This way is much faster
         python import aurum.utils
+        " No need in using pyeval emulation: it will degrade performance a lot
         function s:F.readsystem(...)
             return pyeval('aurum.utils.readsystem(*vim.eval("a:000"))')
         endfunction
@@ -144,6 +155,11 @@ if s:_f.require('autoload/ansi_esc_echo', [0, 0], 0)
         return call(s:_r.ansi_esc.echo, [a:str]+a:000, {})
     endfunction
     let s:utils.using_ansi_esc_echo=1
+    if exists('*pyeval')
+        python import aurum.auutils
+        execute 'python aurum.auutils.register_ansi_esc_echo_func('.
+                    \               'vim.bindeval("s:utils.printm"))'
+    endif
 else
     function s:utils.printm(m, ...)
         let prevempty=0
@@ -164,6 +180,22 @@ else
     endfunction
     let s:utils.using_ansi_esc_echo=0
 endif
+"▶1 utils.pyeval
+if exists('*pyeval')
+    let s:utils.pyeval=function('pyeval')
+else
+    python import aurum.auutils
+    function s:utils.pyeval(e)
+        python vim.command('return '+
+                    \aurum.auutils.nonutf_dumps(eval(vim.eval('a:e'))))
+    endfunction
+endif
+"▶1 utils.pystring
+function s:utils.pystring(v)
+    return type(a:v)==type(0)  ?
+                \string(a:v) :
+                \substitute(string(a:v), "''", '\\''', 'g')
+endfunction
 "▶1 utils.emptystatdct
 let s:utils.emptystatdct={
             \'modified': [],
@@ -192,6 +224,36 @@ function s:utils.nullnl(text)
 endfunction
 "▶1 post resource
 call s:_f.postresource('utils', s:utils)
+"▶1 pyimport feature
+if has('python')
+    " TODO Add python3 support
+    function s:F.pyimport(plugdict, fdict)
+        let g=a:plugdict.g
+        if !has_key(g, 'pp')
+            return
+        endif
+        let g.py='python'
+        let g.pya=g.py.' '.g.pp.'.'
+        try
+            execute g.py 'import' g.pp
+            let g.usepythondriver=1
+        catch
+            let g.usepythondriver=0
+        endtry
+        let a:fdict.reloadcmd=(g.py.' reload('.g.pp.')')
+    endfunction
+else
+    function s:F.pyimport(plugdict, fdict, pkg)
+        let a:plugdict.g.usepythondriver=0
+    endfunction
+endif
+function s:F.pyreload(plugdict, fdict)
+    if has_key(a:fdict, 'reloadcmd')
+        execute a:fdict.reloadcmd
+    endif
+endfunction
+call s:_f.newfeature('pyimport', {  'load': s:F.pyimport,
+            \                     'unload': s:F.pyreload})
 "▶1
 call frawor#Lockvar(s:, '')
 " vim: ft=vim ts=4 sts=4 et fmr=▶,▲

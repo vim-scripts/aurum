@@ -1,42 +1,14 @@
 "▶1
 scriptencoding utf-8
+let s:pp='aurum.aumercurial'
 execute frawor#Setup('0.2', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
             \                   '@%aurum/drivers/common/utils': '1.0',
-            \                                       '@/python': '0.0',
+            \                                       '@/python': '1.0',
             \                                           '@/os': '0.0',
             \                                      '@/options': '0.0',})
 let s:hg={}
 let s:iterfuncs={}
-let s:usepythondriver=0
-if has('python')
-    let s:py='python'
-    let s:pp='aurum.aumercurial'
-    let s:pya=s:py.' '.s:pp.'.'
-    try
-        " execute s:py "try:\n".
-                    " \"    if type(aurum).__name__=='module':\n".
-                    " \"        reload(aurum)\n".
-                    " \"except NameError:\n".
-                    " \"    pass"
-        execute s:py 'import '.s:pp
-        let s:usepythondriver=1
-    catch
-        " s:usepythondriver stays equal to 0, errors are ignored
-    endtry
-    if s:usepythondriver
-        " FIXME Does not work in python3. Not very problematic as mercurial does 
-        "       not do this either, but it will be necessary to review these 
-        "       lines after python3 support in mercurial will be finished.
-        execute s:py 'reload('.s:pp.')'
-        if s:_r.utils.using_ansi_esc_echo
-            if exists('*pyeval')
-                execute s:pya.'register_ansi_esc_echo_func('.
-                            \               'vim.bindeval("s:_r.utils.printm"))'
-            endif
-        endif
-    endif
-endif
 let s:nullrev=repeat('0', 40)
 "▶1 Messages
 let s:_messages={
@@ -884,6 +856,7 @@ function s:F.addtosection(repo, hgignore, section, line)
     endif
 endfunction
 "▶1 hg.ignore :: repo, file → +FS
+"▶2 determine s:usepython value
 let s:usepython=0
 if has_key(s:_r, 'py')
     try
@@ -894,27 +867,20 @@ if has_key(s:_r, 'py')
     endtry
 endif
 if s:usepython "▶2
-if exists('*pyeval')
-function s:hg.ignore(repo, file)
-    let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
-    let reline='^'.pyeval('re.escape(vim.bindeval("a:file"))').'$'
-    return s:F.addtosection(a:repo, hgignore, 'regexp', reline)
-endfunction
-else
-function s:hg.ignore(repo, file)
-    let d={}
-    execute s:py 'vim.eval("extend(d, {''pattern'': "+'.
-                \              'json.dumps(re.escape(vim.eval("a:file")))+"})")'
-    let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
-    let reline='^'.d.pattern.'$'
-    return s:F.addtosection(a:repo, hgignore, 'regexp', reline)
-endfunction
-endif
-else "▶2
-function s:hg.ignore(repo, file)
-    let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
-    return s:F.addtosection(a:repo, hgignore, 'glob', escape(a:file, '\*[{}]?'))
-endfunction
+    function s:hg.ignore(repo, file)
+        let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
+        let re='^'.s:_r.utils.pyeval('re.escape('.
+                    \                       s:_r.utils.pystring(a:file).')').'$'
+        return s:F.addtosection(a:repo, hgignore, 'regexp', re)
+    endfunction
+else           "▶2
+    function s:hg.ignore(repo, file)
+        let hgignore=s:_r.os.path.join(a:repo.path, '.hgignore')
+        " According to the documentation, re.escape escapes all non-alphanumeric 
+        " characters, we just do the same here.
+        let re='^'.substitute(a:file, '\W', '\\\0', '').'$'
+        return s:F.addtosection(a:repo, hgignore, 'regexp', re)
+    endfunction
 endif
 "▶1 hg.ignoreglob :: repo, glob → + FS
 function s:hg.ignoreglob(repo, glob)
@@ -1327,23 +1293,37 @@ endfunction
 "▶1 astatus, agetcs, agetrepoprop
 if s:_r.repo.userepeatedcmd
     if s:usepythondriver
-        function s:hg.astatus(repo, interval, ...)
-            let args = string(a:interval).', '.s:pp.'._get_status, '.
-                        \'vim.eval("a:repo.path"), '
-            let args.= join(map(copy(a:000), s:revargsexpr), ',')
-            return pyeval('aurum.repeatedcmd.new('.args.')')
-        endfunction
+        if exists('*pyeval')
+            function s:hg.astatus(repo, interval, ...)
+                let args = string(a:interval).', '.s:pp.'._get_status, '.
+                            \'vim.eval("a:repo.path"), '
+                let args.= join(map(copy(a:000), s:revargsexpr), ',')
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.args.')')
+            endfunction
+        else
+            function s:hg.astatus(repo, interval, ...)
+                let args = string(a:interval).', '.s:pp.'._get_status, '.
+                            \'vim.eval("a:repo.path"), '
+                let args.= join(map(copy(a:000), s:revargsexpr), ',')
+                execute 'python vim.command("return "+'.
+                            \       'aurum.auutils.nonutf_dumps('.
+                            \               'aurum.repeatedcmd.new('.args.')))'
+            endfunction
+        endif
         function s:hg.agetcs(repo, interval, rev)
-            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
-                        \                        s:pp.'._get_cs, '.
-                        \                       'vim.eval("a:repo.path"), '.
-                        \                       'vim.eval("a:rev"))')
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \                 string(a:interval).', '.
+                        \                 s:pp.'._get_cs, '.
+                        \                 s:_r.utils.pystring(a:repo.path).', '.
+                        \                 s:_r.utils.pystring(a:rev).')')
         endfunction
         function s:hg.agetrepoprop(repo, interval, prop)
-            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
-                        \                        s:pp.'.get_one_prop, '.
-                        \                       'vim.eval("a:repo.path"), '.
-                        \                       'vim.eval("a:prop"))')
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \                 string(a:interval).', '.
+                        \                'aurum.auutils.get_one_prop, '.
+                        \                 s:pp.'._get_repo_prop, '.
+                        \                 s:_r.utils.pystring(a:repo.path).', '.
+                        \                 string(a:prop).')')
         endfunction
     else
         try
@@ -1356,7 +1336,8 @@ if s:_r.repo.userepeatedcmd
             function s:hg.astatus(repo, interval, ...)
                 let [args, kwargs, reverse]=call(s:F.statargs, a:000, {})
                 let arglist=s:_r.utils.kwargstolst(kwargs)+args
-                return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
                             \       'aurum.rcdriverfuncs.hg_status, '.
                             \       'vim.eval("a:repo.path"), '.
                             \       'vim.eval("arglist"), '.
@@ -1366,7 +1347,8 @@ if s:_r.repo.userepeatedcmd
                 if a:prop isnot# 'branch'
                     call s:_f.throw('anbnimp')
                 endif
-                return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
                             \       'aurum.rcdriverfuncs.hg_branch, '.
                             \       'vim.eval("a:repo.path"))')
             endfunction

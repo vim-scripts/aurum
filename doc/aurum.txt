@@ -336,8 +336,9 @@ AuLog [{repo}] {options} {diffoptions}                                *:AuLog*
                 input will be processed while generating log.
                 Note If enabled, acts like g:aurum_procinput=2.
     [no]progress
-                Flag. Determines whether progress bar should be shown in the 
-                statusline while generating log.
+                Flag. Overrides |g:aurum_showprogress|: determines whether 
+                progress bar should be shown in the statusline while 
+                generating log.
 
                                                                      *:AuMove*
 AuMove [copy] [rightrepl] [leftpattern] [pretend] [repo {repo}] [args ...]
@@ -522,12 +523,19 @@ aurum#status :: ([{repo}]) -> status                          *aurum#status()*
     |g:aurum_statuscachetime|).
     Note: if returned status is an empty string it may indicate that there it 
           failed to get status as well as that this file was not modified.
+    Note 2: if vim was compiled with |+python| support this function may 
+            launch a separate process which won’t be stopped until current 
+            buffer is no longer visible.
 
 aurum#branch :: ([{repo}]) -> branch                          *aurum#branch()*
     Returns a current branch name (uses |aurum-rf-getrepoprop|). Should be 
     faster then using |aurum#changeset()| and getting “branch” key from 
     returned changeset. Cached (update time is controlled by 
     |g:aurum_branchcachetime|).
+    Note: if vim was compiled with |+python| support this function may launch 
+          a separate process which won’t be stopped until all buffers where it 
+          was called which hold files in one repository are no longer visible. 
+          Only one process is launched for one repository.
 
 ------------------------------------------------------------------------------
 2.3. aurum:// pseudo-protocol                                       *aurum://*
@@ -664,6 +672,8 @@ aurum://commit:{repo}:{user}:{date}:{closebranch}:{files}     *aurum://commit*
                   cursor or prompts user).
     FVdiff   gD   Open a number of vimdiff splits with all files to be 
                   committed.
+    InsPrev   p   Insert previous saved commit message, see 
+                  |g:AuPreviousCommitMessage|.
 
     Note These mappings are defined for aurumcommit filetype.
 
@@ -709,13 +719,17 @@ aurum://file:{repo}:{rev}:{file}                                *aurum://file*
     Open file {file} from repository {repo} as it was at revision {rev}.
     Local mappings (mgid=AuFile, without leader by default):
                                                           *g:frawormap_AuFile*
-                        *g:frawormap_AuFile_Next*  *g:frawormap_AuFile_Prev*
-                        *g:frawormap_AuFile_Diff*  *g:frawormap_AuFile_Update*
-                        *g:frawormap_AuFile_Rdiff* *g:frawormap_AuFile_RVdiff*
-                        *g:frawormap_AuFile_Vdiff*     *aurum-m-AuFile_Vdiff*
-                            *aurum-m-AuFile_Next*      *aurum-m-AuFile_Prev*
-                            *aurum-m-AuFile_Rdiff*     *aurum-m-AuFile_RVdiff*
-                            *aurum-m-AuFile_Diff*      *aurum-m-AuFile_Update*
+                       *g:frawormap_AuFile_Next*  *g:frawormap_AuFile_RFdiff*
+                       *g:frawormap_AuFile_Prev*  *g:frawormap_AuFile_RFVdiff*
+                       *g:frawormap_AuFile_Diff*  *g:frawormap_AuFile_Update*
+                       *g:frawormap_AuFile_Rdiff* *g:frawormap_AuFile_RVdiff*
+                       *g:frawormap_AuFile_Fdiff* *g:frawormap_AuFile_FVdiff*
+                       *g:frawormap_AuFile_Vdiff*     *aurum-m-AuFile_Vdiff*
+                           *aurum-m-AuFile_Next*      *aurum-m-AuFile_RFdiff*
+                           *aurum-m-AuFile_Prev*      *aurum-m-AuFile_RFVdiff*
+                           *aurum-m-AuFile_Rdiff*     *aurum-m-AuFile_RVdiff*
+                           *aurum-m-AuFile_Diff*      *aurum-m-AuFile_Update*
+                           *aurum-m-AuFile_Fdiff*     *aurum-m-AuFile_FVdiff*
     Mapname  LHS  Description ~
     Next      K   View current file as it was at first child of current 
                   revision. Accepts count, in this case first child is taken 
@@ -734,6 +748,13 @@ aurum://file:{repo}:{rev}:{file}                                *aurum://file*
     RVdiff    C   View |vimdiff| between current buffer and aurum://file 
                   buffer with revision set to first parent of {rev} and same 
                   {repo} and {file} arguments
+    Fdiff    gd   View changes between current revision and working directory 
+                  state
+    RFdiff   gc   View changes introduced by current revision
+    FVdiff   gD   View changes between current revision and working directory 
+                  state in a multiple tabs each containing |vimdiff|
+    RFVdiff  gC   View all changes introduced by current revision as 
+                  a |vimdiff| in a multiple tabs
 
     Note These mappings are defined only when buffer is created using 
          |:AuFile| command or from most mappings.
@@ -962,15 +983,15 @@ User       gu       l      Shows revisions committed by current user
 Date       gM       l      Shows revisions committed in the current month
 Branch     gb       l      Shows revisions that have the same branch
 Rev        gr       l      Shows revisions that are descendants of the current
-FVdiff     gD   acD lS  g  Shows full vimdiff between current revision and WD
+FVdiff     gD   acDflS  g  Shows full vimdiff between current revision and WD
                            (status and diff: between two current revisions)
-RFVdiff    gC   a   ls     Shows changes done in current rev as full vimdiff
+RFVdiff    gC   a  fls     Shows changes done in current rev as full vimdiff
 Vdiff       D   acDf S  g  Shows vimdiff between cur. rev. and WD for file
                            (status and diff: between two current revisions)
 RVdiff      C   a  f s     Shows changes to file in cur. rev. as a vimdiff
-Fdiff      gd   ac  lS  g  Shows diff between current revision and working dir
+Fdiff      gd   ac flS  g  Shows diff between current revision and working dir
                            (status: between two current revisions)
-RFdiff     gc   a   ls     Shows changes introduced by current revision
+RFdiff     gc   a  fls     Shows changes introduced by current revision
 Diff        d   ac flS  g  Shows diff between rev and WD for current file
                            (status: between two current revisions)
 Rdiff       c   a  fls     Shows changes done in current rev to current file
@@ -1054,6 +1075,11 @@ autoaddlog                                                *g:aurum_autoaddlog*
     Note: At least |g:aurum_loglimit| (or limit added at cmdline) revisions 
     (all if it is 0) will be shown in any case.
     Default: 1 (it does not make sense when loglimit is 0 though).
+
+showprogress                                            *g:aurum_showprogress*
+    Bool. Determines whether progress bar should be shown in statusline by 
+    default.
+    Default: 0.
 
 loglimit                                                    *g:aurum_loglimit*
     Natural number or 0. Determines, how many revisions should be shown by 
@@ -1917,6 +1943,11 @@ be absent, but they never throw "nimp").
 |aurum-rf-getcsprop|(…, "children") requires at least mercurial-1.7 or manual 
     preceding |aurum-rf-getchangesets| call. Thus many Next mappings do not 
     work.
+|aurum-rf-astatus| in “non-python” version supports only 
+    status(repo,0,0,[file],1,1) calls.
+|aurum-rf-agetcs| is absent in non-python version of driver.
+|aurum-rf-agetrepoprop| in “non-python” version supports only “branch” 
+    property.
 *aurum-rf-svnrev* exists and produces svn revision number out of repository 
     object and mercurial revision specification.
 *aurum-rf-githex* exists and produces git sha1 out of repository object and 
@@ -1965,6 +1996,9 @@ Python driver was not tested under windows (wine) at all.
     name as an argument, but it may also search .git/refs/heads for {hex} 
     argument and use first found file with contents equal to {hex} as a branch 
     name.
+|aurum-rf-astatus| supports only status(repo,0,0,[file],1,1) calls.
+|aurum-rf-agetcs| is absent.
+|aurum-rf-agetrepoprop| supports only “branch” property.
 
 ------------------------------------------------------------------------------
 10.3. Subversion                                     *aurum-driver-Subversion*
@@ -1996,6 +2030,9 @@ Python driver was not tested under windows (wine) at all.
     initially wanted.
 |aurum-rf-pull| uses “svn update” to pull and “svn log” for incoming.
 |aurum-rf-push| is not defined.
+|aurum-rf-astatus| supports only status(repo,0,0,[file],1,1) calls.
+|aurum-rf-agetcs| is absent.
+|aurum-rf-agetrepoprop| is absent.
 
 ------------------------------------------------------------------------------
 10.4. Bazaar                                             *aurum-driver-Bazaar*
@@ -2027,6 +2064,11 @@ Python driver was not tested under windows (wine) at all.
 |aurum-rf-diffname| will work incorrectly if filenames containing “' => '” 
     were renamed.
 |aurum-repo.iterfuncs| is missing (yet).
+|aurum-rf-astatus| in “non-python” version supports only 
+    status(repo,0,0,[file],1,1) calls.
+|aurum-rf-agetcs| is absent.
+|aurum-rf-agetrepoprop| in “non-python” version supports only “branch” 
+    property.
 
 ==============================================================================
 11. Changelog                                                *aurum-changelog*
@@ -2067,6 +2109,8 @@ Python driver was not tested under windows (wine) at all.
     0.4: Added |:AuHyperlink| lines.
     1.0: Splitted into a number of plugins, added aurumcmd feature and 
          a number of resources.
+    2.0: Made everything use 3-tuple function loading thus removed lots of 
+         stuff from here.
 @%aurum/edit:
     1.0: Removed setlines function (moved it to @aurum/repo).
     1.1: Added “requiresbvar” _f.newcommand option.
@@ -2114,15 +2158,19 @@ Python driver was not tested under windows (wine) at all.
     3.1: Added _r.cmdutils.update (moved from @aurum/repo).
     4.0: Moved _r.cmdutils.update to @%aurum/maputils
     4.1: Made _r.cmdutils.getrrf recognize “getrr” action
+    4.2: Made _r.cmdutils.getrrf not throw “nrepo” in case a:failmsg is zero
+    4.3: Added _r.cmdutils.gencompfunc, _r.cmdutils.revlist and 
+         _r.cmdutils.comp.
 @%aurum:
     0.1: Added |aurum#branch()| function.
-@aurum/cache:
+@%aurum/cache:
     0.1: Added _r.cache.del().
     1.0: Added _r.getcrf(), removed cachebvars export.
     2.0: Removed getcrf, added _r.cache.getcbvar.
     2.1: Added _r.cache.wipe().
     2.2: Added _r.cache.getinterval().
     2.3: Added addwiper feature.
+    2.4: Added _r.cache.allkeys.
 ftplugin/aurumlog:
     0.1: Added OpenAny and AnnotateAny mappings.
 @%aurum/drivers/common/hypsites:
@@ -2136,9 +2184,13 @@ ftplugin/aurumlog:
     1.0: Made _r.utils.getcmd return a list,
          replaced _r.utils.kwargstostr with _r.utils.kwargstolst,
          made _r.utils.run return a pair (output, exit_code)
+    1.1: Added _r.utils.pyeval and _r.utils.pystring
+    1.2: Added pyimport feature
 @%aurum/file:
     0.1: Added |:AuFile| prompt option.
 @%aurum/hyperlink:
     0.1: Added support for password in URL.
+@%aurum/maputils:
+    0.1: Added _r.maputils.getnthparentfile().
 
 vim: ft=help:tw=78

@@ -1,17 +1,21 @@
 "▶1
-execute frawor#Setup('5.5', {'@/resources': '0.0',
-            \                       '@/os': '0.0',
-            \                  '@/options': '0.0',
-            \          '@%aurum/lineutils': '0.0',
-            \            '@%aurum/bufvars': '0.0',
-            \                     '@aurum': '1.0',})
+execute frawor#Setup('5.5', { '@/resources': '0.0',
+            \                        '@/os': '0.0',
+            \                   '@/options': '0.0',
+            \                    '@/python': '1.0',
+            \           '@%aurum/lineutils': '0.0',
+            \             '@%aurum/bufvars': '0.0',
+            \'@%aurum/drivers/common/utils': '1.1',})
 let s:drivers={}
 let s:repos={}
 let s:bufrepos={}
+" FIXME deduplicate data
+let s:diffopts=['git', 'reverse', 'ignorews', 'iwsamount', 'iblanks',
+            \   'numlines', 'showfunc', 'alltext', 'dates']
 let s:_options={
             \'diffopts':  {'default': {},
-            \              'checker': 'dict {numlines         range 0 inf '.
-            \                               '?in _r.diffopts  bool}'},
+            \              'checker': 'dict {numlines      range 0 inf '.
+            \                               '?in diffopts  bool}'},
         \}
 let s:_messages={
             \    'nrm': 'Failed to remove file %s from repository %s',
@@ -265,20 +269,31 @@ function s:deffuncs.getstats(repo, diff, opts)
 endfunction
 "▶1 reltorepo :: repo, path → rpath
 function s:deffuncs.reltorepo(repo, path)
-    return join(s:_r.os.path.split(s:_r.os.path.relpath(a:path,
-                \                                       a:repo.path))[1:], '/')
+    " Symlinks are managed by mercurial as regular files with special attribute 
+    " containing linked path, thus no need to resolve symlinks if they are at 
+    " the last component. But file under directory symlinks are not managed 
+    " (because directory symlink is managed as a regular file) thus to normalize 
+    " path you need to resolve directory, but not resolve file
+    " Same for git.
+    return join(s:_r.os.path.split(s:_r.os.path.relpath(
+                \s:_r.os.path.join(
+                \   s:_r.os.path.realpath(s:_r.os.path.dirname(a:path)),
+                \   s:_r.os.path.basename(a:path)),
+                \a:repo.path))[1:], '/')
 endfunction
 "▶1 checkremote
 function s:deffuncs.checkremote(...)
     return 0
 endfunction
-"▶1 aget, aremove
+"▶1 aget, aremove, XXX _unload
 let s:userepeatedcmd=0
-if has('python') && exists('*pyeval')
+if has('python')
     try
         python import aurum.repeatedcmd
-        python reload(aurum.repeatedcmd)
         let s:userepeatedcmd=1
+        function s:._unload()
+            python reload(aurum.repeatedcmd)
+        endfunction
     catch
     endtry
 endif
@@ -288,18 +303,18 @@ if s:userepeatedcmd
     augroup END
     let s:_augroups+=['AuRCFinish']
     function s:deffuncs.aget(repo, rcid, ...)
-        return pyeval('aurum.repeatedcmd.get(vim.bindeval("a:rcid"), '.
-                    \                        (a:0 && a:1? 'True': 'False').')')
+        return s:_r.utils.pyeval(
+                    \'aurum.repeatedcmd.get('.string(a:rcid).', '.
+                    \                       (a:0 && a:1? 'True': 'False').
+                    \                     ')')
     endfunction
-    function s:deffuncs.apause(repo, rcid)
-        python aurum.repeatedcmd.pause(vim.bindeval("a:rcid"))
-    endfunction
-    function s:deffuncs.aresume(repo, rcid)
-        python aurum.repeatedcmd.resume(vim.bindeval("a:rcid"))
-    endfunction
-    function s:deffuncs.aremove(repo, rcid)
-        python aurum.repeatedcmd.remove(vim.bindeval("a:rcid"))
-    endfunction
+    for s:f in ['pause', 'resume', 'remove']
+        execute      'function s:deffuncs.a'.s:f."(repo, rcid)\n".
+                    \'    execute "python '.
+                    \     'aurum.repeatedcmd.'.s:f.'(".string(a:rcid).")"'."\n".
+                    \'endfunction'
+    endfor
+    unlet s:f
 endif
 "▶1 iterfuncs: cs generators
 " startfunc (here)  :: repo, opts → d

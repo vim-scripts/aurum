@@ -15,7 +15,7 @@ execute frawor#Setup('0.0', {'@%aurum/bufvars': '0.0',
             \                '@%aurum/vimdiff': '1.1',
             \               '@%aurum/annotate': '1.0',
             \               '@%aurum/cmdutils': '4.0',
-            \               '@%aurum/maputils': '0.0',
+            \               '@%aurum/maputils': '0.1',
             \                   '@%aurum/edit': '1.2',
             \                     '@/mappings': '0.0',
             \                           '@/os': '0.0',})
@@ -168,11 +168,12 @@ function s:F.runmap(action, ...)
     "▶2 `previous' and `next' actions
     elseif a:action is# 'previous' || a:action is# 'next'
         let c=((a:action is# 'previous')?(v:count1):(-v:count1))
-        let rev=bvar.repo.functions.getnthparent(bvar.repo, bvar.rev, c).hex
-        if rev is# hex
-            call s:_f.throw('no'.a:action[:3], hex)
+        let [rev, file]=s:_r.maputils.getnthparentfile(bvar.repo, bvar.rev,
+                    \                                  bvar.file, c)
+        if rev is# bvar.rev
+            call s:_f.throw('no'.a:action[:3], bvar.rev)
         endif
-        call s:_r.run('silent edit', 'annotate', bvar.repo, rev, bvar.file)
+        call s:_r.run('silent edit', 'annotate', bvar.repo, rev, file)
         let newbvar=s:_r.bufvars[bufnr('%')]
         if hasannbuf
             execute annwin.'wincmd w'
@@ -182,7 +183,7 @@ function s:F.runmap(action, ...)
             vertical resize 42
             wincmd p
         endif
-        let existed=s:_r.mrun('silent edit', 'file', bvar.repo, rev, bvar.file)
+        let existed=s:_r.mrun('silent edit', 'file', bvar.repo, rev, file)
         let annbuf=bufnr('%')
         wincmd p
         call s:_r.annotate.setannbuf(newbvar, annbuf)

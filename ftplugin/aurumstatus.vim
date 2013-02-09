@@ -116,20 +116,20 @@ function s:F.runmap(action, ...)
         endif
         if get(bvar.opts, 'record', 0)
             if exists('file2')
-                execute 'silent view' fnameescape(file2)
+                execute 'silent edit' fnameescape(file2)
             else
-                call call(s:_r.mrun, ['silent view']+fargs2, {})
+                call call(s:_r.mrun, ['silent edit']+fargs2, {})
             endif
             diffthis
             execute rwnr.'wincmd w'
-            call call(s:_r.mrun, ['silent view']+fargs1, {})
+            call call(s:_r.mrun, ['silent edit']+fargs1, {})
             diffthis
             wincmd p
         else
             if exists('file2')
                 execute 'silent edit' fnameescape(file2)
             else
-                call call(s:_r.run, ['silent view']+fargs2, {})
+                call call(s:_r.mrun, ['silent edit']+fargs2, {})
             endif
             call s:_r.vimdiff.split([fargs1], -1)
         endif

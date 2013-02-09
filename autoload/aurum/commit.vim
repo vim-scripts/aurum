@@ -1,15 +1,16 @@
 "▶1 
 scriptencoding utf-8
 execute frawor#Setup('1.3', {'@/resources': '0.0',
+            \                '@/functions': '0.1',
             \                  '@/options': '0.0',
             \                       '@/os': '0.0',
-            \                     '@aurum': '1.0',
+            \                      '@/fwc': '0.0',
             \             '@%aurum/status': '1.2',
-            \           '@%aurum/cmdutils': '4.0',
+            \           '@%aurum/cmdutils': '4.3',
             \            '@%aurum/bufvars': '0.0',
             \            '@%aurum/vimdiff': '1.1',
             \               '@%aurum/edit': '1.0',
-            \               '@aurum/cache': '2.1',})
+            \              '@%aurum/cache': '2.4',})
 let s:_messages={
             \'emptmsg': 'Message must contain at least one non-blank character',
             \'nocfile': 'Unsure what should be commited',
@@ -312,7 +313,7 @@ function s:F.finish(bvar)
     call a:bvar.repo.functions.commit(a:bvar.repo, message, a:bvar.files,
                 \                     a:bvar.user, a:bvar.date,
                 \                     a:bvar.closebranch)
-    call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
+    call map(copy(s:_r.cache.allkeys), 's:_r.cache.wipe(v:val)')
     let a:bvar.did_message=1
     if has_key(a:bvar, 'sbvar')
         call a:bvar.bwfunc(a:bvar)
@@ -321,7 +322,27 @@ function s:F.finish(bvar)
     call feedkeys("\<C-\>\<C-n>:bwipeout!\n\<C-l>")
 endfunction
 "▶1 commfunc
-function s:cmd.function(opts, ...)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'{  repo '.s:_r.cmdutils.comp.repo.
+            \' *?type      (either (in [modified added '.
+            \                          'removed deleted '.
+            \                          'unknown all] '.
+            \                         '~start,'.
+            \                      'match /\v^[MARDU?!]+$/))'.
+            \'  ?message   type ""'.
+            \'  ?user      type ""'.
+            \'  ?date      match /\v%(^%(\d*\d\d-)?'.
+            \                         '%(%(1[0-2]|0?[1-9])-'.
+            \                           '%(3[01]|0?[1-9]|[12]\d)))?'.
+            \                      '%(%(^|[ _])%(2[0-3]|[01]\d)'.
+            \                                 '\:[0-5]\d'.
+            \                                 '%(\:[0-5]\d)?)?$/'.
+            \' !?closebranch'.
+            \'}'.
+            \'+ '.s:_r.cmdutils.comp.file, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(opts, ...)
     let rrfopts=copy(a:opts)
     let hasall=index(a:000, 'all')!=-1
     if a:0 && !hasall
@@ -394,7 +415,7 @@ let s:_augroups+=['AuCommit']
 function s:commit.write(lines, repo, user, date, cb, files)
     let message=join(filter(copy(a:lines), 'v:val[0] isnot# "#"'), "\n")
     call a:repo.functions.commit(a:repo, message, a:files, a:user, a:date, a:cb)
-    call map(copy(s:_r.allcachekeys), 's:_r.cache.wipe(v:val)')
+    call map(copy(s:_r.cache.allkeys), 's:_r.cache.wipe(v:val)')
 endfunction
 call s:_f.newcommand(s:commit)
 "▶1 Post resource

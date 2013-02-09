@@ -12,12 +12,13 @@ def readsystem(cmd, cwd=None):
         lines.append((line[:-1] if lastnl else line).replace('\0', '\n'))
     if lastnl:
         lines.append('')
-    exit_code=p.poll()
+    exit_code=p.wait()
     stderr.write(p.stderr.read())
     return lines, exit_code
 
 def readlines(cmd, cwd=None):
-    p=Popen(cmd, shell=False, stdout=PIPE, stderr=None, cwd=cwd)
+    p=Popen(cmd, shell=False, stdout=PIPE, stderr=PIPE, cwd=cwd)
+    p.stderr.close()
     for line in p.stdout:
         yield line[:-1]
 

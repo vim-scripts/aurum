@@ -8,111 +8,25 @@ import os
 import json
 import re
 import sys
+from aurum.auutils import AurumError, outermethodgen, autoexportmethodgen, vim_extend, \
+                          vim_throw, echoe, echom, get_repo_prop_gen
 
 if hasattr(error, 'RepoLookupError'):
     RepoLookupError=error.RepoLookupError
 else:
     RepoLookupError=error.RepoError
 
-def outermethod(func):
-    """
-        Decorator used to make functions omit showing python traceback in case vim_throw was used.
-        Also transforms first argument (which is a path) to an repository object
-    """
-    def f(path, *args, **kwargs):
-        try:
-            repo=g_repo(path)
-            try:
-                return func(repo, *args, **kwargs)
-            finally:
-                repo.ui.flush()
-        except AurumError:
-            pass
-        except vim.error:
-            pass
-    return f
+def flush(repo):
+    repo.ui.flush()
 
-def autoexportmethod(*extargs, **extkwargs):
-    def autoexportmethoddec(func):
-        def f2(path, *args, **kwargs):
-            return func(g_repo(path), *args, **kwargs)
-        globals()['_'+func.__name__]=f2
-        def f(*args, **kwargs):
-            vim_extend(val=func(*args, **kwargs), *extargs, **extkwargs)
-        return f
-    return autoexportmethoddec
-
-def nonutf_dumps(obj):
-    todump=[('dump', obj)]
-    r=''
-    while todump:
-        t, obj = todump.pop(0)
-        if t == 'inject':
-            r+=obj
-        else:
-            tobj=type(obj)
-            if tobj is int:
-                r+=str(obj)
-            elif tobj is float:
-                r += "%1.1e" % obj
-            elif tobj is list or tobj is tuple:
-                r+='['
-                todump.insert(0, ('inject', ']'))
-                for value in reversed(obj):
-                    todump[:0]=[('dump', value), ('inject', ',')]
-            elif tobj is dict:
-                r+='{'
-                todump.insert(0, ('inject', '}'))
-                for key, value in obj.items():
-                    todump[:0]=[('dump', key),
-                                ('inject', ':'),
-                                ('dump', value),
-                                ('inject', ',')]
-            else:
-                r+='"'+str(obj).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')+'"'
-    return r
-
-def pyecho(o, error=False):
+def g_repo(path):
     try:
-        return (sys.stderr if error else sys.stdout).write(str(o))
-    except UnicodeDecodeError:
-        if error:
-            vim.command('echohl ErrorMsg')
-        for line in str(o).split("\n"):
-            if not line:
-                line=' '
-            vim.command('echomsg '+utf_dumps(line))
-        if error:
-            vim.command('echohl None')
+        return hg.repository(PrintUI(), path)
+    except error.RepoError:
+        vim_throw('norepo', path)
 
-if hasattr(vim, 'bindeval'):
-    ansi_esc_echo_func=None
-    def register_ansi_esc_echo_func(func):
-        global ansi_esc_echo_func
-        ansi_esc_echo_func=func
-        global echom
-        echom=ansi_esc_echo
-
-    def ansi_esc_echo(o, colinfo):
-        if colinfo is None:
-            return ansi_esc_echo_func(str(o), self={})
-        else:
-            return ansi_esc_echo_func(str(o), colinfo, self={})
-
-echoe=lambda o, colinfo: pyecho(o, True )
-echom=lambda o, colinfo: pyecho(o, False)
-
-def utf_dumps(obj):
-    return json.dumps(obj, encoding='utf8')
-
-class AurumError(Exception):
-    pass
-
-class VIMEncode(json.JSONEncoder):
-    def encode(self, obj, *args, **kwargs):
-        if isinstance(obj, (dict, list, int)):
-            return super(VIMEncode, self).encode(obj, *args, **kwargs)
-        return '"'+str(obj).replace('\\', '\\\\').replace('"', '\\"')+'"'
+outermethod      = outermethodgen(g_repo, flush)
+autoexportmethod = autoexportmethodgen(g_repo, globals())
 
 class PrintUI(ui.ui):
     def __init__(self, *args, **kwargs):
@@ -164,16 +78,6 @@ class CaptureToBuf(PrintUI):
             for line in lines:
                 target.append(line)
 
-def vim_throw(*args):
-    vim.command('call s:_f.throw('+nonutf_dumps(args)[1:-1]+')')
-    raise AurumError()
-
-def g_repo(path):
-    try:
-        return hg.repository(PrintUI(), path)
-    except error.RepoError:
-        vim_throw('norepo', path)
-
 def g_cs(repo, rev):
     try:
         return repo[rev]
@@ -187,37 +91,34 @@ def g_fctx(cs, filepath):
         vim_throw('nofile', filepath, cs.hex(), cs._repo.path)
 
 def set_rev_dict(cs, cs_vim):
-    cs_vim['hex']=cs.hex()
-    cs_vim['time']=int(cs.date()[0])
-    cs_vim['description']=cs.description()
-    cs_vim['user']=cs.user()
-    cs_vim['parents']=[parent.hex() for parent in cs.parents()]
+    cs_vim['hex']           = cs.hex()
+    cs_vim['time']          = int(cs.date()[0])
+    cs_vim['description']   = cs.description()
+    cs_vim['user']          = cs.user()
+    cs_vim['parents']       = [parent.hex() for parent in cs.parents()]
+
     try:
-        branch=cs.branch()
-        cs_vim['branch']=branch
-        cs_vim['tags']=cs.tags()
-        cs_vim['bookmarks']=cs.bookmarks()
+        cs_vim['branch']    = cs.branch()
+    except AttributeError:
+        cs_vim['branch']    = 'default'
+
+    try:
+        cs_vim['tags']      = cs.tags()
+    except AttributeError:
+        cs_vim['tags']      = []
+
+    try:
+        cs_vim['bookmarks'] = cs.bookmarks()
         # FIXME For some reason using cs.phasestr() here results in an exception
     except AttributeError:
-        pass
+        cs_vim['bookmarks'] = []
+
     return cs_vim
 
 def get_revlist(repo, startrev=0):
     cscount=len(repo)
     r=[set_rev_dict(g_cs(repo, i), {'rev': i,}) for i in range(startrev, cscount+1)]
     return r
-
-if hasattr(vim, 'bindeval'):
-    def vim_extend(val, var='d', utf=True, list=False):
-        d_vim = vim.bindeval(var)
-        if list:
-            d_vim.extend(val)
-        else:
-            for key in val:
-                d_vim[key] = val[key]
-else:
-    def vim_extend(val, var='d', utf=True, list=False):
-        vim.eval('extend('+var+', '+((utf_dumps if utf else nonutf_dumps)(val))+')')
 
 @outermethod
 def get_updates(repo, oldtip=None):
@@ -445,8 +346,9 @@ def update(repo, rev='tip', force=False):
 def dirty(repo, filepath):
     if not hasattr(repo, '__getitem__'):
         vim_throw('statuns', repo.path)
-    dirty=repo[None].dirty()
-    if dirty and filepath in dirty:
+    m=match.match(None, None, [filepath], exact=True)
+    status=repo.status(match=m, unknown=True)
+    if any(status[:-2]):
         vim.command('let r=1')
 
 repo_props={
@@ -458,20 +360,8 @@ repo_props={
                                      repo.ui.config('paths', 'default'),
               'branch': lambda repo: repo.dirstate.branch(),
         }
-@outermethod
-@autoexportmethod()
-def get_repo_prop(repo, prop):
-    if prop in repo_props:
-        r=repo_props[prop](repo)
-        if r is None:
-            vim_throw('failcfg', prop, repo.path)
-        else:
-            return {prop : r}
-    else:
-        vim_throw('nocfg', repo.path, prop)
 
-def get_one_prop(path, prop):
-    return _get_repo_prop(path, prop)[prop]
+get_repo_prop = outermethod(autoexportmethod()(get_repo_prop_gen(repo_props)))
 
 @outermethod
 def call_cmd(repo, attr, bkwargs, *args, **kwargs):

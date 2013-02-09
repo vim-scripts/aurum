@@ -1,7 +1,8 @@
 scriptencoding utf-8
-execute frawor#Setup('0.1', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '4.0',
-            \             '@/options': '0.0',})
+execute frawor#Setup('0.1', {'@%aurum/cmdutils': '4.3',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
+            \                       '@/options': '0.0',})
 let s:_messages={
             \'uknurl': 'Failed to process url %s of repository %s',
             \'uunsup': 'Url type “%s” is not supported for repository %s '.
@@ -9,10 +10,12 @@ let s:_messages={
             \'ldirty': 'Cannot attach line number to a dirty file %s '.
             \          'in the repository %s (dirty=having uncommited changes)',
         \}
+let s:utypes=['html', 'raw', 'annotate', 'filehist', 'bundle', 'changeset',
+            \ 'log', 'clone', 'push']
 let s:_options={
             \'hypsites': {'default': [],
             \             'checker': 'list tuple ((type ""), '.
-            \                                    'dict {?in _r.utypes  type ""'.
+            \                                    'dict {?in utypes     type ""'.
             \                                          '/\v^[ah]line$/ type ""'.
             \                                         '})'
             \            },
@@ -35,7 +38,18 @@ function s:F.urlescape(str)
 endfunction
 "▶1 function
 "TODO diff ?
-function s:cmd.function(line1, line2, opts)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings _ _'.
+            \'{   ?repo  '.s:_r.cmdutils.comp.repo.
+            \'    ?rev   '.s:_r.cmdutils.comp.rev.
+            \'    ?file  '.s:_r.cmdutils.comp.file.
+            \' !+1?line  range 1 inf'.
+            \' !+2?lines (range 1 inf)(range 1 inf)'.
+            \'    ?cmd   '.s:_r.cmdutils.comp.cmd.
+            \'    ?url   in utypes ~start'.
+            \'}', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(line1, line2, opts)
     let opts=copy(a:opts)
     let utype=get(opts, 'url', 'html')
     "▶2 Get line or line1+line2

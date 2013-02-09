@@ -1,12 +1,23 @@
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '4.0',})
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.3',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',})
 let s:_messages={
             \ 'nunsup': 'Naming is not supported for repository %s',
             \'ukntype': 'Unknown label type: %s. Supported types: %s',
             \   'ldef': 'Label %s with type %s was alredy defined',
         \}
-function s:cmd.function(bang, name, opts, ...)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings _ '.
+            \'type ""'.
+            \'{  repo '.s:_r.cmdutils.comp.repo.
+            \' ? type   type ""'.
+            \' ?!delete'.
+            \' ?!local'.
+            \'} '.
+            \'+ type ""', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(bang, name, opts, ...)
     let repo=s:_r.cmdutils.checkedgetrepo(a:opts.repo)
     if !has_key(repo, 'labeltypes') || empty(repo.labeltypes)
         call s:_f.throw('nunsup', repo.path)

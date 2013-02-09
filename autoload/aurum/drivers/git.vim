@@ -1,10 +1,12 @@
 "▶1
 scriptencoding utf-8
+let s:pp='aurum.augit'
 execute frawor#Setup('0.1', {'@%aurum/drivers/common/hypsites': '0.0',
             \                                   '@%aurum/repo': '5.0',
-            \                   '@%aurum/drivers/common/utils': '1.0',
+            \                   '@%aurum/drivers/common/utils': '1.2',
             \                                           '@/os': '0.1',
-            \                                      '@/options': '0.0',})
+            \                                      '@/options': '0.0',
+            \                                       '@/python': '1.0',})
 let s:_messages={
             \   'hexf': 'Failed to obtain hex string for revision %s '.
             \           'in the repository %s: %s',
@@ -48,8 +50,16 @@ let s:_messages={
             \ 'invrng': 'Range %s..%s is invalid for the repository %s, '.
             \           'as well as reverse',
             \    'ppf': 'Failed to run “git %s” for the repository %s: %s',
+            \
             \'anbnimp': 'Can only get branch property using agetrepoprop',
             \'aconimp': 'Can only get current status for one file',
+            \'as2nimp': 'Can only get current status',
+            \
+            \ 'norepo': 'Repository %s not found',
+            \  'norev': 'Revision %s not found in repository %s',
+            \'uresrev': 'Don’t know how to resolve %s into a commit object. '.
+            \           'Occured when resolving %s in the repository %s',
+            \ 'nohead': 'Failed to obtain HEAD revision in the repository %s',
         \}
 let s:git={}
 let s:_options={
@@ -92,7 +102,7 @@ endfunction
 let s:logformat='%h-%H-%P-%at%n%an%n%ae%n%d%n%w(0,1,1)%B'
 let s:logkwargs={'format': s:logformat, 'encoding': 'utf-8', 'date-order': 1}
 function s:F.parsecs(csdata)
-    let cs={'branch': 'default', 'phase': 'unknown'}
+    let cs={'branch': 'default', 'phase': 'unknown', 'bookmarks': []}
     let [rev, hex, parents, time]=split(remove(a:csdata, 0), '-', 1)
     let cs.hex=hex
     let cs.parents=split(parents)
@@ -102,7 +112,6 @@ function s:F.parsecs(csdata)
     let aemail=remove(a:csdata, 0)
     let cs.user=aname.' <'.aemail.'>'
     let cs.tags=split(remove(a:csdata, 0)[2:-2], ', ')
-    let cs.bookmarks=[]
     "▶2 get description
     let description=[]
     while !empty(a:csdata) && a:csdata[0][0] is# ' '
@@ -286,17 +295,88 @@ function s:git.setcsprop(repo, cs, prop)
     let a:cs[a:prop]=r
     return r
 endfunction
-"▶1 git.status :: repo[, rev1[, rev2[, files[, clean]]]]
+"▶1 get_status :: repo, files, clean, ignored -> status
+if s:usepythondriver "▶2
+    function s:F.get_status(repo, files, clean, ignored)
+        let d={}
+        try
+            execute s:pya.'get_status(vim.eval("a:repo.path"), '.
+                        \             (empty(a:files)?
+                        \                'None':
+                        \                'vim.eval("a:files")').', '.
+                        \             (a:clean   ? 'True' : 'False').', '.
+                        \             (a:ignored ? 'True' : 'False').', '.
+                        \           ')'
+        endtry
+        return d
+    endfunction
+else "▶2
+    function s:F.get_status(repo, files, clean, ignored)
+        let r=deepcopy(s:_r.utils.emptystatdct)
+        let kwargs={'porcelain': 1, 'z': 1}
+        let args=empty(a:files)?[]:['--']+a:files
+        let s=s:_r.utils.nullnl(
+                    \s:F.git(a:repo, 'status', args, kwargs, 2, 'statusf'))[:-2]
+        let files={}
+        while !empty(s)
+            let line=remove(s, 0)
+            let status=line[:1]
+            let file=line[3:]
+            if has_key(files, file)
+                continue
+            endif
+            let files[file]=1
+            if status[0] is# 'R'
+                let r.added+=[file]
+                let old=remove(s, 0)
+                if (empty(a:files)) ? 1 : (index(a:files, old)!=-1)
+                    let r.removed+=[old]
+                endif
+            elseif status[0] is# 'C'
+                let r.added+=[file]
+                call remove(s, 0)
+            elseif status[0] is# 'D'
+                let r.removed+=[file]
+            elseif status[1] is# 'D'
+                let r.deleted+=[file]
+            elseif status[0] is# 'A'
+                let r.added+=[file]
+            elseif stridx(status, 'M')!=-1
+                let r.modified+=[file]
+            elseif status is# '??'
+                let r.unknown+=[file]
+            endif
+        endwhile
+        if a:clean
+            let allfiles=copy(a:repo.functions.getcsprop(a:repo,
+                        \                                'HEAD', 'allfiles'))
+            if !empty(a:files)
+                call filter(allfiles, 'index(a:files, v:val)!=-1')
+            endif
+            let r.clean=filter(allfiles, '!has_key(files, v:val)')
+        endif
+        if a:ignored
+            let r.ignored=s:_r.utils.nullnl(
+                        \ s:F.git(a:repo, 'ls-files', args,
+                        \                 {'ignored': 1, 'z': 1,
+                        \                  'exclude-standard': 1,
+                        \                  'others': 1}, 2,
+                        \                 'lsignf', a:repo))[:-2]
+        endif
+        return r
+    endfunction
+endif
+"▶1 git.status :: repo[, rev1[, rev2[, files[, clean[, ignored]]]]]
 let s:statchars={
             \'A': 'added',
             \'M': 'modified',
             \'D': 'removed',
         \}
 function s:git.status(repo, ...)
-    let r=deepcopy(s:_r.utils.emptystatdct)
     let requiresclean=(a:0>3 && a:4)
-    let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
     if a:0 && (a:1 isnot 0 || (a:0>1 && a:2 isnot 0))
+        let r=deepcopy(s:_r.utils.emptystatdct)
+        let args=((a:0>2 && !empty(a:3))?(['--']+a:3):([]))
         let rspec=[]
         let reverse=0
         if a:1 is 0
@@ -320,55 +400,14 @@ function s:git.status(repo, ...)
         endif
         if requiresclean
             let allfiles=a:repo.functions.getcsprop(a:repo,rspec[0],'allfiles')
+            if a:0>2 && !empty(a:3)
+                let allfiles=filter(copy(allfiles), 'index(a:3, v:val)!=-1')
+            endif
+            let r.clean=filter(copy(allfiles), '!has_key(files, v:val)')
         endif
     else
-        let kwargs={'porcelain': 1, 'z': 1}
-        let s=s:_r.utils.nullnl(
-                    \s:F.git(a:repo, 'status', args, kwargs, 2, 'statusf'))[:-2]
-        let files={}
-        while !empty(s)
-            let line=remove(s, 0)
-            let status=line[:1]
-            let file=line[3:]
-            let files[file]=1
-            if status[0] is# 'R'
-                let r.added+=[file]
-                let old=remove(s, 0)
-                if (a:0>2 && !empty(a:3)) ? (index(a:3, old)!=-1) : 1
-                    let r.removed+=[old]
-                endif
-            elseif status[0] is# 'C'
-                let r.added+=[file]
-                call remove(s, 0)
-            elseif status[0] is# 'D'
-                let r.removed+=[file]
-            elseif status[1] is# 'D'
-                let r.deleted+=[file]
-            elseif status[0] is# 'A'
-                let r.added+=[file]
-            elseif stridx(status, 'M')!=-1
-                let r.modified+=[file]
-            elseif status is# '??'
-                let r.unknown+=[file]
-            endif
-        endwhile
-        if requiresclean
-            let allfiles=a:repo.functions.getcsprop(a:repo, 'HEAD', 'allfiles')
-        endif
-        if a:0>4 && a:5
-            let r.ignored=s:_r.utils.nullnl(
-                        \ s:F.git(a:repo, 'ls-files', args,
-                        \                 {'ignored': 1, 'z': 1,
-                        \                  'exclude-standard': 1,
-                        \                  'others': 1}, 2,
-                        \                 'lsignf', a:repo))[:-2]
-        endif
-    endif
-    if exists('allfiles')
-        if a:0>2 && !empty(a:3)
-            let allfiles=filter(copy(allfiles), 'index(a:3, v:val)!=-1')
-        endif
-        let r.clean=filter(copy(allfiles), '!has_key(files, v:val)')
+        return s:F.get_status(a:repo, (a:0>2 ? a:3 : 0), requiresclean,
+                    \         (a:0>4 && a:5))
     endif
     return r
 endfunction
@@ -415,12 +454,17 @@ function s:git.label(repo, type, label, rev, force, local)
     endif
     let args=['--', a:label]
     let kwargs={}
-    if a:force
-        let kwargs.force=1
-    endif
     if a:rev is 0
-        let kwargs.d=1
+        " No need to forced tag delete
+        if a:force && a:type is# 'branch'
+            let kwargs.D=1
+        else
+            let kwargs.d=1
+        endif
     else
+        if a:force
+            let kwargs.force=1
+        endif
         let args+=[a:rev]
     endif
     return s:F.gitm(a:repo, a:type, args, kwargs, 0,
@@ -642,34 +686,45 @@ function s:git.diffname(repo, line, diffre, opts)
     endif
 endfunction
 "▶1 git.getrepoprop :: repo, propname → a
-function s:git.getrepoprop(repo, prop)
-    if a:prop is# 'branch'
-        let branches=s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
-                    \        'branchf')[:-2]
-        return get(filter(branches, 'v:val[0] is# "*"'), 0, '')[2:]
-    elseif a:prop is# 'url'
-        let [l, exit_code]=s:F.git(a:repo, 'config',
-                    \              ['remote.origin.pushurl'], {}, 0, 0)
-        let r=get(l, 0, 0)
-        if exit_code || r is 0
-            let r=get(s:F.git(a:repo, 'config', ['remote.origin.url'], {}, 0),
-                        \0, 0)
+if s:usepythondriver "▶2
+    function s:git.getrepoprop(repo, prop)
+        let d={}
+        try
+            execute s:pya.'get_repo_prop(vim.eval("a:repo.path"), '.
+                        \               'vim.eval("a:prop"))'
+        endtry
+        return d[a:prop]
+    endfunction
+else "▶2
+    function s:git.getrepoprop(repo, prop)
+        if a:prop is# 'branch'
+            let branches=s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
+                        \        'branchf')[:-2]
+            return get(filter(branches, 'v:val[0] is# "*"'), 0, '')[2:]
+        elseif a:prop is# 'url'
+            let [l, exit_code]=s:F.git(a:repo, 'config',
+                        \              ['remote.origin.pushurl'], {}, 0, 0)
+            let r=get(l, 0, 0)
+            if exit_code || r is 0
+                let r=get(s:F.git(a:repo, 'config', ['remote.origin.url'],{},0),
+                            \0, 0)
+            endif
+            if r isnot 0
+                return r
+            endif
+        elseif a:prop is# 'branchslist' || a:prop is# 'brancheslist'
+            " XXX stridx(v:val, " ")==-1 filters out “(no branch)” item
+            return filter(map(s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
+                        \             'branchf')[:-2], 'v:val[2:]'),
+                        \     'stridx(v:val, " ")==-1')
+        elseif a:prop is# 'tagslist'
+            return s:F.git(a:repo, 'tag', [], {}, 0, 'tagf')[:-2]
+        elseif a:prop is# 'bookmarkslist'
+            return []
         endif
-        if r isnot 0
-            return r
-        endif
-    elseif a:prop is# 'branchslist' || a:prop is# 'brancheslist'
-        " XXX stridx(v:val, " ")==-1 filters out “(no branch)” item
-        return filter(map(s:F.git(a:repo, 'branch', [], {'l': 1}, 0,
-                    \             'branchf')[:-2], 'v:val[2:]'),
-                    \     'stridx(v:val, " ")==-1')
-    elseif a:prop is# 'tagslist'
-        return s:F.git(a:repo, 'tag', [], {}, 0, 'tagf')[:-2]
-    elseif a:prop is# 'bookmarkslist'
-        return []
-    endif
-    call s:_f.throw('nocfg', a:prop, a:repo.path)
-endfunction
+        call s:_f.throw('nocfg', a:prop, a:repo.path)
+    endfunction
+endif
 "▶1 pushpull :: cmd, repo, dryrun, force[, URL[, rev]] → + ?
 function s:F.pushpull(cmd, repo, dryrun, force, ...)
     let kwargs1={}
@@ -781,31 +836,54 @@ let s:iterfuncs.changesets=s:iterfuncs.revrange
 let s:iterfuncs.ancestors=s:iterfuncs.revrange
 "▶1 astatus, agetcs, agetrepoprop
 if s:_r.repo.userepeatedcmd
-    try
-        python import aurum.rcdriverfuncs
-        let s:addafuncs=1
-    catch
-        let s:addafuncs=0
-    endtry
-    if s:addafuncs
+    if s:usepythondriver
         function s:git.astatus(repo, interval, ...)
-            if a:0<3 || a:1 isnot 0 || a:2 isnot 0 ||
-                        \type(a:3)!=type([]) || len(a:3)!=1
-                call s:_f.throw('aconimp')
+            if a:0<3 || a:1 isnot 0 || a:2 isnot 0
+                call s:_f.throw('as2nimp')
             endif
-            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
-                        \       'aurum.rcdriverfuncs.git_status, '.
-                        \       'vim.eval("a:repo.path"), '.
-                        \       'vim.eval("a:3[0]"))')
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \        string(a:interval).', '.
+                        \        s:pp.'._get_status, '.
+                        \        s:_r.utils.pystring(a:repo.path).', '.
+                        \        s:_r.utils.pystring(a:3).', True, True)')
         endfunction
         function s:git.agetrepoprop(repo, interval, prop)
-            if a:prop isnot# 'branch'
-                call s:_f.throw('anbnimp')
-            endif
-            return pyeval('aurum.repeatedcmd.new('.string(a:interval).', '.
-                        \       'aurum.rcdriverfuncs.git_branch, '.
-                        \       'vim.eval("a:repo.path"))')
+            return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                        \        string(a:interval).', '.
+                        \       'aurum.auutils.get_one_prop, '.
+                        \        s:pp.'._get_repo_prop, '.
+                        \        s:_r.utils.pystring(a:repo.path).', '.
+                        \        string(a:prop).')')
         endfunction
+    else
+        try
+            python import aurum.rcdriverfuncs
+            let s:addafuncs=1
+        catch
+            let s:addafuncs=0
+        endtry
+        if s:addafuncs
+            function s:git.astatus(repo, interval, ...)
+                if a:0<3 || a:1 isnot 0 || a:2 isnot 0 ||
+                            \type(a:3)!=type([]) || len(a:3)!=1
+                    call s:_f.throw('aconimp')
+                endif
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.git_status, '.
+                            \        s:_r.utils.pystring(a:repo.path).', '.
+                            \        s:_r.utils.pystring(a:3[0]).')')
+            endfunction
+            function s:git.agetrepoprop(repo, interval, prop)
+                if a:prop isnot# 'branch'
+                    call s:_f.throw('anbnimp')
+                endif
+                return s:_r.utils.pyeval('aurum.repeatedcmd.new('.
+                            \        string(a:interval).', '.
+                            \       'aurum.rcdriverfuncs.git_branch, '.
+                            \        s:_r.utils.pystring(a:repo.path).')')
+            endfunction
+        endif
     endif
 endif
 "▶1 Register driver

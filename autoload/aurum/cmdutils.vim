@@ -1,6 +1,6 @@
 "▶1
 scriptencoding utf-8
-execute frawor#Setup('4.1', {'@/resources': '0.0',
+execute frawor#Setup('4.3', {'@/resources': '0.0',
             \                       '@/os': '0.0',
             \               '@%aurum/repo': '5.0',
             \               '@%aurum/edit': '1.0',
@@ -63,7 +63,7 @@ function s:rrf.copy(bvar, opts, act, failmsg)
         let r.file=a:bvar.file
     else
         let r.repo=s:_r.repo.get(s:_r.os.path.dirname(a:bvar.file))
-        if a:act isnot# 'getrr'
+        if r.repo isnot 0 && a:act isnot# 'getrr'
             let r.file=r.repo.functions.reltorepo(r.repo, a:bvar.file)
         endif
     endif
@@ -141,11 +141,15 @@ function s:rrf.annotate(bvar, opts, act, failmsg)
                             \bufwinnr(a:bvar.annbuf)!=-1
                     execute bufwinnr(a:bvar.annbuf).'wincmd w'
                 else
-                    setlocal scrollbind
-                    call s:_r.run('silent rightbelow vsplit',
-                                \ 'file', r.repo, r.rev, r.file)
+                    " FIXME It does not look like a proper place for doing this 
+                    "       job. More, it looks like some necessary autocommands 
+                    "       doing cleanup are missing.
+                    setlocal scrollbind cursorbind nowrap
+                    call s:_r.mrun('silent rightbelow vsplit',
+                                \  'file', r.repo, r.rev, r.file)
                     let a:bvar.annbuf=bufnr('%')
-                    setlocal scrollbind
+                    setlocal scrollbind cursorbind nowrap
+                    syncbind
                 endif
                 return 0
             endif
@@ -192,7 +196,7 @@ function s:r.getrrf(opts, failmsg, act)
     if has_key(a:opts, 'file') && a:opts.file isnot# ':'
         if a:act isnot# 'getfile' && a:opts.repo is# ':'
             let repo=s:_r.repo.get(s:_r.os.path.dirname(a:opts.file))
-            if a:act isnot# 'getrr'
+            if repo isnot 0 && a:act isnot# 'getrr'
                 let file=repo.functions.reltorepo(repo, a:opts.file)
             endif
         else
@@ -242,8 +246,7 @@ function s:r.getrrf(opts, failmsg, act)
             let file=expand('%')
         else
             let repo=s:_r.repo.get(':')
-            call s:r.checkrepo(repo)
-            if a:act isnot# 'getrr'
+            if type(repo)==type({}) && a:act isnot# 'getrr'
                 let file=repo.functions.reltorepo(repo, expand('%'))
             endif
         endif
@@ -262,8 +265,7 @@ function s:r.getrrf(opts, failmsg, act)
         "▶2 repo
         if !exists('repo')
             let repo=s:_r.repo.get(a:opts.repo)
-            call s:r.checkrepo(repo)
-            if file isnot 0
+            if type(repo)==type({}) && file isnot 0
                 let file=repo.functions.reltorepo(repo, file)
             endif
         endif
@@ -289,6 +291,13 @@ function s:r.getrrf(opts, failmsg, act)
             let rev=0
         endif
         "▲2
+    endif
+    if exists('repo') && type(repo)!=type({})
+        let file=0
+        let rev=0
+        if a:failmsg isnot 0
+            call s:_f.throw('nrepo')
+        endif
     endif
     return [hasbuf, exists('repo') ? repo : 0, rev,
                 \((a:act is# 'getfiles')?
@@ -377,6 +386,50 @@ function s:r.filterfiles(repo, globs, files)
         unlet d
     endwhile
     return r
+endfunction
+"▶1 completion-related constants
+let s:r.comp={}
+let s:r.comp.rev    = 'type string'
+let s:r.comp.file   = 'type String'
+let s:r.comp.cmd    = 'type STRING'
+let s:r.comp.optrev = 'type STRing'
+let s:r.comp.repo   = ':":"(either(path d, match@\v^\w+%(\+\w+)*\V://\v|^\:$@))'
+let s:r.compcmds=['new', 'vnew', 'edit',
+            \     'leftabove\ vnew', 'rightbelow\ vnew',
+            \     'topleft\ vnew',   'botright\ vnew',
+            \     'aboveleft\ new',  'belowright\ new',
+            \     'topleft\ new',    'botright\ new',]
+" XXX Some code relies on the fact that all options from s:diffoptslst are
+"     numeric
+let s:r.diffopts=['git', 'reverse', 'ignorews', 'iwsamount', 'iblanks',
+            \     'numlines', 'showfunc', 'alltext', 'dates']
+let s:r.comp.diffopts=join(map(copy(s:r.diffopts),
+            \          'v:val is# "numlines" ? '.
+            \               '" ?".v:val." range 0 inf" : '.
+            \               '"!?".v:val'))
+"▶1 Completion functions
+function s:r.revlist(...)
+    let repo=aurum#repository()
+    return       repo.functions.getrepoprop(repo, 'tagslist')+
+                \repo.functions.getrepoprop(repo, 'brancheslist')+
+                \repo.functions.getrepoprop(repo, 'bookmarkslist')
+endfunction
+"▶1 gencompfunc
+let s:replaces=[
+            \['\V'.s:r.comp.rev,     'in *_r.cmdutils.revlist', 'g'],
+            \['\V'.s:r.comp.file,    '(path)',                  'g'],
+            \['\V'.s:r.comp.cmd,     'first(in _r.cmdutils.compcmds, idof cmd)',
+            \                                                   'g'],
+            \['\V'.s:r.comp.optrev,  'either(type "", in *_r.cmdutils.revlist)',
+            \                                                   'g'],
+            \]
+function s:r.gencompfunc(fwc, subs, Compile)
+    let subs=a:subs+s:replaces
+    let fwc=substitute(a:fwc, '^-onlystrings\( _\)*', '', '')
+    for args in subs
+        let fwc=call('substitute', [fwc]+args)
+    endfor
+    return {'function': call(a:Compile, [fwc, 'complete'], {})[0]}
 endfunction
 "▶1 Post cmdutils resource
 call s:_f.postresource('cmdutils', s:r)

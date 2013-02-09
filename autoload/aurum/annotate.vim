@@ -1,9 +1,10 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.0', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.0', {'@%aurum/cmdutils': '4.3',
             \                 '@%aurum/bufvars': '0.0',
             \                    '@%aurum/edit': '1.4',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                     '@/resources': '0.0',
             \                         '@/table': '0.1',})
 let s:_messages={
@@ -104,6 +105,13 @@ function s:F.setannbuf(bvar, annbuf)
     endif
     execute annwin.'wincmd w'
     setlocal scrollbind cursorbind nowrap
+    " XXX I was unable to make scrollbinded windows behave sensibly without the 
+    "     following command. No matter what I tried, if initially buffer had any 
+    "     offset from the top (line("w0")!=1), saved vertical offset of 
+    "     scrollbinded buffers was invalid, even if I moved cursor to the top 
+    "     before setting scrollbind. It is good that my task allows :syncbind, 
+    "     but it would be a pain if I wanted to have different relative offsets.
+    syncbind
     augroup AuAnnotateBW
         execute 'autocmd BufWipeOut,BufHidden <buffer='.a:annbuf.'> '.
                     \':if bufexists('.buf.') | '.
@@ -134,7 +142,14 @@ endif
 "▶1 annfunc
 " TODO Investigate why wiping out annotate buffer causes consumption of next
 "      character under wine
-function s:cmd.function(opts)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'{  repo  '.s:_r.cmdutils.comp.repo.
+            \'  ?file  '.s:_r.cmdutils.comp.file.
+            \'  ?rev   '.s:_r.cmdutils.comp.rev.
+            \'}', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(opts)
     let [hasannbuf, repo, rev, file]=s:_r.cmdutils.getrrf(a:opts, 'noafile',
                 \                                         'annotate')
     if repo is 0
@@ -154,7 +169,7 @@ function s:cmd.function(opts)
         let annbuf=bufnr('%')
     else
         " TODO Check for errors
-        let existed=s:_r.run('silent edit', 'file', repo, rev, file)
+        let existed=s:_r.mrun('silent edit', 'file', repo, rev, file)
         let annbuf=bufnr('%')
         if !existed
             setlocal bufhidden=wipe

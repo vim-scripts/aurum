@@ -9,13 +9,17 @@ if use_threads:
     from Queue import Queue
     from threading import Lock
     from threading import Thread as Process
-    def signal(*_):
+    def use_default_signal_handlers():
         pass
-    SIGTERM=None
-    SIG_DFL=None
 else:
     from multiprocessing import Process, Queue, Value, Lock
-    from signal import signal, SIGTERM, SIG_DFL
+    from signal import signal, NSIG, SIG_DFL
+    def use_default_signal_handlers():
+        for sig in range(NSIG):
+            try:
+                signal(sig, SIG_DFL)
+            except Exception:
+                pass
 
 class ProcessHaltedError(Exception):
     pass
@@ -47,7 +51,9 @@ class RepeatedCmd(object):
 
     def getvalue(self):
         if not self.alive():
-            return self.getcurrentvalue()
+            result = self.getcurrentvalue()
+            self.start()
+            return result
 
         self.qlock.acquire()
         if self.value is None or not self.queue.empty():
@@ -79,11 +85,11 @@ class RepeatedCmd(object):
             self.process.join()
 
     def run(self):
-        # Override default signal vim handler with system default behavior (i.e. 
-        # just terminate). Without this hack process.terminate() may leave the 
-        # process alive. Bad, I do not know why it leaves it alive only in some 
-        # limited set of cases.
-        signal(SIGTERM, SIG_DFL)
+        # Override default signal vim handlers with system default behavior 
+        # (i.e. terminate or ignore), especially SIGTERM. Without this hack 
+        # process.terminate() may leave the process alive. Bad, I do not know 
+        # why it leaves it alive only in some limited set of cases.
+        use_default_signal_handlers()
         while self.interval.value > 0.0:
             starttime = time.clock()
             self.vlock.acquire()
@@ -130,6 +136,27 @@ class RepeatedCmd(object):
     pause   = stop
     resume  = start
     __del__ = stop
+
+class RepeatedCmdSynchronized(object):
+    def __init__(self, interval, func, *args, **kwargs):
+        self.args   = args
+        self.kwargs = kwargs
+        self.func   = func
+
+    def getvalue(self):
+        return self.func(*self.args, **self.kwargs)
+
+    getcurrentvalue = getvalue
+
+    @staticmethod
+    def dummy():
+        pass
+
+    stop = dummy
+    pause = dummy
+    resume = dummy
+
+# RepeatedCmd = RepeatedCmdSynchronized
 
 processes={}
 

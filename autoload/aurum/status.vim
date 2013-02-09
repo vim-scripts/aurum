@@ -1,8 +1,9 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.2', {'@%aurum/cmdutils': '4.0',
+execute frawor#Setup('1.2', {'@%aurum/cmdutils': '4.3',
             \                    '@%aurum/edit': '1.0',
-            \                          '@aurum': '1.0',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',
             \                       '@/options': '0.0',
             \                     '@/resources': '0.0',})
 let s:statchars={
@@ -93,7 +94,22 @@ function s:F.setup(read, repo, opts)
 endfunction
 "▶1 statfunc
 let s:defcmd='silent botright new'
-function s:cmd.function(repopath, opts)
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'['.s:_r.cmdutils.comp.repo.']'.
+            \'{ *?files     '.s:_r.cmdutils.comp.file.
+            \'   ?rev       '.s:_r.cmdutils.comp.rev.
+            \'   ?wdrev     '.s:_r.cmdutils.comp.rev.
+            \'   ?changes   '.s:_r.cmdutils.comp.rev.
+            \'  *?show      (either (in [modified added '.
+            \                           'removed deleted '.
+            \                           'unknown ignored '.
+            \                           'clean all] ~start, '.
+            \                       'match /\v^[MARDUIC!?]+$/))'.
+            \'   ?cmd       '.s:_r.cmdutils.comp.cmd.
+            \'}', 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(repopath, opts)
     if has_key(a:opts, 'files') && a:repopath is# ':'
         let repo=s:_r.cmdutils.checkedgetrepo(a:opts.files[0])
     else

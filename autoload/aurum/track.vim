@@ -1,7 +1,12 @@
 scriptencoding utf-8
-execute frawor#Setup('0.0', {'@aurum': '1.0',
-            \      '@%aurum/cmdutils': '4.0',})
-function s:cmd.function(...)
+execute frawor#Setup('0.0', {'@%aurum/cmdutils': '4.3',
+            \                     '@/functions': '0.1',
+            \                           '@/fwc': '0.0',})
+let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
+            \'+ '.s:_r.cmdutils.comp.file, 'filter']}
+let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
+            \                                     [], s:_f.fwc.compile)
+function s:_aufunctions.cmd.function(...)
     let globs=filter(copy(a:000), 'v:val isnot# ":"')
     let hascur=!(a:0 && len(globs)==a:0)
     let repo=s:_r.cmdutils.checkedgetrepo(a:0 ? a:1 : ':')
