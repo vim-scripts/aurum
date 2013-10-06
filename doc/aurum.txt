@@ -12,7 +12,8 @@ CONTENTS                                                      *aurum-contents*
     5. Globs                                         |aurum-globs|
     6. Log templates                                 |aurum-logtemplates|
         6.1. Built-in template styles                |aurum-logstyles|
-    7. Record mode                                   |aurum-record|
+    7. Special tabs
+        7.1. Record tab                              |aurum-record|
     8. Internal objects                              |aurum-objects|
         8.1. Repository                              |aurum-repository|
         8.2. Changeset                               |aurum-changeset|
@@ -98,7 +99,9 @@ There are some common things for all commands:
    4. |aurum://annotate| buffers: current file is file under cursor (annotate 
       may follow renames/copies; target filename is not explicitely mentioned) 
       and current revision is revision under cursor.
-   5. For other buffers: current file is file name, current revision is 
+   5. |aurum://log| buffers: current file is absent and current revision is 
+      revision whose log entry you see under cursor.
+   6. For other buffers: current file is file name, current revision is 
       working directory revision.
 
 AuAnnotate [file {file}] [rev {rev}] [repo {repo}]               *:AuAnnotate*
@@ -131,6 +134,11 @@ AuCommit {options} [glob1 [glob2 [...]]]                           *:AuCommit*
     date    Commit date in form yy-mm-dd_HH:MM:SS. Both date and time parts 
             are optional (though you must specify one of them), you can omit 
             year or use full four-digit form. Seconds are also optional.
+    [no]amend
+            Flag. If set, strips working directory revision and proceeds as 
+            usual for |:AuCommit|. Note: unlike “hg commit --amend” this won’t 
+            preserve changes that were committed. Use “|:AuRecord| amend” to 
+            preserve.
     [no]closebranch
             Flag. See description of --close-branch in “hg help commit”.
     repo    Path. Repository that should be committed to.
@@ -415,8 +423,9 @@ AuOther[!] {action} [{rev}[ {url}[ {repo}]]]                        *:AuOther*
     incoming  View what will be pulled if you replace “incoming” with “pull”
 
 AuRecord {opts} [glob1 [...]]                                      *:AuRecord*
-    Start record mode (|aurum-record|). Possible options are just the same as 
+    Start record tab (|aurum-record|). Possible options are just the same as 
     |:AuCommit| has (except for “type” option that is absent).
+    Note: `AuRecord amend` preserves changes from previous commit.
 
 AuStatus [{repo}] {opts}                                           *:AuStatus*
     Display status of the repository. Possible options:
@@ -537,6 +546,14 @@ aurum#branch :: ([{repo}]) -> branch                          *aurum#branch()*
           was called which hold files in one repository are no longer visible. 
           Only one process is launched for one repository.
 
+aurum#currev :: {ret} -> hex | rev | cs                       *aurum#currev()*
+    Depending on {ret} argument returns something that belongs to current 
+    revision (|aurum-current-revision|):
+    {ret}  Returns ~
+    hex    Current revision unique identifier. |aurum-cs.hex|
+    rev    Current revision shortened identifier. |aurum-cs.rev|
+    cs     Current revision changeset dictionary. |aurum-changeset|
+
 ------------------------------------------------------------------------------
 2.3. aurum:// pseudo-protocol                                       *aurum://*
 
@@ -597,14 +614,16 @@ aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
              *g:frawormap_AuAnnotate_Diff*   *g:frawormap_AuAnnotate_RFVdiff*
              *g:frawormap_AuAnnotate_Rdiff*  *g:frawormap_AuAnnotate_Annotate*
              *g:frawormap_AuAnnotate_RVdiff* *g:frawormap_AuAnnotate_Open*
-             *g:frawormap_AuAnnotate_Update* *g:frawormap_AuAnnotate_Next*
+             *g:frawormap_AuAnnotate_Update* *g:frawormap_AuAnnotate_NextMod*
+             *g:frawormap_AuAnnotate_Next*   *g:frawormap_AuAnnotate_PrevMod*
              *g:frawormap_AuAnnotate_Prev*       *aurum-m-AuAnnotate_Prev*
                  *aurum-m-AuAnnotate_Enter*      *aurum-m-AuAnnotate_Fdiff*
                  *aurum-m-AuAnnotate_RFdiff*     *aurum-m-AuAnnotate_FVdiff*
                  *aurum-m-AuAnnotate_Diff*       *aurum-m-AuAnnotate_RFVdiff*
                  *aurum-m-AuAnnotate_Rdiff*      *aurum-m-AuAnnotate_Annotate*
                  *aurum-m-AuAnnotate_RVdiff*     *aurum-m-AuAnnotate_Open*
-                 *aurum-m-AuAnnotate_Update*     *aurum-m-AuAnnotate_Next*
+                 *aurum-m-AuAnnotate_Update*     *aurum-m-AuAnnotate_NextMod*
+                 *aurum-m-AuAnnotate_Next*       *aurum-m-AuAnnotate_PrevMod*
     Mapname  LHS  Description ~
     Enter    <CR> View changes between file and current revision (|vimdiff|)
     FVdiff   gD   View diff between working directory and current revision 
@@ -631,6 +650,12 @@ aurum://annotate:{repo}:{rev}:{file}                        *aurum://annotate*
     Prev      J   Reannotate file using first parent of annotated revision.
                   Accepts count, in this case first parent is taken {count} 
                   times ({count}=2: first parent of first parent)
+    NextMod  gK   Like above Next mapping, but children are taken until it 
+                  does not find revision where file was changed. {count}=2 
+                  means two changes after, not two children before.
+    PrevMod  gJ   Like above Prev mapping, but parents are taken until it does 
+                  not find revision where file was changed. {count}=2 means 
+                  two changes before, not two parents before.
 
     Note These mappings are defined for aurumannotate filetype.
 
@@ -719,17 +744,19 @@ aurum://file:{repo}:{rev}:{file}                                *aurum://file*
     Open file {file} from repository {repo} as it was at revision {rev}.
     Local mappings (mgid=AuFile, without leader by default):
                                                           *g:frawormap_AuFile*
-                       *g:frawormap_AuFile_Next*  *g:frawormap_AuFile_RFdiff*
-                       *g:frawormap_AuFile_Prev*  *g:frawormap_AuFile_RFVdiff*
-                       *g:frawormap_AuFile_Diff*  *g:frawormap_AuFile_Update*
-                       *g:frawormap_AuFile_Rdiff* *g:frawormap_AuFile_RVdiff*
-                       *g:frawormap_AuFile_Fdiff* *g:frawormap_AuFile_FVdiff*
-                       *g:frawormap_AuFile_Vdiff*     *aurum-m-AuFile_Vdiff*
-                           *aurum-m-AuFile_Next*      *aurum-m-AuFile_RFdiff*
-                           *aurum-m-AuFile_Prev*      *aurum-m-AuFile_RFVdiff*
-                           *aurum-m-AuFile_Rdiff*     *aurum-m-AuFile_RVdiff*
-                           *aurum-m-AuFile_Diff*      *aurum-m-AuFile_Update*
-                           *aurum-m-AuFile_Fdiff*     *aurum-m-AuFile_FVdiff*
+                    *g:frawormap_AuFile_Next*     *g:frawormap_AuFile_RFdiff*
+                    *g:frawormap_AuFile_Prev*     *g:frawormap_AuFile_RFVdiff*
+                    *g:frawormap_AuFile_Diff*     *g:frawormap_AuFile_Update*
+                    *g:frawormap_AuFile_Rdiff*    *g:frawormap_AuFile_RVdiff*
+                    *g:frawormap_AuFile_Fdiff*    *g:frawormap_AuFile_FVdiff*
+                    *g:frawormap_AuFile_NextMod*  *g:frawormap_AuFile_PrevMod*
+                    *g:frawormap_AuFile_Vdiff*        *aurum-m-AuFile_Vdiff*
+                        *aurum-m-AuFile_Next*         *aurum-m-AuFile_RFdiff*
+                        *aurum-m-AuFile_Prev*         *aurum-m-AuFile_RFVdiff*
+                        *aurum-m-AuFile_Rdiff*        *aurum-m-AuFile_RVdiff*
+                        *aurum-m-AuFile_Diff*         *aurum-m-AuFile_Update*
+                        *aurum-m-AuFile_Fdiff*        *aurum-m-AuFile_FVdiff*
+                        *aurum-m-AuFile_NextMod*      *aurum-m-AuFile_PrevMod*
     Mapname  LHS  Description ~
     Next      K   View current file as it was at first child of current 
                   revision. Accepts count, in this case first child is taken 
@@ -737,6 +764,12 @@ aurum://file:{repo}:{rev}:{file}                                *aurum://file*
     Prev      J   View current file as it was at first parent of current 
                   revision. Accepts count, in this case first parent is taken 
                   {count} times ({count}=2: first parent of first parent)
+    NextMod  gK   Like above Next mapping, but children are taken until it 
+                  does not find revision where file was changed. {count}=2 
+                  means two changes after, not two children before.
+    PrevMod  gJ   Like above Prev mapping, but parents are taken until it does 
+                  not find revision where file was changed. {count}=2 means 
+                  two changes before, not two parents before.
     Update    U   Update working directory to current revision.
                   Accepts count: {count}=3: update to first parent of first 
                   parent of current revision
@@ -939,7 +972,7 @@ FVdiff     gD   AuVimDiff full
 Annotate    a   AuAnnotate  Annotate current buffer
 Status      s   AuStatus | wincmd p
                             Open status window and switch back
-Record      r   AuRecord    Switch to record mode
+Record      r   AuRecord    Open record tab
 Log         L   AuLog       View the revision history
 LogFile     l   AuLog : files :
                             View revisions where current file was changed
@@ -957,6 +990,13 @@ Push        P   AuOther push
 Pull        p   AuOther push | AuUpdate
                             Pull new commits from remote repository and 
                             perform an update.
+
+The following mappings use aurum#* functions and are prefixless by default. 
+They are defined for command and insert modes.
+                         *g:frawormap_AurumNP_CurRev* *aurum-m-AurumNP_CurRev*
+Mapname    LHS         Description ~
+CurRevHex  <C-r><C-h>  Insert current revision hex string.
+CurRev     <C-r><C-v>  Insert current revision number.
 
 ------------------------------------------------------------------------------
 2.5. Local mappings index                               *aurum-mappings-index*
@@ -996,6 +1036,8 @@ Diff        d   ac flS  g  Shows diff between rev and WD for current file
                            (status: between two current revisions)
 Rdiff       c   a  fls     Shows changes done in current rev to current file
 Prev/Next  J/K  acdfl      Go to previous/next revision
+PrevMod    gJ   a  f       Go to previous revision where file was modified
+NextMod    gK   a  f       Go to next revision where file was modified
 Open        o   a d ls  g  Opens current file as it was at current revision
 OpenAny     O       l   g  Prompts user and opens one of the changeset files
 Annotate    a   a   ls  g  Annotates current file at current revision
@@ -1088,9 +1130,28 @@ loglimit                                                    *g:aurum_loglimit*
 
 recheight                                                  *g:aurum_recheight*
     VimL |expression| that evaluates to unsigned integer or unsigned integer. 
-    Determines height of status window shown in record mode (|aurum-record|).
+    Determines height of status window shown in record tab (|aurum-record|).
     Default: winheight/5 (in empty tab |winheight()| will return roughly the 
              same value as 'lines').
+
+recautowrite                                            *g:aurum_recautowrite*
+    Boolean. Determines whether files opened for editing should be 
+    automatically written on |BufWinLeave| and |BufLeave| events in record tab 
+    (|aurum-record|) (only files in top left window are supported; others are 
+    not modifiable anyway).
+    See |aurum-m-AuRecord_Edit|.
+    Default: 1.
+
+fullundo                                                    *g:aurum_fullundo*
+    Boolean. Determines whether full undo tree should be kept for status 
+    window. With this option you will be able to undo changes done while using 
+    |aurum-m-AuRecord_Edit| and redo them (note: changes are atomic: undo 
+    information for edited files is not kept and all changes done during 
+    editing are squashed in one change no matter how often do you save). 
+    Without this option each time you use |aurum-m-AuRecord_Edit| undo history 
+    is discarded. This option keeps edited version in memory thus set it to 
+    true if you use |:AuRecord| to partially commit large files.
+    Default: 1.
 
 diffopts                                                    *g:aurum_diffopts*
     Dictionary. For possible keys see |aurum-diffoptions| (no truncations are 
@@ -1422,9 +1483,12 @@ bzrline                                                  *aurum-style-bzrline*
       1 Bob 2011-01-01 {tip} Guess bar is better name for baz
 
 ==============================================================================
-7. Record mode                                                  *aurum-record*
+7. Special tabs
 
-Record mode is used to interactively select changes that should be committed. 
+------------------------------------------------------------------------------
+7.1. Record tab                                                 *aurum-record*
+
+Record tab is used to interactively select changes that should be committed. 
 |:AuRecord| command opens a new tab page and splits it into three windows: 
 recorded, original and status:
   +------------------+------------------+ `
@@ -1440,16 +1504,16 @@ recorded, original and status:
   |                status               | `
   |                                     | `
   +-------------------------------------+ `
-After entering record mode status window becomes focused. It contains output 
+After entering record tab status window becomes focused. It contains output 
 similar to the output of |:AuStatus| command, but with one additional column 
 added at the beginning of the line. This column may contain one of four status 
 characters:
 Character  Meaning ~
     -      Changes done to this file won’t be committed (default)
     +      All changes done to this file will be committed
-    *      You have made changes to this file in record mode. These changes 
+    *      You have made changes to this file in record tab. These changes 
            will be commited
-    ^      You have made changes to this file in record mode, but then chose 
+    ^      You have made changes to this file in record tab, but then chose 
            not to commit them. They will reappear again when you use 
            |aurum-m-AuRecord_Edit| mapping
 In status window there are additional mappings available (mgid=AuRecord, 
@@ -1466,7 +1530,7 @@ Edit      O   Edit file under cursor. In original window there will be changed
               window there will be version of file that will be committed 
               (initially unmodified compared to version stored in repository). 
               If file is edited for the second time in recorded window there 
-              will be version of file modified in record mode and in original 
+              will be version of file modified in record tab and in original 
               window there will be backup of the file (or version from 
               repository if file in question was removed or deleted).
 Undo      u   Undo adds/removes of the file (|u|). Won’t undo changes made to 
@@ -1477,16 +1541,16 @@ Later     g+  Like above, but uses |g+|. Unlike |g+| is subject to 'timeout'.
 Note: undoing/redoing changes using other ways is not supported unless 
       |g:aurum_fullundo| is set.
 
-:AuRecord also makes some AuStatus mappings change their meaning:
+|:AuRecord| also makes some AuStatus mappings change their meaning:
 Mapping                 New meaning ~
 |aurum-m-AuStatus_Track|  select changes made to file(s) for committing
-|aurum-m-AuStatus_Commit| finish record mode and commit selected changes
+|aurum-m-AuStatus_Commit| close record tab and commit selected changes
 |aurum-m-AuStatus_Forget| unselect changes made to file(s), don’t commit them
 
-Note that if you close status window you will also exit record mode discarding 
+Note that if you close status window you will also close record tab discarding 
      all changes you have made.
 
-:AuRecord defines the following mappings in recorded window 
+|:AuRecord| defines the following mappings in recorded window 
 (mgid=AuRecordLeft, default leader: "<Leader>"):    *g:frawormap_AuRecordLeft*
           *g:frawormap_AuRecordLeft_Discard* *g:frawormap_AuRecordLeft_Exit*
           *g:frawormap_AuRecordLeft_Commit*  *g:frawormap_AuRecordLeft_Remove*
@@ -1496,9 +1560,9 @@ Note that if you close status window you will also exit record mode discarding
 Mapping  LHS  Description ~
 Discard   x   Discard all changes made to edited file. If file is opened for 
               the second time only unsaved changes will be discarded.
-Exit      X   Exit record mode, discarding all changes made to all files and 
+Exit      X   Close record tab, discarding all changes made to all files and 
               not committing anything.
-Commit    i   Commit selected changes and exit record mode.
+Commit    i   Commit selected changes and close record tab.
 Remove    R   Like Discard, but also unselect it (makes difference if file is 
               edited for the second time).
 Finish    A   Write changes and switch to status buffer.
@@ -1624,10 +1688,19 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     |aurum-cs.hex|.
   getwork :: () -> cs                                       *aurum-rf-getwork*
     Get changeset object for the working directory revision.
-  getnthparent :: hex, n -> cs                         *aurum-rf-getnthparent*
+  getnthparent :: hex, n[, [ file ]] -> cs             *aurum-rf-getnthparent*
     Get nth generation grand-parent of given revision. Use negative n to get 
     nth generation child instead. With n equal to zero it must work like 
     |aurum-rf-getcs|(hex).
+                                                    *aurum-rf-getnthchangerev*
+  getnthchangerev :: hex, n, [ file ] -> (cs, [ file ])
+    Like above, but with two differences:
+    1. Only changesets containing changes to files listed in the fourth 
+       argument are taken into account.
+    2. Returns a pair of |aurum-changeset| object and a list of files. In case 
+       there were no renames returned list is equal to the list given in 
+       arguments, otherwise it returns list with new filenames.
+       Note: copies are ignored.
   getchangesets :: () -> [ cs ]                       *aurum-rf-getchangesets*
     Pull all changesets contained in repository into |aurum-repo.changesets| 
     dictionary. If this function is not called, then |aurum-repo.changesets| 
@@ -1686,6 +1759,9 @@ functions :: {String : FRef}                            *aurum-repo.functions*
     removes))”. “closebranch” and “force” arguments have Bool type, “user” and 
     “date” are strings. Neither “user” nor “date” argument should have any 
     normalized form, they just should be accepted by VCS.
+  strip :: [hex[, force]] -> _                                *aurum-rf-strip*
+    Delete a changeset and its descendants. Default changeset is a working 
+    directory one.
   branch :: branch, force -> _                               *aurum-rf-branch*
     Create new branch.
   label :: type, label, hex, force, local -> _                *aurum-rf-label*
@@ -1943,6 +2019,8 @@ be absent, but they never throw "nimp").
 |aurum-rf-getcsprop|(…, "children") requires at least mercurial-1.7 or manual 
     preceding |aurum-rf-getchangesets| call. Thus many Next mappings do not 
     work.
+|aurum-rf-strip| without arguments uses “hg rollback”, with: “hg strip”. It is 
+    not guaranteed that using “hg rollback” to strip changesets will.
 |aurum-rf-astatus| in “non-python” version supports only 
     status(repo,0,0,[file],1,1) calls.
 |aurum-rf-agetcs| is absent in non-python version of driver.
@@ -2042,7 +2120,7 @@ Python driver was not tested under windows (wine) at all.
 |aurum-cs.time| is always 0 if “date” programm from coreutils is missing.
 |aurum-cs.children| is always empty.
 |aurum-cs.phase| is always “unknown”.
-|aurum-rf-getchasgesets|, |aurum-rf-getcs| are unable to work with commits 
+|aurum-rf-getchangesets|, |aurum-rf-getcs| are unable to work with commits 
     where description contains line with two spaces followed by 60 dashes.
 |aurum-rf-updatechangesets| is doing nothing.
 |aurum-rf-getrevhex| calls |aurum-rf-getcs| thus it may be slow.
@@ -2100,6 +2178,9 @@ Python driver was not tested under windows (wine) at all.
     5.4: Added |aurum-rf-astatus|, |aurum-rf-agetcs|, |aurum-rf-agetrepoprop|, 
          |aurum-rf-aget| and |aurum-rf-aremove|.
     5.5: Added |aurum-rf-apause| and |aurum-rf-aresume|.
+    5.6: Added |aurum-rf-strip|.
+    5.7: Now exporting default functions in _r.repo.defaultfuncs
+    5.8: Added |aurum-rf-getnthchangerev|.
 @aurum:
     0.1: Added |:AuBranch| and |:AuName|.
     0.2: Added |:AuOther|.
@@ -2118,6 +2199,7 @@ Python driver was not tested under windows (wine) at all.
     1.3: Added prevbuf function.
     1.4: Added “plstrgen” _f.newcommand option.
     1.5: Added possibility to use custom writer function for aurum://edit
+    1.6: Added “readable” setting.
 @%aurum/vimdiff:
     0.1: Added full, untracked, onlymodified and files options to |:AuVimDiff|
     0.2: Added _r.vimdiff.full.
@@ -2139,6 +2221,7 @@ Python driver was not tested under windows (wine) at all.
          respectively. Same for |aurum://status| “rev1” and “rev2” options.
     1.1: Added |:AuStatus| changes.
     1.2: Made _r.status.parseshow handle “all” “status”.
+    2.0: Refactored code to ease use with special tabs (like |:AuRecord|)
 @%aurum/commit:
     1.0: Added fifth argument to _r.commit.commit().
     1.1: Added sixth optional argument to _r.commit.commit().
@@ -2146,8 +2229,13 @@ Python driver was not tested under windows (wine) at all.
          added |g:aurum_commitinfowincmd| option
     1.3: Added seventh optional argument to _r.commit.commit() and 
          |g:aurum_commitautoopendiff| option.
+    1.4: Added eighth optional argument to _r.commit.commit().
+    1.5: Added |:AuCommit| amend, replaced eighth optional argument with 
+         a:opts.amend.
 @%aurum/annotate:
     1.0: Removed one argument to _r.annotate.setannbuf().
+    2.0: Add one argument to _r.annotate.setannbuf(): window ID; add 
+         _r.annotate.findwin().
 @%aurum/cmdutils:
     1.0: Removed cmdutils.prevbuf().
     2.0: Splitted it into @aurum/cmdutils and @aurum/computils.
@@ -2188,9 +2276,20 @@ ftplugin/aurumlog:
     1.2: Added pyimport feature
 @%aurum/file:
     0.1: Added |:AuFile| prompt option.
+    0.2: Added support for bvar.preserve function.
 @%aurum/hyperlink:
     0.1: Added support for password in URL.
 @%aurum/maputils:
     0.1: Added _r.maputils.getnthparentfile().
+    0.2: Added optional argument to _r.maputils.getnthparentfile().
+@%aurum/record:
+    0.1: Added |:AuRecord| amend.
+    0.2: Officially added |g:aurum_fullundo|, added |g:aurum_recautowrite|.
+@%aurum/undo:
+    1.0: Moved |g:aurum_fullundo| definition here.
+@%aurum/tabutils:
+    1.0: Moved some functions and |g:aurum_recautowrite| and 
+         |g:aurum_recheight| definitions here, moved some options to tabdesc 
+         argument.
 
 vim: ft=help:tw=78

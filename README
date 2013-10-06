@@ -3,63 +3,68 @@ This is a mirror of http://www.vim.org/scripts/script.php?script_id=3828
 
 This plugin provides a vim <--> VCS (currently mercurial, git and subversion) 
 integration for your projects. Features:
-  • Partially committing changes (:AuRecord [1]).
-  • Viewing file state at particular revision (aurum://file [2], :AuFile [3]).
-  • Viewing uncommited changes in a vimdiff, as well as changes between 
-    specific revisions (:AuVimDiff [4]). It is also possible to open multiple 
+  - Partially committing changes (:AuRecord [1]).
+  - Viewing file state at particular revision (aurum://file [2], :AuFile [3]).
+  - Viewing uncommited changes in a vimdiff [4], as well as changes between 
+    specific revisions (:AuVimDiff [5]). It is also possible to open multiple 
     tabs with all changes to all files viewed as side-by-side diffs.
-  • Viewing revisions log (:AuLog [5]). Output is highly customizable.
-  • Viewing working directory status (:AuStatus [6]).
-  • Commiting changes (:AuCommit [7]), commit messages are remembered in case of 
-    rollback (g:aurum_remembermsg [8]).
-  • Obtaining various URL’s out of remote repository URL (like URL of the HTML 
+  - Viewing revisions log (:AuLog [6]). Output is highly customizable.
+  - Viewing working directory status (:AuStatus [7]).
+  - Commiting changes (:AuCommit [8]), commit messages are remembered in case of 
+    rollback (g:aurum_remembermsg [9]).
+  - Obtaining various URL’s out of remote repository URL (like URL of the HTML 
     version of the current file with URL fragment pointing to the current line 
-    attached: useful for sharing) (:AuHyperlink [9]). For mercurial it also 
+    attached: useful for sharing) (:AuHyperlink [10]). For mercurial it also 
     supports git and subversion revisions (in case you are using hg-git and 
     hgsubversion respectively).
-  • aurum#changeset() [10], aurum#repository() [11] and aurum#status() [12] functions 
+  - aurum#changeset() [11], aurum#repository() [12] and aurum#status() [13] functions 
     that are to be used from modeline.
-  • Frontends for various other VCS commands.
-Most commands can be reached with a set of mappings (see aurum-mappings [13]), 
+  - Frontends for various other VCS commands.
+Most commands can be reached with a set of mappings (see aurum-mappings [14]), 
 all mappings are customizable.
 
 Plugin’s mercurial driver is able to use mercurial python API as well as its 
 CLI, but remember that the former is much slower and less tested. In order to 
-use mercurial python API you must have vim compiled with +python (mercurial 
+use mercurial python API you must have vim compiled with +python [15] (mercurial 
 currently does not support python 3) and have mercurial in python’s sys.path 
 (note: on windows msi installer is not adding mercurial to sys.path, so you 
 won’t be able to use its python API).
 
 Plugin requires some additional plugins:
-  • frawor (https://bitbucket.org/ZyX_I/frawor)
-  • (optional) ansi_esc_echo (https://bitbucket.org/ZyX_I/ansi_esc_echo)
-  • (optional) one of
-      • Command-T (vimscript #3025)
-      • ctrlp (vimscript #3736)
-      • FuzzyFinder (vimscript #1984)
-      • unite (vimscript #3396)
-      • ku (vimscript #2337)
-      • tlib (vimscript #1863)
+  - frawor (https://bitbucket.org/ZyX_I/frawor)
+  - (optional) ansi_esc_echo (https://bitbucket.org/ZyX_I/ansi_esc_echo)
+  - (optional) one of
+      - Command-T (vimscript #3025)
+      - ctrlp (vimscript #3736)
+      - FuzzyFinder (vimscript #1984)
+      - unite (vimscript #3396)
+      - ku (vimscript #2337)
+      - tlib (vimscript #1863)
     for :AuFile [3] prompt option and a number of OpenAny/AnnotateAny mappings.
 (with their dependencies).
 
 Note: aurum supports VAM (https://github.com/MarcWeber/vim-addon-manager). It 
       is prefered that you use it for aurum installation.
 
+
 Project page: https://bitbucket.org/ZyX_I/aurum
 Documentation: http://vimpluginloader.sourceforge.net/doc/aurum.txt.html
 
-[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line417-0 (:AuRecord)
-[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line718-0 (aurum://file)
-[3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line172-0 (:AuFile)
-[4] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line460-0 (:AuVimDiff)
-[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line271-0 (:AuLog)
-[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line421-0 (:AuStatus)
-[7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line112-0 (:AuCommit)
-[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line1138-0 (g:aurum_remembermsg)
-[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line214-0 (:AuHyperlink)
-[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line516-0 (aurum#changeset())
-[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line512-0 (aurum#repository())
-[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line520-0 (aurum#status())
-[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#line891-0 (aurum-mappings)
+
+[1] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuRecord
+[2] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#aurum.3a.2f.2ffile
+[3] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuFile
+[4] http://vimpluginloader.sourceforge.net/doc/diff.txt.html#vimdiff
+[5] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuVimDiff
+[6] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuLog
+[7] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuStatus
+[8] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuCommit
+[9] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#g.3aaurum_remembermsg
+[10] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#.3aAuHyperlink
+[11] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#aurum.23changeset.28.29
+[12] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#aurum.23repository.28.29
+[13] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#aurum.23status.28.29
+[14] http://vimpluginloader.sourceforge.net/doc/aurum.txt.html#aurum-mappings
+[15] http://vimpluginloader.sourceforge.net/doc/various.txt.html#.2bpython
+
 

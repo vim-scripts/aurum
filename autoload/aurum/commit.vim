@@ -1,11 +1,11 @@
 "▶1 
 scriptencoding utf-8
-execute frawor#Setup('1.3', {'@/resources': '0.0',
+execute frawor#Setup('1.5', {'@/resources': '0.0',
             \                '@/functions': '0.1',
             \                  '@/options': '0.0',
             \                       '@/os': '0.0',
             \                      '@/fwc': '0.0',
-            \             '@%aurum/status': '1.2',
+            \             '@%aurum/status': '2.0',
             \           '@%aurum/cmdutils': '4.3',
             \            '@%aurum/bufvars': '0.0',
             \            '@%aurum/vimdiff': '1.1',
@@ -14,7 +14,6 @@ execute frawor#Setup('1.3', {'@/resources': '0.0',
 let s:_messages={
             \'emptmsg': 'Message must contain at least one non-blank character',
             \'nocfile': 'Unsure what should be commited',
-            \'nocread': 'Cannot read aurum://commit',
             \  'nocom': 'Nothing to commit',
         \}
 let s:_options={
@@ -164,7 +163,7 @@ function s:F.findwindow()
         endif
     endif
 endfunction
-"▶1 commit :: repo, opts, files, status, types[, cmd[, bvarpart]] → + repo
+"▶1 commit :: repo, opts, files, status, types[, cmd[, bvarpart]]
 let s:defdate=['strftime("%Y")',
             \  'strftime("%m")',
             \  'strftime("%d")',
@@ -206,20 +205,31 @@ function s:F.commit(repo, opts, files, status, types, ...)
         let date=join(dparts[:2], '-').' '.join(dparts[3:], ':')
     endif
     "▲2
-    if empty(message)
+    let edit=get(a:opts, 'amend', 0)
+    if empty(message) || edit
         call s:_r.run(((a:0 && a:1 isnot 0)? a:1 : 'silent new'),
                     \ 'commit', a:repo, user, date, cb, a:files)
+        " Workaround problem with templates created on BufNewFile. Namely if you 
+        " try to commit a ebuild (or something that ends with a ".ebuild") you 
+        " will see ebuild template inserted
+        %delete _
         let bvar=s:_r.bufvars[bufnr('%')]
         if a:0>1 && a:2 isnot 0
             call extend(bvar, a:2)
         endif
         let bvar.revstatus=revstatus
         "▶2 Add previous message
-        if exists('g:AuPreviousRepoPath') &&
+        let addedprevmessage=0
+        if edit
+            let addedprevmessage=1
+            call setline('.', split(message, "\n", 1))
+            call cursor(line('$'), col([line('$'), '$']))
+        elseif exists('g:AuPreviousRepoPath') &&
                     \   g:AuPreviousRepoPath is# a:repo.path &&
                     \exists('g:AuPreviousTip') &&
                     \   g:AuPreviousTip is# a:repo.functions.gettiphex(a:repo)&&
                     \exists('g:AuPreviousCommitMessage')
+            let addedprevmessage=1
             call setline('.', split(g:AuPreviousCommitMessage, "\n", 1))
             call cursor(line('$'), col([line('$'), '$']))
             unlet g:AuPreviousRepoPath g:AuPreviousTip g:AuPreviousCommitMessage
@@ -231,6 +241,9 @@ function s:F.commit(repo, opts, files, status, types, ...)
         endfor
         call sort(fmessage)
         call append('.', fmessage)
+        if !addedprevmessage
+            setlocal nomodified
+        endif
         startinsert!
         "▶2 Open diff
         if s:_f.getoption('commitautoopendiff')
@@ -342,19 +355,29 @@ let s:_aufunctions.cmd={'@FWC': ['-onlystrings '.
             \                                 '\:[0-5]\d'.
             \                                 '%(\:[0-5]\d)?)?$/'.
             \' !?closebranch'.
+            \' !?amend'.
             \'}'.
             \'+ '.s:_r.cmdutils.comp.file, 'filter']}
 let s:_aufunctions.comp=s:_r.cmdutils.gencompfunc(s:_aufunctions.cmd['@FWC'][0],
             \                                     [], s:_f.fwc.compile)
 function s:_aufunctions.cmd.function(opts, ...)
-    let rrfopts=copy(a:opts)
+    let opts=copy(a:opts)
     let hasall=index(a:000, 'all')!=-1
     if a:0 && !hasall
-        let rrfopts.files=a:000
+        let opts.files=a:000
     endif
-    let [repo, rev, files]=s:_r.cmdutils.getrrf(rrfopts,
+    let edit=0
+    let [repo, rev, files]=s:_r.cmdutils.getrrf(opts,
                 \                               ((a:0)?(0):('nocfile')),
                 \                               'getfiles')[1:]
+    if get(opts, 'amend', 0)
+        let edit=1
+        if !has_key(opts, 'message')
+            let cs=repo.functions.getcs(repo, rev)
+            let opts.message=cs.description
+        endif
+        call repo.functions.strip(repo)
+    endif
     call s:_r.cmdutils.checkrepo(repo)
     let status=repo.functions.status(repo)
     "▶2 Get file list
@@ -363,8 +386,8 @@ function s:_aufunctions.cmd.function(opts, ...)
         unlet files
         let files=[]
     elseif a:0
-        if has_key(a:opts, 'type')
-            let types=s:_r.status.parseshow(a:opts.type)
+        if has_key(opts, 'type')
+            let types=s:_r.status.parseshow(opts.type)
             call filter(types, 'v:val isnot# "clean" && v:val isnot# "ignored"')
         endif
         let filepats=map(filter(copy(a:000), 'v:val isnot# ":"'),
@@ -388,13 +411,14 @@ function s:_aufunctions.cmd.function(opts, ...)
         call s:_f.throw('nocfile')
     endif
     "▲2
-    return s:F.commit(repo, a:opts, files, status, types)
+    return s:F.commit(repo, opts, files, status, types, edit)
 endfunction
 "▶1 aurum://commit
 let s:commit={'arguments': 3,
             \  'listargs': 1,
             \'modifiable': 1,
             \  'filetype': 'aurumcommit',
+            \  'readable': 0,
             \}
 function s:F.bufleave()
     let bvar=s:_r.bufvars[+expand('<abuf>')]
@@ -404,9 +428,6 @@ function s:F.bufleave()
     endif
 endfunction
 function s:commit.function(read, repo, user, date, cb, files)
-    if a:read
-        call s:_f.throw('nocread')
-    endif
     augroup AuCommit
         autocmd! BufLeave <buffer> :call s:F.bufleave()
     augroup END
